@@ -147,7 +147,78 @@ export class AuthService {
   }
 
   private async issueTokens(profile: SocialProfile, provider: SocialProvider) {
-    const user = await this.userService.findOrCreateBySocial(provider, profile);
+    const user = await this.userService.findBySocial(provider, profile);
+
+    if (!user) {
+      return {
+        needsSignup: true,
+        profile: {
+          socialId: profile.socialId,
+          nickname: profile.nickname,
+          email: profile.email,
+          profileImgUrl: profile.profileImgUrl,
+        },
+      };
+    }
+
+    const payload = { sub: user.userId };
+    const accessToken = this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+      expiresIn: '1h',
+    });
+
+    return {
+      accessToken,
+      user: {
+        userId: user.userId,
+        nickname: user.nickname,
+        email: user.email,
+        profileImgUrl: user.profileImgUrl,
+      },
+    };
+  }
+
+  async signupWithKakao(accessToken: string, options?: { nickname?: string }) {
+    const profile = await this.validateKakaoToken(accessToken);
+    return this.signupWithSocial(SocialProvider.KAKAO, profile, options);
+  }
+
+  async signupWithNaver(accessToken: string, options?: { nickname?: string }) {
+    const profile = await this.validateNaverToken(accessToken);
+    return this.signupWithSocial(SocialProvider.NAVER, profile, options);
+  }
+
+  async signupWithGoogle(accessToken: string, options?: { nickname?: string }) {
+    const profile = await this.validateGoogleToken(accessToken);
+    return this.signupWithSocial(SocialProvider.GOOGLE, profile, options);
+  }
+
+  private async signupWithSocial(
+    provider: SocialProvider,
+    profile: SocialProfile,
+    options?: { nickname?: string },
+  ) {
+    const existing = await this.userService.findBySocial(provider, profile);
+    if (existing) {
+      const payload = { sub: existing.userId };
+      const accessToken = this.jwtService.sign(payload, {
+        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+        expiresIn: '1h',
+      });
+      return {
+        accessToken,
+        user: {
+          userId: existing.userId,
+          nickname: existing.nickname,
+          email: existing.email,
+          profileImgUrl: existing.profileImgUrl,
+        },
+      };
+    }
+
+    const user = await this.userService.createBySocial(provider, profile, {
+      nickname: options?.nickname,
+    });
 
     const payload = { sub: user.userId };
     const accessToken = this.jwtService.sign(payload, {

@@ -12,26 +12,29 @@ export class UserService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  async findOrCreateBySocial(
+  async findBySocial(
     provider: SocialProvider,
     profile: SocialProfile,
-  ): Promise<User> {
-    const existing = await this.userRepository.findOne({
+  ): Promise<User | null> {
+    const user = await this.userRepository.findOne({
       where: { socialProvider: provider, socialId: profile.socialId },
     });
-    if (existing) {
-      if (
-        profile.profileImgUrl &&
-        profile.profileImgUrl !== existing.profileImgUrl
-      ) {
-        existing.profileImgUrl = profile.profileImgUrl;
-        return this.userRepository.save(existing);
-      }
-      return existing;
+    if (!user) return null;
+    if (profile.profileImgUrl && profile.profileImgUrl !== user.profileImgUrl) {
+      user.profileImgUrl = profile.profileImgUrl;
+      await this.userRepository.save(user);
     }
+    return user;
+  }
 
+  async createBySocial(
+    provider: SocialProvider,
+    profile: SocialProfile,
+    options?: { nickname?: string },
+  ): Promise<User> {
+    const baseNickname = options?.nickname ?? profile.nickname;
     const nickname = this.ensureUniqueNickname(
-      profile.nickname,
+      baseNickname,
       provider,
       profile.socialId,
     );
