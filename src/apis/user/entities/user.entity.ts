@@ -1,12 +1,26 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  Unique,
+} from 'typeorm';
 
-enum UserRole {
+export enum UserRole {
   ADMIN = 'admin',
   ARTIST = 'artist',
   PLANNER = 'planner',
 }
 
+export enum SocialProvider {
+  KAKAO = 'kakao',
+  GOOGLE = 'google',
+  NAVER = 'naver',
+}
+
 @Entity()
+@Unique(['socialProvider', 'socialId'])
 export class User {
   @PrimaryGeneratedColumn('uuid')
   userId: string;
@@ -39,5 +53,14 @@ export class User {
   profileImgUrl: string;
 
   @Column()
+  socialId: string;
+
+  @Column({ enum: SocialProvider })
+  socialProvider: SocialProvider;
+
+  @CreateDateColumn()
   createdAt: Date;
+
+  @DeleteDateColumn()
+  deletedAt: Date;
 }
