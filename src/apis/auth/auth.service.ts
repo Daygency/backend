@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserService } from '../user/user.service';
@@ -8,10 +8,18 @@ import type { SocialProfile } from './types/social-profile.type';
 interface KakaoUserResponse {
   id: number;
   kakao_account?: {
-    profile?: { nickname?: string; profile_image_url?: string };
+    profile?: {
+      nickname?: string;
+      profile_image_url?: string;
+      thumbnail_image_url?: string;
+    };
     email?: string;
   };
-  properties?: { nickname?: string; profile_image?: string };
+  properties?: {
+    nickname?: string;
+    profile_image?: string;
+    thumbnail_image?: string;
+  };
 }
 
 interface NaverUserResponse {
@@ -33,6 +41,8 @@ interface GoogleUserResponse {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
@@ -66,20 +76,28 @@ export class AuthService {
     }
 
     const data = (await res.json()) as KakaoUserResponse;
+    this.logger.log('[Kakao raw]', JSON.stringify(data, null, 2));
+
     const profile = data.kakao_account?.profile ?? data.properties;
     const profileImg =
-      profile && 'profile_image_url' in profile
-        ? profile.profile_image_url
-        : profile && 'profile_image' in profile
-          ? profile.profile_image
-          : '';
+      (profile &&
+        'profile_image_url' in profile &&
+        profile.profile_image_url) ||
+      (profile &&
+        'thumbnail_image_url' in profile &&
+        profile.thumbnail_image_url) ||
+      (profile && 'profile_image' in profile && profile.profile_image) ||
+      (profile && 'thumbnail_image' in profile && profile.thumbnail_image) ||
+      '';
 
-    return {
+    const socialProfile = {
       socialId: String(data.id),
       nickname: profile?.nickname ?? '',
       email: data.kakao_account?.email ?? '',
       profileImgUrl: profileImg ?? '',
     };
+    this.logger.log('[Kakao parsed]', socialProfile);
+    return socialProfile;
   }
 
   private async validateNaverToken(

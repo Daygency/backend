@@ -34,7 +34,7 @@ export class User {
   @Column({ unique: true, length: 320 })
   email: string;
 
-  @Column({ enum: UserRole })
+  @Column({ type: 'enum', enum: UserRole })
   role: UserRole;
 
   @Column({ length: 13 })
@@ -55,7 +55,7 @@ export class User {
   @Column()
   socialId: string;
 
-  @Column({ enum: SocialProvider })
+  @Column({ type: 'enum', enum: SocialProvider })
   socialProvider: SocialProvider;
 
   @CreateDateColumn()

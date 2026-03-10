@@ -19,7 +19,16 @@ export class UserService {
     const existing = await this.userRepository.findOne({
       where: { socialProvider: provider, socialId: profile.socialId },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (
+        profile.profileImgUrl &&
+        profile.profileImgUrl !== existing.profileImgUrl
+      ) {
+        existing.profileImgUrl = profile.profileImgUrl;
+        return this.userRepository.save(existing);
+      }
+      return existing;
+    }
 
     const nickname = this.ensureUniqueNickname(
       profile.nickname,
