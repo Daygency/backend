@@ -7,10 +7,12 @@ interface IJwtPayload {
 }
 
 export class JwtAccessStrategy extends PassportStrategy(Strategy, 'access') {
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService, //
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      secretOrKey: configService.get('JWT_ACCESS_SECRET') as string,
+      secretOrKey: configService.get<string>('JWT_ACCESS_SECRET') ?? '',
     });
   }
 
