@@ -11,7 +11,7 @@ export class SocialSignupDto extends SocialLoginDto {
 
   @ApiPropertyOptional({
     description: '사용자 역할',
-    example: UserRole.ARTIST,
+    example: UserRole.USER,
   })
   role?: UserRole;
 }

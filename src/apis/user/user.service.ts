@@ -50,7 +50,7 @@ export class UserService {
       nickname,
       aboutMe: '',
       email,
-      role: UserRole.ARTIST,
+      role: UserRole.USER,
       phoneNumber: '0000000000000',
       isEmailSubscribed: false,
       isPushEnabled: false,
