@@ -32,7 +32,9 @@ export class UserController {
     type: ProfileResponseDto,
   })
   @ApiResponse({ status: 401, description: '인증 필요' })
-  async getMyProfile(@Request() req: { user: { id: string } }) {
+  async getMyProfile(
+    @Request() req: { user: { id: string } },
+  ): Promise<ProfileResponseDto> {
     return this.userService.getMyProfile(req.user.id);
   }
 

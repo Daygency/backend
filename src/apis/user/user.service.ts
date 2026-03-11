@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
 import { User, SocialProvider, UserRole } from './entities/user.entity';
 import type { SocialProfile } from '../auth/types/social-profile.type';
+import { ProfileResponseDto } from './dto/profile-response.dto';
 
 @Injectable()
 export class UserService {
@@ -91,7 +92,7 @@ export class UserService {
     return this.userRepository.findOne({ where: { userId } });
   }
 
-  async getMyProfile(userId: string) {
+  async getMyProfile(userId: string): Promise<ProfileResponseDto> {
     const user = await this.userRepository.findOne({
       where: { userId },
       select: [
@@ -123,8 +124,6 @@ export class UserService {
         email: user.email,
         phoneNumber: user.phoneNumber,
       },
-      followerCount: 0, // 보류
-      followingCount: 0, // 보류
     };
   }
 }
