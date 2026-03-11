@@ -8,6 +8,8 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import { Career } from './career.entity';
+import { Award } from './award.entity';
 
 export enum UserRole {
   USER = 'user',
@@ -63,13 +65,13 @@ export class User {
   socialProvider: SocialProvider;
 
   @OneToMany(() => Education, (education) => education.user)
-  education: Education[];
+  educations: Education[];
 
-  @Column({ type: 'text', nullable: true })
-  career: string | null;
+  @OneToMany(() => Career, (career) => career.user)
+  careers: Career[];
 
-  @Column({ type: 'text', nullable: true })
-  awards: string | null;
+  @OneToMany(() => Award, (award) => award.user)
+  awards: Award[];
 
   @CreateDateColumn()
   createdAt: Date;
