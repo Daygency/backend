@@ -1,7 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UserService } from '../user/user.service';
+import { UserService } from '../user/services/user.service';
 import { SocialProvider } from '../user/entities/user.entity';
 import type { SocialProfile } from './types/social-profile.type';
 

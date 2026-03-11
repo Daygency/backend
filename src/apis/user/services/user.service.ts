@@ -5,10 +5,11 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CreateUserDto } from './dto/create-user.dto';
-import { User, SocialProvider, UserRole } from './entities/user.entity';
-import type { SocialProfile } from '../auth/types/social-profile.type';
-import { ProfileResponseDto } from './dto/profile-response.dto';
+import { CreateUserDto } from '../dto/create-user.dto';
+import { User, SocialProvider, UserRole } from '../entities/user.entity';
+import type { SocialProfile } from '../../auth/types/social-profile.type';
+import { ProfileResponseDto } from '../dto/profile-response.dto';
+import { UpdateUserDto } from '../dto/update-user.dto';
 
 @Injectable()
 export class UserService {
@@ -125,5 +126,16 @@ export class UserService {
         phoneNumber: user.phoneNumber,
       },
     };
+  }
+
+  async updateMyProfile(userId: string, updateUserDto: UpdateUserDto) {
+    const user = await this.userRepository.findOne({
+      where: { userId },
+    });
+    if (!user) {
+      throw new NotFoundException('프로필을 찾을 수 없습니다.');
+    }
+    Object.assign(user, updateUserDto);
+    return this.userRepository.save(user);
   }
 }
