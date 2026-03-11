@@ -41,6 +41,7 @@ export class AuthController {
   async signupWithKakao(@Body() body: SocialSignupDto) {
     return await this.authService.signupWithKakao(body.accessToken, {
       nickname: body.nickname,
+      activityName: body.activityName,
     });
   }
 
@@ -52,6 +53,7 @@ export class AuthController {
   async signupWithGoogle(@Body() body: SocialSignupDto) {
     return await this.authService.signupWithGoogle(body.accessToken, {
       nickname: body.nickname,
+      activityName: body.activityName,
     });
   }
 
@@ -63,6 +65,7 @@ export class AuthController {
   async signupWithNaver(@Body() body: SocialSignupDto) {
     return await this.authService.signupWithNaver(body.accessToken, {
       nickname: body.nickname,
+      activityName: body.activityName,
     });
   }
 }

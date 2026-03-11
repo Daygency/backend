@@ -9,10 +9,18 @@ import { Award } from './entities/award.entity';
 import { Career } from './entities/career.entity';
 import { Education } from './entities/education.entity';
 import { Certificate } from './entities/certificate.entity';
+import { Major } from './entities/major.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Award, Career, Education, Certificate]),
+    TypeOrmModule.forFeature([
+      User,
+      Award,
+      Career,
+      Education,
+      Certificate,
+      Major,
+    ]),
     forwardRef(() => AuthModule),
   ],
   controllers: [UserController],

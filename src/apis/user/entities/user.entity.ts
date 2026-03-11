@@ -4,6 +4,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   Unique,
@@ -11,6 +12,7 @@ import {
 import { Career } from './career.entity';
 import { Award } from './award.entity';
 import { Certificate } from './certificate.entity';
+import { Major } from './major.entity';
 
 export enum UserRole {
   USER = 'user',
@@ -35,13 +37,13 @@ export class User {
   @Column({ unique: true, length: 20 })
   activityName: string;
 
-  @Column({ length: 100 })
+  @Column({ length: 100, nullable: true })
   aboutMe: string;
 
-  @Column({ length: 300 })
+  @Column({ length: 300, nullable: true })
   selfIntroduction: string;
 
-  @Column({ type: 'enum', enum: UserRole })
+  @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
   role: UserRole;
 
   @Column({ unique: true, length: 320 })
@@ -79,6 +81,9 @@ export class User {
 
   @OneToMany(() => Certificate, (certificate) => certificate.user)
   certificates: Certificate[];
+
+  @ManyToOne(() => Major, (major) => major.users)
+  major: Major;
 
   @CreateDateColumn()
   createdAt: Date;

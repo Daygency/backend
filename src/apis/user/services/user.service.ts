@@ -36,19 +36,21 @@ export class UserService {
   async createBySocial(
     provider: SocialProvider,
     profile: SocialProfile,
-    options?: { nickname?: string },
+    options: { nickname?: string; activityName: string },
   ): Promise<User> {
-    const baseNickname = options?.nickname ?? profile.nickname;
+    const baseNickname = options.nickname ?? profile.nickname;
     const nickname = await this.resolveNickname(
       baseNickname,
       provider,
       profile.socialId,
     );
+    const activityName = options.activityName.trim();
     const email =
       profile.email || `${provider}_${profile.socialId}@social.placeholder`;
 
     const user = this.userRepository.create({
       nickname,
+      activityName,
       aboutMe: '',
       email,
       role: UserRole.USER,
@@ -99,14 +101,17 @@ export class UserService {
       select: [
         'userId',
         'profileImgUrl',
+        'activityName',
         'nickname',
         'role',
         'aboutMe',
+        'selfIntroduction',
         'educations',
         'careers',
         'awards',
         'email',
         'phoneNumber',
+        'major',
       ],
     });
     if (!user) {
@@ -116,11 +121,14 @@ export class UserService {
     return {
       profileImgUrl: user.profileImgUrl,
       nickname: user.nickname,
+      activityName: user.activityName,
       role: user.role,
       aboutMe: user.aboutMe,
+      selfIntroduction: user.selfIntroduction,
       educations: user.educations ?? null,
       careers: user.careers ?? null,
       awards: user.awards ?? null,
+      major: user.major ?? null,
       contact: {
         email: user.email,
         phoneNumber: user.phoneNumber,
