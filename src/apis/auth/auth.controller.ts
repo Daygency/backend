@@ -37,6 +37,7 @@ export class AuthController {
   @ApiOperation({ summary: '카카오 회원가입' })
   @ApiBody({ type: SocialSignupDto })
   @ApiResponse({ status: 200, description: '회원가입 완료 및 토큰 발급' })
+  @ApiResponse({ status: 409, description: '이미 사용 중인 닉네임' })
   async signupWithKakao(@Body() body: SocialSignupDto) {
     return await this.authService.signupWithKakao(body.accessToken, {
       nickname: body.nickname,
@@ -47,6 +48,7 @@ export class AuthController {
   @ApiOperation({ summary: '구글 회원가입' })
   @ApiBody({ type: SocialSignupDto })
   @ApiResponse({ status: 200, description: '회원가입 완료 및 토큰 발급' })
+  @ApiResponse({ status: 409, description: '이미 사용 중인 닉네임' })
   async signupWithGoogle(@Body() body: SocialSignupDto) {
     return await this.authService.signupWithGoogle(body.accessToken, {
       nickname: body.nickname,
@@ -57,6 +59,7 @@ export class AuthController {
   @ApiOperation({ summary: '네이버 회원가입' })
   @ApiBody({ type: SocialSignupDto })
   @ApiResponse({ status: 200, description: '회원가입 완료 및 토큰 발급' })
+  @ApiResponse({ status: 409, description: '이미 사용 중인 닉네임' })
   async signupWithNaver(@Body() body: SocialSignupDto) {
     return await this.authService.signupWithNaver(body.accessToken, {
       nickname: body.nickname,
