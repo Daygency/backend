@@ -138,4 +138,20 @@ export class UserService {
     Object.assign(user, updateUserDto);
     return this.userRepository.save(user);
   }
+
+  async findUsersByActivityName(activityName: string) {
+    if (!activityName) {
+      throw new NotFoundException('활동명을 입력해주세요.');
+    }
+    const users = await this.userRepository.find({ where: { activityName } });
+    if (!users) {
+      throw new NotFoundException('활동명을 찾을 수 없습니다.');
+    }
+    return users.map((user) => ({
+      userId: user.userId,
+      profileImgUrl: user.profileImgUrl,
+      nickname: user.nickname,
+      activityName: user.activityName,
+    }));
+  }
 }

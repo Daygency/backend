@@ -29,8 +29,11 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   userId: string;
 
-  @Column({ unique: true, length: 20 })
+  @Column({ length: 20 })
   nickname: string;
+
+  @Column({ unique: true, length: 20 })
+  activityName: string;
 
   @Column({ length: 100 })
   aboutMe: string;
