@@ -31,6 +31,15 @@ export class User {
   @Column({ length: 100 })
   aboutMe: string;
 
+  @Column({ type: 'text', nullable: true })
+  education: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  career: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  awards: string | null;
+
   @Column({ unique: true, length: 320 })
   email: string;
 
