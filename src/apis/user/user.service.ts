@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -12,26 +12,29 @@ export class UserService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  async findOrCreateBySocial(
+  async findBySocial(
     provider: SocialProvider,
     profile: SocialProfile,
-  ): Promise<User> {
-    const existing = await this.userRepository.findOne({
+  ): Promise<User | null> {
+    const user = await this.userRepository.findOne({
       where: { socialProvider: provider, socialId: profile.socialId },
     });
-    if (existing) {
-      if (
-        profile.profileImgUrl &&
-        profile.profileImgUrl !== existing.profileImgUrl
-      ) {
-        existing.profileImgUrl = profile.profileImgUrl;
-        return this.userRepository.save(existing);
-      }
-      return existing;
+    if (!user) return null;
+    if (profile.profileImgUrl && profile.profileImgUrl !== user.profileImgUrl) {
+      user.profileImgUrl = profile.profileImgUrl;
+      await this.userRepository.save(user);
     }
+    return user;
+  }
 
-    const nickname = this.ensureUniqueNickname(
-      profile.nickname,
+  async createBySocial(
+    provider: SocialProvider,
+    profile: SocialProfile,
+    options?: { nickname?: string },
+  ): Promise<User> {
+    const baseNickname = options?.nickname ?? profile.nickname;
+    const nickname = await this.resolveNickname(
+      baseNickname,
       provider,
       profile.socialId,
     );
@@ -55,15 +58,25 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
-  private ensureUniqueNickname(
+  private async resolveNickname(
     base: string,
     provider: string,
     socialId: string,
-  ): string {
+  ): Promise<string> {
     const fallback = `u_${provider}_${socialId}`.slice(0, 20);
-    if (!base) return fallback;
-    const sanitized = base.replace(/[^a-zA-Z0-9가-힣_]/g, '_').slice(0, 11);
-    return `${sanitized}_${socialId.slice(-6)}`.slice(0, 20); // unique per socialId
+    if (!base?.trim()) return fallback;
+
+    const sanitized = base.replace(/[^a-zA-Z0-9가-힣_]/g, '_').slice(0, 20);
+
+    const existing = await this.userRepository.findOne({
+      where: { nickname: sanitized },
+    });
+    if (existing) {
+      throw new ConflictException(
+        '이미 사용 중인 닉네임입니다. 다른 닉네임을 선택해 주세요.',
+      );
+    }
+    return sanitized;
   }
 
   create(createUserDto: CreateUserDto) {
