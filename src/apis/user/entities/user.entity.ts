@@ -1,4 +1,4 @@
-import { Education } from 'src/apis/education/entities/education.entity';
+import { Education } from 'src/apis/user/entities/education.entity';
 import {
   Column,
   CreateDateColumn,
