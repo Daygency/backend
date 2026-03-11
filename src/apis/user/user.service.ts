@@ -1,9 +1,14 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
 import { User, SocialProvider, UserRole } from './entities/user.entity';
 import type { SocialProfile } from '../auth/types/social-profile.type';
+import { ProfileResponseDto } from './dto/profile-response.dto';
 
 @Injectable()
 export class UserService {
@@ -85,5 +90,40 @@ export class UserService {
 
   findOne(userId: string) {
     return this.userRepository.findOne({ where: { userId } });
+  }
+
+  async getMyProfile(userId: string): Promise<ProfileResponseDto> {
+    const user = await this.userRepository.findOne({
+      where: { userId },
+      select: [
+        'userId',
+        'profileImgUrl',
+        'nickname',
+        'role',
+        'aboutMe',
+        'education',
+        'career',
+        'awards',
+        'email',
+        'phoneNumber',
+      ],
+    });
+    if (!user) {
+      throw new NotFoundException('프로필을 찾을 수 없습니다.');
+    }
+
+    return {
+      profileImgUrl: user.profileImgUrl,
+      nickname: user.nickname,
+      role: user.role,
+      aboutMe: user.aboutMe,
+      education: user.education ?? null,
+      career: user.career ?? null,
+      awards: user.awards ?? null,
+      contact: {
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+      },
+    };
   }
 }
