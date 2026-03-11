@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Career } from './career.entity';
 import { Award } from './award.entity';
+import { Certificate } from './certificate.entity';
 
 export enum UserRole {
   USER = 'user',
@@ -72,6 +73,9 @@ export class User {
 
   @OneToMany(() => Award, (award) => award.user)
   awards: Award[];
+
+  @OneToMany(() => Certificate, (certificate) => certificate.user)
+  certificates: Certificate[];
 
   @CreateDateColumn()
   createdAt: Date;
