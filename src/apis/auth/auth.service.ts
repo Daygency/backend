@@ -1,7 +1,12 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UserService } from '../user/user.service';
+import { UserService } from '../user/services/user.service';
 import { SocialProvider } from '../user/entities/user.entity';
 import type { SocialProfile } from './types/social-profile.type';
 
@@ -167,6 +172,10 @@ export class AuthService {
       expiresIn: '1h',
     });
 
+    this.logger.log(
+      `[Login success] provider=${provider}, userId=${user.userId}, accessToken=${accessToken}`,
+    );
+
     return {
       accessToken,
       user: {
@@ -178,17 +187,26 @@ export class AuthService {
     };
   }
 
-  async signupWithKakao(accessToken: string, options?: { nickname?: string }) {
+  async signupWithKakao(
+    accessToken: string,
+    options?: { nickname?: string; activityName?: string },
+  ) {
     const profile = await this.validateKakaoToken(accessToken);
     return this.signupWithSocial(SocialProvider.KAKAO, profile, options);
   }
 
-  async signupWithNaver(accessToken: string, options?: { nickname?: string }) {
+  async signupWithNaver(
+    accessToken: string,
+    options?: { nickname?: string; activityName?: string },
+  ) {
     const profile = await this.validateNaverToken(accessToken);
     return this.signupWithSocial(SocialProvider.NAVER, profile, options);
   }
 
-  async signupWithGoogle(accessToken: string, options?: { nickname?: string }) {
+  async signupWithGoogle(
+    accessToken: string,
+    options?: { nickname?: string; activityName?: string },
+  ) {
     const profile = await this.validateGoogleToken(accessToken);
     return this.signupWithSocial(SocialProvider.GOOGLE, profile, options);
   }
@@ -196,7 +214,7 @@ export class AuthService {
   private async signupWithSocial(
     provider: SocialProvider,
     profile: SocialProfile,
-    options?: { nickname?: string },
+    options?: { nickname?: string; activityName?: string },
   ) {
     const existing = await this.userService.findBySocial(provider, profile);
     if (existing) {
@@ -205,6 +223,9 @@ export class AuthService {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
         expiresIn: '1h',
       });
+      this.logger.log(
+        `[Signup login existing] provider=${provider}, userId=${existing.userId}, accessToken=${accessToken}`,
+      );
       return {
         accessToken,
         user: {
@@ -216,8 +237,13 @@ export class AuthService {
       };
     }
 
+    if (!options?.activityName?.trim()) {
+      throw new BadRequestException('활동아이디(activityName)를 입력해주세요.');
+    }
+
     const user = await this.userService.createBySocial(provider, profile, {
-      nickname: options?.nickname,
+      nickname: options.nickname,
+      activityName: options.activityName,
     });
 
     const payload = { sub: user.userId };
@@ -225,6 +251,9 @@ export class AuthService {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
       expiresIn: '1h',
     });
+    this.logger.log(
+      `[Signup success] provider=${provider}, userId=${user.userId}, accessToken=${accessToken}`,
+    );
 
     return {
       accessToken,

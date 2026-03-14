@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SocialLoginDto } from './social-login.dto';
 import { UserRole } from 'src/apis/user/entities/user.entity';
 
@@ -9,9 +9,15 @@ export class SocialSignupDto extends SocialLoginDto {
   })
   nickname?: string;
 
+  @ApiProperty({
+    description: '사용자 활동 아이디 (activityName)',
+    example: 'my_activity_id',
+  })
+  activityName: string;
+
   @ApiPropertyOptional({
     description: '사용자 역할',
-    example: UserRole.ARTIST,
+    example: UserRole.USER,
   })
   role?: UserRole;
 }
