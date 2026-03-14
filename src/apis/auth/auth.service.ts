@@ -172,6 +172,10 @@ export class AuthService {
       expiresIn: '1h',
     });
 
+    this.logger.log(
+      `[Login success] provider=${provider}, userId=${user.userId}, accessToken=${accessToken}`,
+    );
+
     return {
       accessToken,
       user: {
@@ -219,6 +223,9 @@ export class AuthService {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
         expiresIn: '1h',
       });
+      this.logger.log(
+        `[Signup login existing] provider=${provider}, userId=${existing.userId}, accessToken=${accessToken}`,
+      );
       return {
         accessToken,
         user: {
@@ -244,6 +251,9 @@ export class AuthService {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
       expiresIn: '1h',
     });
+    this.logger.log(
+      `[Signup success] provider=${provider}, userId=${user.userId}, accessToken=${accessToken}`,
+    );
 
     return {
       accessToken,

@@ -14,6 +14,7 @@ export class AuthController {
   @ApiBody({ type: SocialLoginDto })
   @ApiResponse({ status: 200, description: '카카오 로그인 성공' })
   async loginWithKakao(@Body() body: SocialLoginDto) {
+    console.log('#');
     return await this.authService.loginWithKakao(body.accessToken);
   }
 

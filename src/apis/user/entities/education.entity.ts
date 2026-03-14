@@ -24,7 +24,7 @@ export class Education {
   @Column({ default: false })
   isVerified: boolean;
 
-  @ManyToOne(() => User, (user) => user.educations)
+  @ManyToOne(() => User, (user) => user.educations, { nullable: false })
   @JoinColumn({ name: 'userId' })
   user: User;
 }
