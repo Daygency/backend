@@ -342,4 +342,29 @@ export class UserService {
       activityName: user.activityName,
     }));
   }
+
+  /**
+   * TODO: 내부적인 추천 로직은 나중에 같이 이야기해보자.
+   * 현재는 랜덤으로 반환.
+   */
+  async getRecommendedUsers(limit = 20) {
+    const users = await this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.userId',
+        'user.profileImgUrl',
+        'user.nickname',
+        'user.activityName',
+      ])
+      .orderBy('RAND()')
+      .take(limit)
+      .getMany();
+
+    return users.map((user) => ({
+      userId: user.userId,
+      profileImgUrl: user.profileImgUrl,
+      nickname: user.nickname,
+      activityName: user.activityName,
+    }));
+  }
 }
