@@ -15,7 +15,6 @@ import { AuthGuard } from '@nestjs/passport';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ProfileResponseDto } from '../dto/profile-response.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
-import { User } from '../entities/user.entity';
 
 @ApiTags('users')
 @Controller('users')
@@ -42,6 +41,23 @@ export class UserController {
     return this.userService.getMyProfile(req.user.id);
   }
 
+  @Get('search')
+  @ApiOperation({ summary: '사용자 검색 / 추천 목록' })
+  @ApiResponse({
+    status: 200,
+    description: '사용자 검색/추천 성공',
+  })
+  @ApiResponse({ status: 400, description: '활동명 없음 (검색 시)' })
+  searchUsers(
+    @Query('activityName') activityName: string,
+    @Query('recommend') recommend: string,
+  ) {
+    if (recommend !== undefined) {
+      return this.userService.getRecommendedUsers();
+    }
+    return this.userService.findUsersByActivityName(activityName);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.userService.findOne(id);
@@ -62,17 +78,5 @@ export class UserController {
   ) {
     const userId = req.user.id;
     return this.userService.updateMyProfile(userId, updateUserDto);
-  }
-
-  @Get('search')
-  @ApiOperation({ summary: '활동명으로 사용자 검색' })
-  @ApiResponse({
-    status: 200,
-    description: '사용자 검색 성공',
-    type: [User],
-  })
-  @ApiResponse({ status: 400, description: '활동명 없음' })
-  searchUsers(@Query('activityName') activityName: string) {
-    return this.userService.findUsersByActivityName(activityName);
   }
 }
