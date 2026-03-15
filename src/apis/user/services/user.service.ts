@@ -17,7 +17,7 @@ import {
 } from '../dto/update-user.dto';
 import { Education } from '../entities/education.entity';
 import { Career } from '../entities/career.entity';
-import { Major } from '../entities/major.entity';
+import { Major } from '../../major/entities/major.entity';
 import { Award } from '../entities/award.entity';
 
 @Injectable()

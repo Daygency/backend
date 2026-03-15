@@ -12,7 +12,7 @@ import {
 import { Career } from './career.entity';
 import { Award } from './award.entity';
 import { Certificate } from './certificate.entity';
-import { Major } from './major.entity';
+import { Major } from '../../major/entities/major.entity';
 
 export enum UserRole {
   USER = 'user',

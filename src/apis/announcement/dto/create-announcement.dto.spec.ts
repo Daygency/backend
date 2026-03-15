@@ -13,7 +13,7 @@ describe('CreateAnnouncementDto', () => {
     address: '서울시 강남구',
     fileId: '550e8400-e29b-41d4-a716-446655440000',
     type: AnnouncementType.EVENT,
-    major: 'KEYBOARD',
+    majorIds: ['550e8400-e29b-41d4-a716-446655440000'],
     applicationConfig: {
       includeName: true,
       includeBirth: false,

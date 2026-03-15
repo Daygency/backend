@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsUUID,
   IsDefined,
+  IsArray,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -61,12 +62,17 @@ export class CreateAnnouncementDto {
   type?: AnnouncementType;
 
   @ApiPropertyOptional({
-    description: '모집 전공 (복수 시 콤마 구분)',
-    example: 'KEYBOARD,STRINGS',
+    description: '모집 전공 ID 배열',
+    example: [
+      '550e8400-e29b-41d4-a716-446655440000',
+      '550e8400-e29b-41d4-a716-446655440001',
+    ],
+    type: [String],
   })
   @IsOptional()
-  @IsString()
-  major?: string;
+  @IsArray()
+  @IsUUID('4', { each: true })
+  majorIds?: string[];
 
   @ApiProperty({ description: '지원서 양식 설정' })
   @IsDefined()

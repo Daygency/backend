@@ -2,6 +2,8 @@ import {
   Column,
   Entity,
   JoinColumn,
+  JoinTable,
+  ManyToMany,
   ManyToOne,
   OneToOne,
   PrimaryGeneratedColumn,
@@ -9,6 +11,7 @@ import {
 import { User } from '../../user/entities/user.entity';
 import { File } from '../../file/entities/file.entity';
 import { ApplicationConfig } from './application-config.entity';
+import { Major } from '../../major/entities/major.entity';
 
 export enum AnnouncementStatus {
   OPEN = 'OPEN',
@@ -23,24 +26,6 @@ export enum AnnouncementType {
   MASTERCLASS = 'MASTERCLASS', // 마스터클래스
   EVENT = 'EVENT', // 행사
   STAFF_RECRUIT = 'STAFF_RECRUIT', // 스탭구인
-  ETC = 'ETC', // 기타
-}
-
-/** 모집 전공 - 선택 태그 기준 */
-export enum AnnouncementMajor {
-  ALL = 'ALL', // 전공무관
-  KEYBOARD = 'KEYBOARD', // 건반악기
-  STRINGS = 'STRINGS', // 현악
-  WINDS = 'WINDS', // 관악
-  VOCAL = 'VOCAL', // 성악
-  PERCUSSION = 'PERCUSSION', // 타악
-  COMPOSITION = 'COMPOSITION', // 작곡
-  CONDUCTING = 'CONDUCTING', // 지휘
-  MUSICOLOGY = 'MUSICOLOGY', // 음악학
-  KOREAN_TRADITIONAL = 'KOREAN_TRADITIONAL', // 국악
-  DANCE = 'DANCE', // 무용
-  PRACTICAL = 'PRACTICAL', // 실용
-  MUSICAL_CROSSOVER = 'MUSICAL_CROSSOVER', // 뮤지컬·크로스오버
   ETC = 'ETC', // 기타
 }
 
@@ -86,9 +71,13 @@ export class Announcement {
   })
   type: AnnouncementType | null;
 
-  /** 모집 전공 (필터용) - DB에 컬럼 추가 필요, 콤마 구분 다중값 가능 */
-  @Column({ name: 'major', length: 100, nullable: true })
-  major: string | null;
+  @ManyToMany(() => Major)
+  @JoinTable({
+    name: 'announcement_major',
+    joinColumn: { name: 'post_id', referencedColumnName: 'postId' },
+    inverseJoinColumn: { name: 'major_id', referencedColumnName: 'majorId' },
+  })
+  majors: Major[];
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id' })

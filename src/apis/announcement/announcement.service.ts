@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import type { ApplicationConfigDto } from './dto/application-config.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
@@ -11,6 +11,7 @@ import {
   AnnouncementStatus,
 } from './entities/announcement.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
+import { Major } from '../major/entities/major.entity';
 
 /** 공고유형 enum → 한글 라벨 */
 const TYPE_LABELS: Record<AnnouncementType, string> = {
@@ -65,6 +66,8 @@ export class AnnouncementService {
     private readonly announcementRepository: Repository<Announcement>,
     @InjectRepository(ApplicationConfig)
     private readonly applicationConfigRepository: Repository<ApplicationConfig>,
+    @InjectRepository(Major)
+    private readonly majorRepository: Repository<Major>,
   ) {}
 
   /**
@@ -83,6 +86,13 @@ export class AnnouncementService {
   }> {
     const ac: ApplicationConfigDto = dto.applicationConfig;
 
+    let majors: Major[] = [];
+    if (dto.majorIds?.length) {
+      majors = await this.majorRepository.find({
+        where: { majorId: In(dto.majorIds) },
+      });
+    }
+
     const announcement = this.announcementRepository.create({
       userId,
       title: dto.title,
@@ -93,7 +103,7 @@ export class AnnouncementService {
       address: dto.address,
       fileId: dto.fileId,
       type: dto.type ?? null,
-      major: dto.major ?? null,
+      majors,
     });
     const saved = await this.announcementRepository.save(announcement);
 
@@ -112,12 +122,12 @@ export class AnnouncementService {
    * 공고 목록 조회 (무한스크롤 + 필터)
    * - cursor: 마지막 postId (없으면 첫 페이지)
    * - limit: 페이지 크기 (기본 20, 최대 50)
-   * - status, type, major: 필터 파라미터
+   * - status, type, majorIds: 필터 파라미터
    */
   async findList(
     query: ListAnnouncementQueryDto,
   ): Promise<AnnouncementListResponse> {
-    const { cursor, limit = 20, status, type, major } = query;
+    const { cursor, limit = 20, status, type, majorIds: majorIdsStr } = query;
 
     const qb = this.announcementRepository
       .createQueryBuilder('announcement')
@@ -133,13 +143,16 @@ export class AnnouncementService {
     if (type) {
       qb.andWhere('announcement.type = :type', { type });
     }
-    if (major) {
-      const majors = major
+    if (majorIdsStr) {
+      const str = majorIdsStr as string;
+      const majorIds: string[] = str
         .split(',')
         .map((m) => m.trim())
-        .filter(Boolean);
-      if (majors.length > 0) {
-        qb.andWhere('announcement.major IN (:...majors)', { majors });
+        .filter((m) => m.length > 0);
+      if (majorIds.length > 0) {
+        qb.innerJoin('announcement.majors', 'am')
+          .andWhere('am.majorId IN (:...majorIds)', { majorIds })
+          .distinct(true);
       }
     }
 

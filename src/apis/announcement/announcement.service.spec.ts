@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { AnnouncementService } from './announcement.service';
 import { Announcement } from './entities/announcement.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
+import { Major } from '../major/entities/major.entity';
 import { AnnouncementStatus, AnnouncementType } from './entities/announcement.entity';
 
 describe('AnnouncementService', () => {
@@ -14,6 +15,7 @@ describe('AnnouncementService', () => {
   const mockUserId = 'user-uuid-1234';
   const mockFileId = 'file-uuid-5678';
 
+  const mockMajorId = '550e8400-e29b-41d4-a716-446655440000';
   const validCreateDto = {
     title: '2025 봄 정기연주회',
     content: '모집 내용입니다.',
@@ -22,7 +24,7 @@ describe('AnnouncementService', () => {
     address: '서울시 강남구',
     fileId: mockFileId,
     type: AnnouncementType.EVENT,
-    major: 'KEYBOARD',
+    majorIds: [mockMajorId],
     applicationConfig: {
       includeName: true,
       includeBirth: false,
@@ -40,17 +42,23 @@ describe('AnnouncementService', () => {
     address: validCreateDto.address,
     fileId: mockFileId,
     type: AnnouncementType.EVENT,
-    major: 'KEYBOARD',
+    majors: [],
   };
 
   beforeEach(async () => {
+    const mockMajorRepo = {
+      find: jest.fn().mockResolvedValue([{ majorId: mockMajorId }]),
+    };
+
     const mockAnnouncementRepo = {
       create: jest.fn().mockReturnValue({ ...mockSavedAnnouncement }),
       save: jest.fn().mockResolvedValue({ ...mockSavedAnnouncement }),
       createQueryBuilder: jest.fn().mockReturnValue({
+        distinct: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue([]),
       }),
     };
@@ -70,6 +78,10 @@ describe('AnnouncementService', () => {
         {
           provide: getRepositoryToken(ApplicationConfig),
           useValue: mockApplicationConfigRepo,
+        },
+        {
+          provide: getRepositoryToken(Major),
+          useValue: mockMajorRepo,
         },
       ],
     }).compile();
@@ -95,7 +107,7 @@ describe('AnnouncementService', () => {
           address: validCreateDto.address,
           fileId: mockFileId,
           type: AnnouncementType.EVENT,
-          major: 'KEYBOARD',
+          majors: expect.arrayContaining([expect.objectContaining({ majorId: mockMajorId })]),
         }),
       );
       expect(announcementRepository.save).toHaveBeenCalled();
@@ -169,7 +181,7 @@ describe('AnnouncementService', () => {
           content: 'c',
           userId: 'u',
           fileId: 'f',
-          major: null,
+          majors: [],
         },
       ] as Announcement[];
 
@@ -207,7 +219,7 @@ describe('AnnouncementService', () => {
           content: 'c',
           userId: 'u',
           fileId: 'f',
-          major: null,
+          majors: [],
         })) as Announcement[];
 
       (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({

@@ -1,6 +1,6 @@
 import { Seeder } from 'typeorm-extension';
 import { DataSource } from 'typeorm';
-import { Major } from '../../src/apis/user/entities/major.entity';
+import { Major } from '../../src/apis/major/entities/major.entity';
 import { MAJOR_OPTIONS } from '../../src/common/constant';
 
 export default class MajorSeeder implements Seeder {

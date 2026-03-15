@@ -3,7 +3,7 @@ import { UserRole } from '../entities/user.entity';
 import { Education } from '../entities/education.entity';
 import { Career } from '../entities/career.entity';
 import { Award } from '../entities/award.entity';
-import { Major } from '../entities/major.entity';
+import { Major } from '../../major/entities/major.entity';
 
 export class ProfileResponseDto {
   @ApiProperty({ description: '프로필 이미지 URL' })
