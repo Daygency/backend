@@ -4,6 +4,7 @@ import { AuthModule } from './apis/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AnnouncementModule } from './apis/announcement/announcement.module';
+import { FileModule } from './apis/file/file.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AnnouncementModule } from './apis/announcement/announcement.module';
       logging: true,
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
     }),
+    FileModule,
     AnnouncementModule,
   ],
 })

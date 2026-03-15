@@ -3,11 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AnnouncementService } from './announcement.service';
 import { AnnouncementController } from './announcement.controller';
 import { Announcement } from './entities/announcement.entity';
-import { File } from './entities/file.entity';
+import { FileModule } from '../file/file.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Announcement, File]),
+    TypeOrmModule.forFeature([Announcement]),
+    FileModule,
   ],
   controllers: [AnnouncementController],
   providers: [AnnouncementService],

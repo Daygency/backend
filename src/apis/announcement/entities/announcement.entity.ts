@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
-import { File } from './file.entity';
+import { File } from '../../file/entities/file.entity';
 
 export enum AnnouncementStatus {
   OPEN = 'OPEN',
