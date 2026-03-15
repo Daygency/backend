@@ -52,17 +52,31 @@ export class AnnouncementController {
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: '공고 상세 조회' })
-  @ApiResponse({ status: 200, description: '공고 상세 반환 (로그인 시 isMine 포함)' })
+  @ApiResponse({
+    status: 200,
+    description: '공고 상세 반환 (로그인 시 isMine 포함)',
+  })
   findOne(@Param('id') id: string, @Request() req: { user?: { id: string } }) {
     return this.announcementService.findOne(id, req.user?.id);
   }
 
   @Patch(':id')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '모집공고 수정' })
+  @ApiResponse({ status: 200, description: '공고 수정 완료' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  @ApiResponse({ status: 403, description: '수정 권한 없음' })
+  @ApiResponse({ status: 404, description: '공고를 찾을 수 없음' })
   update(
     @Param('id') id: string,
     @Body() updateAnnouncementDto: UpdateAnnouncementDto,
+    @Request() req: { user: { id: string } },
   ) {
-    return this.announcementService.update(id, updateAnnouncementDto);
+    return this.announcementService.update(
+      req.user.id,
+      id,
+      updateAnnouncementDto,
+    );
   }
 
   @Delete(':id')

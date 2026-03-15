@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
@@ -221,9 +225,88 @@ export class AnnouncementService {
     };
   }
 
-  update(id: string, dto: UpdateAnnouncementDto) {
-    void dto; // TODO: implement update
-    return `This action updates a #${id} announcement`;
+  /**
+   * 모집공고 수정. 작성자만 수정 가능.
+   * 반환: 목록 아이템 형태 (create와 동일)
+   */
+  async update(
+    userId: string,
+    id: string,
+    dto: UpdateAnnouncementDto,
+  ): Promise<{
+    postId: string;
+    title: string;
+    type: string;
+    isRecruiting: boolean;
+    dDay: string;
+  }> {
+    const announcement = await this.announcementRepository.findOne({
+      where: { postId: id },
+      relations: ['category', 'majors'],
+    });
+    if (!announcement) {
+      throw new NotFoundException('공고를 찾을 수 없습니다.');
+    }
+    if (announcement.userId !== userId) {
+      throw new ForbiddenException('수정 권한이 없습니다.');
+    }
+
+    if (dto.title !== undefined) announcement.title = dto.title;
+    if (dto.content !== undefined) announcement.content = dto.content;
+    if (dto.deadlineAt !== undefined)
+      announcement.deadlineAt = new Date(dto.deadlineAt);
+    if (dto.scheduledAt !== undefined)
+      announcement.scheduledAt = new Date(dto.scheduledAt);
+    if (dto.status !== undefined) announcement.status = dto.status;
+    if (dto.address !== undefined) announcement.address = dto.address;
+    if (dto.fileId !== undefined) announcement.fileId = dto.fileId ?? null;
+
+    if (dto.categoryId !== undefined) {
+      const category = await this.categoryRepository.findOne({
+        where: { categoryId: dto.categoryId },
+      });
+      if (!category) {
+        throw new NotFoundException('공고 유형을 찾을 수 없습니다.');
+      }
+      announcement.category = category;
+    }
+
+    if (dto.majorIds !== undefined) {
+      announcement.majors =
+        dto.majorIds.length > 0
+          ? await this.majorRepository.find({
+              where: { majorId: In(dto.majorIds) },
+            })
+          : [];
+    }
+
+    await this.announcementRepository.save(announcement);
+
+    if (dto.applicationConfig !== undefined) {
+      let config = await this.applicationConfigRepository.findOne({
+        where: { postId: id },
+      });
+      const ac = dto.applicationConfig;
+      const merged = Object.fromEntries(
+        Object.entries(ac).map(([k, v]) => [k, v ?? false]),
+      );
+      if (config) {
+        Object.assign(config, merged);
+        await this.applicationConfigRepository.save(config);
+      } else {
+        config = this.applicationConfigRepository.create({
+          postId: id,
+          ...merged,
+        });
+        await this.applicationConfigRepository.save(config);
+      }
+    }
+
+    const updated = await this.announcementRepository.findOne({
+      where: { postId: id },
+      relations: ['category'],
+    });
+    return toListItem(updated!);
   }
 
   remove(id: string) {
