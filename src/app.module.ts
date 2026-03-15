@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AnnouncementModule } from './apis/announcement/announcement.module';
 import { FileModule } from './apis/file/file.module';
 import { AnnouncementCategory } from './apis/announcement/entities/announcement-category.entity';
+import { CommunityCategory } from './apis/community/entities/community-category.entity';
 import { Major } from './apis/major/entities/major.entity';
 import { DatabaseSeedService } from './common/database-seed.service';
 import { CommunityModule } from './apis/community/community.module';
@@ -27,7 +28,7 @@ import { NewsModule } from './apis/news/news.module';
       logging: true,
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
     }),
-    TypeOrmModule.forFeature([AnnouncementCategory, Major]),
+    TypeOrmModule.forFeature([AnnouncementCategory, CommunityCategory, Major]),
     FileModule,
     AnnouncementModule,
     CommunityModule,

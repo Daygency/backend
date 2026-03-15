@@ -2,20 +2,28 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AnnouncementCategory } from '../apis/announcement/entities/announcement-category.entity';
+import { CommunityCategory } from '../apis/community/entities/community-category.entity';
 import { Major } from '../apis/major/entities/major.entity';
-import { ANNOUNCEMENT_CATEGORY_OPTIONS, MAJOR_OPTIONS } from './constant';
+import {
+  ANNOUNCEMENT_CATEGORY_OPTIONS,
+  COMMUNITY_CATEGORY_OPTIONS,
+  MAJOR_OPTIONS,
+} from './constant';
 
 @Injectable()
 export class DatabaseSeedService implements OnModuleInit {
   constructor(
     @InjectRepository(AnnouncementCategory)
     private readonly announcementCategoryRepo: Repository<AnnouncementCategory>,
+    @InjectRepository(CommunityCategory)
+    private readonly communityCategoryRepo: Repository<CommunityCategory>,
     @InjectRepository(Major)
     private readonly majorRepo: Repository<Major>,
   ) {}
 
   async onModuleInit() {
     await this.seedAnnouncementCategories();
+    await this.seedCommunityCategories();
     await this.seedMajors();
   }
 
@@ -29,6 +37,18 @@ export class DatabaseSeedService implements OnModuleInit {
       return category;
     });
     await this.announcementCategoryRepo.save(categories);
+  }
+
+  private async seedCommunityCategories() {
+    const existing = await this.communityCategoryRepo.count();
+    if (existing > 0) return;
+
+    const categories = COMMUNITY_CATEGORY_OPTIONS.map((name) => {
+      const category = new CommunityCategory();
+      category.name = name;
+      return category;
+    });
+    await this.communityCategoryRepo.save(categories);
   }
 
   private async seedMajors() {
