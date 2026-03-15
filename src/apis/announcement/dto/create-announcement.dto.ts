@@ -49,9 +49,10 @@ export class CreateAnnouncementDto {
   @IsString()
   address: string;
 
-  @ApiProperty({ description: '대표 파일 ID (썸네일)' })
+  @ApiPropertyOptional({ description: '대표 파일 ID (썸네일)', nullable: true })
+  @IsOptional()
   @IsUUID()
-  fileId: string;
+  fileId?: string | null;
 
   @ApiProperty({
     description: '공고 유형 ID (announcement_category.category_id)',

@@ -49,8 +49,8 @@ export class Announcement {
   @Column()
   address: string;
 
-  @Column({ name: 'file_id', type: 'char', length: 36 })
-  fileId: string;
+  @Column({ name: 'file_id', type: 'char', length: 36, nullable: true })
+  fileId: string | null;
 
   /** 공고 유형 (announcement_category 1대다) */
   @ManyToOne(() => AnnouncementCategory, (cat) => cat.announcements)
@@ -70,9 +70,9 @@ export class Announcement {
   user: User;
 
   /** 대표 파일 (썸네일 등) - file_id. 하위 파일은 File.children (parent_id=self) */
-  @ManyToOne(() => File)
+  @ManyToOne(() => File, { nullable: true })
   @JoinColumn({ name: 'file_id' })
-  file: File;
+  file: File | null;
 
   /** 지원서 양식 (1:1) - application_config.post_id → announcement.post_id */
   @OneToOne(() => ApplicationConfig, (config) => config.announcement)

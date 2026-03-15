@@ -99,7 +99,7 @@ export class AnnouncementService {
       scheduledAt: new Date(dto.scheduledAt),
       status: dto.status ?? AnnouncementStatus.OPEN,
       address: dto.address,
-      fileId: dto.fileId,
+      fileId: dto.fileId ?? null,
       category,
       majors,
     });
