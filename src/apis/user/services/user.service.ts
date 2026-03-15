@@ -17,7 +17,7 @@ import {
 } from '../dto/update-user.dto';
 import { Education } from '../entities/education.entity';
 import { Career } from '../entities/career.entity';
-import { Major } from '../entities/major.entity';
+import { Major } from '../../major/entities/major.entity';
 import { Award } from '../entities/award.entity';
 
 @Injectable()
@@ -133,6 +133,7 @@ export class UserService {
     }
 
     return {
+      userId: user.userId,
       profileImgUrl: user.profileImgUrl,
       nickname: user.nickname,
       activityName: user.activityName,
@@ -325,6 +326,18 @@ export class UserService {
     if (toSave.length) {
       await this.awardRepository.save(toSave);
     }
+  }
+
+  async checkActivityNameAvailable(
+    activityName: string,
+  ): Promise<{ available: boolean }> {
+    if (!activityName?.trim()) {
+      return { available: false };
+    }
+    const existing = await this.userRepository.findOne({
+      where: { activityName: activityName.trim() },
+    });
+    return { available: !existing };
   }
 
   async findUsersByActivityName(activityName: string) {

@@ -166,18 +166,34 @@ export class AuthService {
       };
     }
 
+    return this.issueAccessAndRefreshTokens(user);
+  }
+
+  /** access(1h) + refresh(30d) 토큰 쌍 발급 */
+  private issueAccessAndRefreshTokens(user: {
+    userId: string;
+    nickname: string;
+    email: string;
+    profileImgUrl: string;
+  }) {
     const payload = { sub: user.userId };
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
       expiresIn: '1h',
     });
-
-    this.logger.log(
-      `[Login success] provider=${provider}, userId=${user.userId}, accessToken=${accessToken}`,
+    const refreshToken = this.jwtService.sign(
+      { sub: user.userId, type: 'refresh' },
+      {
+        secret:
+          this.configService.get<string>('JWT_REFRESH_SECRET') ??
+          this.configService.get<string>('JWT_ACCESS_SECRET'),
+        expiresIn: '30d',
+      },
     );
 
     return {
       accessToken,
+      refreshToken,
       user: {
         userId: user.userId,
         nickname: user.nickname,
@@ -185,6 +201,34 @@ export class AuthService {
         profileImgUrl: user.profileImgUrl,
       },
     };
+  }
+
+  /** refresh token으로 새 access token 발급 */
+  async refreshTokens(refreshToken: string) {
+    if (!refreshToken?.trim()) {
+      throw new UnauthorizedException('refresh token이 필요합니다.');
+    }
+    try {
+      const payload = this.jwtService.verify(refreshToken, {
+        secret:
+          this.configService.get<string>('JWT_REFRESH_SECRET') ??
+          this.configService.get<string>('JWT_ACCESS_SECRET'),
+      });
+      if (payload?.type !== 'refresh' || !payload?.sub) {
+        throw new UnauthorizedException('유효하지 않은 refresh token입니다.');
+      }
+      const user = await this.userService.findOne(payload.sub);
+      if (!user) {
+        throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
+      }
+      const { accessToken, user: userInfo } =
+        this.issueAccessAndRefreshTokens(user);
+      this.logger.log(`[Refresh success] userId=${user.userId}`);
+      return { accessToken, user: userInfo };
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      throw new UnauthorizedException('refresh token이 만료되었습니다.');
+    }
   }
 
   async signupWithKakao(
@@ -218,23 +262,11 @@ export class AuthService {
   ) {
     const existing = await this.userService.findBySocial(provider, profile);
     if (existing) {
-      const payload = { sub: existing.userId };
-      const accessToken = this.jwtService.sign(payload, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '1h',
-      });
+      const result = this.issueAccessAndRefreshTokens(existing);
       this.logger.log(
-        `[Signup login existing] provider=${provider}, userId=${existing.userId}, accessToken=${accessToken}`,
+        `[Signup login existing] provider=${provider}, userId=${existing.userId}`,
       );
-      return {
-        accessToken,
-        user: {
-          userId: existing.userId,
-          nickname: existing.nickname,
-          email: existing.email,
-          profileImgUrl: existing.profileImgUrl,
-        },
-      };
+      return result;
     }
 
     if (!options?.activityName?.trim()) {
@@ -246,23 +278,10 @@ export class AuthService {
       activityName: options.activityName,
     });
 
-    const payload = { sub: user.userId };
-    const accessToken = this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-      expiresIn: '1h',
-    });
+    const result = this.issueAccessAndRefreshTokens(user);
     this.logger.log(
-      `[Signup success] provider=${provider}, userId=${user.userId}, accessToken=${accessToken}`,
+      `[Signup success] provider=${provider}, userId=${user.userId}`,
     );
-
-    return {
-      accessToken,
-      user: {
-        userId: user.userId,
-        nickname: user.nickname,
-        email: user.email,
-        profileImgUrl: user.profileImgUrl,
-      },
-    };
+    return result;
   }
 }

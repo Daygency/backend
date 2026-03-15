@@ -4,12 +4,12 @@ import { UserService } from './services/user.service';
 import { UserController } from './controllers/user.controller';
 import { User } from './entities/user.entity';
 import { AuthModule } from '../auth/auth.module';
+import { MajorModule } from '../major/major.module';
 import { PortfolioService } from './services/portfolio.service';
 import { Award } from './entities/award.entity';
 import { Career } from './entities/career.entity';
 import { Education } from './entities/education.entity';
 import { Certificate } from './entities/certificate.entity';
-import { Major } from './entities/major.entity';
 
 @Module({
   imports: [
@@ -19,8 +19,8 @@ import { Major } from './entities/major.entity';
       Career,
       Education,
       Certificate,
-      Major,
     ]),
+    MajorModule,
     forwardRef(() => AuthModule),
   ],
   controllers: [UserController],

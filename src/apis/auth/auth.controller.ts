@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { SocialLoginDto } from './dto/social-login.dto';
 import { SocialSignupDto } from './dto/social-signup.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -14,7 +15,6 @@ export class AuthController {
   @ApiBody({ type: SocialLoginDto })
   @ApiResponse({ status: 200, description: '카카오 로그인 성공' })
   async loginWithKakao(@Body() body: SocialLoginDto) {
-    console.log('#');
     return await this.authService.loginWithKakao(body.accessToken);
   }
 
@@ -68,5 +68,14 @@ export class AuthController {
       nickname: body.nickname,
       activityName: body.activityName,
     });
+  }
+
+  @Post('refresh')
+  @ApiOperation({ summary: 'Access Token 갱신' })
+  @ApiBody({ type: RefreshTokenDto })
+  @ApiResponse({ status: 200, description: '새 access token 발급' })
+  @ApiResponse({ status: 401, description: 'refresh token 만료 또는 무효' })
+  async refresh(@Body() body: RefreshTokenDto) {
+    return await this.authService.refreshTokens(body.refreshToken);
   }
 }

@@ -41,6 +41,15 @@ export class UserController {
     return this.userService.getMyProfile(req.user.id);
   }
 
+  @Get('check-activity-name')
+  @ApiOperation({ summary: '활동 아이디(activityName) 중복 여부 확인' })
+  @ApiResponse({ status: 200, description: '사용 가능 여부 반환' })
+  async checkActivityName(
+    @Query('activityName') activityName: string,
+  ): Promise<{ available: boolean }> {
+    return this.userService.checkActivityNameAvailable(activityName);
+  }
+
   @Get('search')
   @ApiOperation({ summary: '사용자 검색 / 추천 목록' })
   @ApiResponse({
