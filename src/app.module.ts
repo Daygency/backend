@@ -8,6 +8,7 @@ import { FileModule } from './apis/file/file.module';
 import { AnnouncementCategory } from './apis/announcement/entities/announcement-category.entity';
 import { Major } from './apis/major/entities/major.entity';
 import { DatabaseSeedService } from './common/database-seed.service';
+import { CommunityModule } from './apis/community/community.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DatabaseSeedService } from './common/database-seed.service';
     TypeOrmModule.forFeature([AnnouncementCategory, Major]),
     FileModule,
     AnnouncementModule,
+    CommunityModule,
   ],
   providers: [DatabaseSeedService],
 })
