@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { CommunityService } from './community.service';
 import { CreateCommunityDto } from './dto/create-community.dto';
 import { UpdateCommunityDto } from './dto/update-community.dto';
@@ -8,8 +19,12 @@ export class CommunityController {
   constructor(private readonly communityService: CommunityService) {}
 
   @Post()
-  create(@Body() createCommunityDto: CreateCommunityDto) {
-    return this.communityService.create(createCommunityDto);
+  @UseGuards(AuthGuard('access'))
+  create(
+    @Body() createCommunityDto: CreateCommunityDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.communityService.create(req.user.id, createCommunityDto);
   }
 
   @Get()
@@ -19,16 +34,22 @@ export class CommunityController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.communityService.findOne(+id);
+    return this.communityService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateCommunityDto: UpdateCommunityDto) {
-    return this.communityService.update(+id, updateCommunityDto);
+  @UseGuards(AuthGuard('access'))
+  update(
+    @Param('id') id: string,
+    @Body() updateCommunityDto: UpdateCommunityDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.communityService.update(req.user.id, id, updateCommunityDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.communityService.remove(+id);
+  @UseGuards(AuthGuard('access'))
+  remove(@Param('id') id: string, @Request() req: { user: { id: string } }) {
+    return this.communityService.remove(req.user.id, id);
   }
 }
