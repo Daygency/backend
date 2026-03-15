@@ -7,7 +7,10 @@ import {
   Param,
   Delete,
   Query,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AnnouncementService } from './announcement.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
@@ -20,8 +23,15 @@ export class AnnouncementController {
   constructor(private readonly announcementService: AnnouncementService) {}
 
   @Post()
-  create(@Body() createAnnouncementDto: CreateAnnouncementDto) {
-    return this.announcementService.create(createAnnouncementDto);
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '모집공고 작성' })
+  @ApiResponse({ status: 201, description: '공고 작성 완료' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  create(
+    @Body() createAnnouncementDto: CreateAnnouncementDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.announcementService.create(req.user.id, createAnnouncementDto);
   }
 
   @Get()

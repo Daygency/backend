@@ -3,10 +3,12 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { File } from '../../file/entities/file.entity';
+import { ApplicationConfig } from './application-config.entity';
 
 export enum AnnouncementStatus {
   OPEN = 'OPEN',
@@ -96,4 +98,8 @@ export class Announcement {
   @ManyToOne(() => File)
   @JoinColumn({ name: 'file_id' })
   file: File;
+
+  /** 지원서 양식 (1:1) - application_config.post_id → announcement.post_id */
+  @OneToOne(() => ApplicationConfig, (config) => config.announcement)
+  applicationConfig: ApplicationConfig;
 }
