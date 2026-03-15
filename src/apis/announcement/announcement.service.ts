@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
@@ -7,22 +7,11 @@ import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { ListAnnouncementQueryDto } from './dto/list-announcement-query.dto';
 import {
   Announcement,
-  AnnouncementType,
   AnnouncementStatus,
 } from './entities/announcement.entity';
+import { AnnouncementCategory } from './entities/announcement-category.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
-
-/** 공고유형 enum → 한글 라벨 */
-const TYPE_LABELS: Record<AnnouncementType, string> = {
-  [AnnouncementType.AUDITION]: '오디션(연주자모집)',
-  [AnnouncementType.COMPETITION]: '콩쿨(경연)',
-  [AnnouncementType.ADMISSION_EVAL]: '입시평가회',
-  [AnnouncementType.MASTERCLASS]: '마스터클래스',
-  [AnnouncementType.EVENT]: '행사',
-  [AnnouncementType.STAFF_RECRUIT]: '스탭구인',
-  [AnnouncementType.ETC]: '기타',
-};
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -53,7 +42,7 @@ function toListItem(a: Announcement) {
   return {
     postId: a.postId,
     title: a.title,
-    type: a.type ? TYPE_LABELS[a.type] : '기타',
+    type: a.category?.name ?? '기타',
     isRecruiting: a.status === AnnouncementStatus.OPEN,
     dDay: calcDDay(a.deadlineAt),
   };
@@ -68,6 +57,8 @@ export class AnnouncementService {
     private readonly applicationConfigRepository: Repository<ApplicationConfig>,
     @InjectRepository(Major)
     private readonly majorRepository: Repository<Major>,
+    @InjectRepository(AnnouncementCategory)
+    private readonly categoryRepository: Repository<AnnouncementCategory>,
   ) {}
 
   /**
@@ -86,6 +77,13 @@ export class AnnouncementService {
   }> {
     const ac: ApplicationConfigDto = dto.applicationConfig;
 
+    const category = await this.categoryRepository.findOne({
+      where: { categoryId: dto.categoryId },
+    });
+    if (!category) {
+      throw new NotFoundException('공고 유형을 찾을 수 없습니다.');
+    }
+
     let majors: Major[] = [];
     if (dto.majorIds?.length) {
       majors = await this.majorRepository.find({
@@ -102,7 +100,7 @@ export class AnnouncementService {
       status: dto.status ?? AnnouncementStatus.OPEN,
       address: dto.address,
       fileId: dto.fileId,
-      type: dto.type ?? null,
+      category,
       majors,
     });
     const saved = await this.announcementRepository.save(announcement);
@@ -115,22 +113,33 @@ export class AnnouncementService {
     });
     await this.applicationConfigRepository.save(applicationConfig);
 
-    return toListItem(saved);
+    const withCategory = await this.announcementRepository.findOne({
+      where: { postId: saved.postId },
+      relations: ['category'],
+    });
+    return toListItem(withCategory ?? saved);
   }
 
   /**
    * 공고 목록 조회 (무한스크롤 + 필터)
    * - cursor: 마지막 postId (없으면 첫 페이지)
    * - limit: 페이지 크기 (기본 20, 최대 50)
-   * - status, type, majorIds: 필터 파라미터
+   * - status, categoryId, majorIds: 필터 파라미터
    */
   async findList(
     query: ListAnnouncementQueryDto,
   ): Promise<AnnouncementListResponse> {
-    const { cursor, limit = 20, status, type, majorIds: majorIdsStr } = query;
+    const {
+      cursor,
+      limit = 20,
+      status,
+      categoryId,
+      majorIds: majorIdsStr,
+    } = query;
 
     const qb = this.announcementRepository
       .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category')
       .orderBy('announcement.postId', 'DESC')
       .take(limit + 1); // 다음 페이지 존재 여부 확인용 +1
 
@@ -140,8 +149,10 @@ export class AnnouncementService {
     if (status) {
       qb.andWhere('announcement.status = :status', { status });
     }
-    if (type) {
-      qb.andWhere('announcement.type = :type', { type });
+    if (categoryId) {
+      qb.andWhere('category.categoryId = :categoryId', {
+        categoryId: categoryId as string,
+      });
     }
     if (majorIdsStr) {
       const str = majorIdsStr as string;
@@ -162,7 +173,7 @@ export class AnnouncementService {
     const items = (hasMore ? rows.slice(0, limit) : rows).map((a) => ({
       postId: a.postId,
       title: a.title,
-      type: a.type ? TYPE_LABELS[a.type] : '기타',
+      type: a.category?.name ?? '기타',
       isRecruiting: a.status === AnnouncementStatus.OPEN,
       dDay: calcDDay(a.deadlineAt),
     }));

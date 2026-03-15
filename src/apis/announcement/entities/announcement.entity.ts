@@ -11,22 +11,12 @@ import {
 import { User } from '../../user/entities/user.entity';
 import { File } from '../../file/entities/file.entity';
 import { ApplicationConfig } from './application-config.entity';
+import { AnnouncementCategory } from './announcement-category.entity';
 import { Major } from '../../major/entities/major.entity';
 
 export enum AnnouncementStatus {
   OPEN = 'OPEN',
   CLOSED = 'CLOSED',
-}
-
-/** 공고 유형 - 선택 태그 기준 */
-export enum AnnouncementType {
-  AUDITION = 'AUDITION', // 오디션(연주자모집)
-  COMPETITION = 'COMPETITION', // 콩쿨(경연)
-  ADMISSION_EVAL = 'ADMISSION_EVAL', // 입시평가회
-  MASTERCLASS = 'MASTERCLASS', // 마스터클래스
-  EVENT = 'EVENT', // 행사
-  STAFF_RECRUIT = 'STAFF_RECRUIT', // 스탭구인
-  ETC = 'ETC', // 기타
 }
 
 @Entity('announcement')
@@ -62,14 +52,10 @@ export class Announcement {
   @Column({ name: 'file_id', type: 'char', length: 36 })
   fileId: string;
 
-  /** 공고 유형 (필터용) - DB에 컬럼 추가 필요 */
-  @Column({
-    name: 'type',
-    type: 'enum',
-    enum: AnnouncementType,
-    nullable: true,
-  })
-  type: AnnouncementType | null;
+  /** 공고 유형 (announcement_category 1대다) */
+  @ManyToOne(() => AnnouncementCategory, (cat) => cat.announcements)
+  @JoinColumn({ name: 'category_id', referencedColumnName: 'categoryId' })
+  category: AnnouncementCategory;
 
   @ManyToMany(() => Major)
   @JoinTable({

@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/unbound-method -- Jest matchers */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment -- test mocks */
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -5,7 +8,8 @@ import { AnnouncementService } from './announcement.service';
 import { Announcement } from './entities/announcement.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
-import { AnnouncementStatus, AnnouncementType } from './entities/announcement.entity';
+import { AnnouncementStatus } from './entities/announcement.entity';
+import { AnnouncementCategory } from './entities/announcement-category.entity';
 
 describe('AnnouncementService', () => {
   let service: AnnouncementService;
@@ -16,6 +20,12 @@ describe('AnnouncementService', () => {
   const mockFileId = 'file-uuid-5678';
 
   const mockMajorId = '550e8400-e29b-41d4-a716-446655440000';
+  const mockCategoryId = '550e8400-e29b-41d4-a716-446655440002';
+  const mockCategory = {
+    categoryId: mockCategoryId,
+    name: '행사',
+    announcements: [],
+  } as AnnouncementCategory;
   const validCreateDto = {
     title: '2025 봄 정기연주회',
     content: '모집 내용입니다.',
@@ -23,7 +33,7 @@ describe('AnnouncementService', () => {
     scheduledAt: '2025-04-20T14:00:00.000Z',
     address: '서울시 강남구',
     fileId: mockFileId,
-    type: AnnouncementType.EVENT,
+    categoryId: mockCategoryId,
     majorIds: [mockMajorId],
     applicationConfig: {
       includeName: true,
@@ -41,7 +51,7 @@ describe('AnnouncementService', () => {
     status: AnnouncementStatus.OPEN,
     address: validCreateDto.address,
     fileId: mockFileId,
-    type: AnnouncementType.EVENT,
+    category: mockCategory,
     majors: [],
   };
 
@@ -50,10 +60,19 @@ describe('AnnouncementService', () => {
       find: jest.fn().mockResolvedValue([{ majorId: mockMajorId }]),
     };
 
+    const mockCategoryRepo = {
+      findOne: jest.fn().mockResolvedValue(mockCategory),
+    };
+
     const mockAnnouncementRepo = {
       create: jest.fn().mockReturnValue({ ...mockSavedAnnouncement }),
       save: jest.fn().mockResolvedValue({ ...mockSavedAnnouncement }),
+      findOne: jest.fn().mockResolvedValue({
+        ...mockSavedAnnouncement,
+        category: mockCategory,
+      }),
       createQueryBuilder: jest.fn().mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         distinct: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
@@ -64,8 +83,10 @@ describe('AnnouncementService', () => {
     };
 
     const mockApplicationConfigRepo = {
-      create: jest.fn().mockImplementation((obj) => obj),
-      save: jest.fn().mockResolvedValue({ postId: mockSavedAnnouncement.postId }),
+      create: jest.fn().mockImplementation((obj: object) => obj),
+      save: jest.fn().mockResolvedValue({
+        postId: mockSavedAnnouncement.postId ?? 'post-uuid-9999',
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -83,12 +104,18 @@ describe('AnnouncementService', () => {
           provide: getRepositoryToken(Major),
           useValue: mockMajorRepo,
         },
+        {
+          provide: getRepositoryToken(AnnouncementCategory),
+          useValue: mockCategoryRepo,
+        },
       ],
     }).compile();
 
     service = module.get<AnnouncementService>(AnnouncementService);
     announcementRepository = module.get(getRepositoryToken(Announcement));
-    applicationConfigRepository = module.get(getRepositoryToken(ApplicationConfig));
+    applicationConfigRepository = module.get(
+      getRepositoryToken(ApplicationConfig),
+    );
   });
 
   it('should be defined', () => {
@@ -97,7 +124,10 @@ describe('AnnouncementService', () => {
 
   describe('create', () => {
     it('announcement와 application_config가 함께 저장되어야 한다', async () => {
-      await service.create(mockUserId, validCreateDto as Parameters<AnnouncementService['create']>[1]);
+      await service.create(
+        mockUserId,
+        validCreateDto as Parameters<AnnouncementService['create']>[1],
+      );
 
       expect(announcementRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -106,9 +136,11 @@ describe('AnnouncementService', () => {
           content: validCreateDto.content,
           address: validCreateDto.address,
           fileId: mockFileId,
-          type: AnnouncementType.EVENT,
-          majors: expect.arrayContaining([expect.objectContaining({ majorId: mockMajorId })]),
-        }),
+          category: mockCategory,
+          majors: expect.arrayContaining([
+            expect.objectContaining({ majorId: mockMajorId } as object),
+          ] as unknown[]),
+        } as object),
       );
       expect(announcementRepository.save).toHaveBeenCalled();
       expect(applicationConfigRepository.create).toHaveBeenCalledWith(
@@ -117,7 +149,7 @@ describe('AnnouncementService', () => {
           includeName: true,
           includeBirth: false,
           includeMajor: true,
-        }),
+        } as object),
       );
       expect(applicationConfigRepository.save).toHaveBeenCalled();
     });
@@ -136,16 +168,25 @@ describe('AnnouncementService', () => {
       });
       expect(result).toHaveProperty('dDay');
       expect(typeof result.dDay).toBe('string');
-      expect(['D-', 'D-Day', '마감'].some((x) => result.dDay.startsWith(x) || result.dDay === x)).toBe(
-        true,
-      );
+      expect(
+        ['D-', 'D-Day', '마감'].some(
+          (x) => result.dDay.startsWith(x) || result.dDay === x,
+        ),
+      ).toBe(true);
     });
 
     it('status가 CLOSED면 isRecruiting이 false여야 한다', async () => {
-      (announcementRepository.save as jest.Mock).mockResolvedValue({
+      const closedAnnouncement = {
         ...mockSavedAnnouncement,
+        category: mockCategory,
         status: AnnouncementStatus.CLOSED,
-      });
+      };
+      (announcementRepository.save as jest.Mock).mockResolvedValue(
+        closedAnnouncement,
+      );
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue(
+        closedAnnouncement,
+      );
 
       const result = await service.create(mockUserId, {
         ...validCreateDto,
@@ -164,7 +205,9 @@ describe('AnnouncementService', () => {
       expect(result).toHaveProperty('nextCursor');
       expect(result).toHaveProperty('hasMore');
       expect(Array.isArray(result.items)).toBe(true);
-      expect(result.nextCursor === null || typeof result.nextCursor === 'string').toBe(true);
+      expect(
+        result.nextCursor === null || typeof result.nextCursor === 'string',
+      ).toBe(true);
       expect(typeof result.hasMore).toBe('boolean');
     });
 
@@ -176,17 +219,18 @@ describe('AnnouncementService', () => {
           deadlineAt: new Date('2025-04-20'),
           scheduledAt: new Date('2025-04-25'),
           status: AnnouncementStatus.OPEN,
-          type: AnnouncementType.MASTERCLASS,
+          category: { categoryId: 'cat-1', name: '마스터클래스' },
           address: 'addr1',
           content: 'c',
           userId: 'u',
           fileId: 'f',
           majors: [],
         },
-      ] as Announcement[];
+      ] as unknown as Announcement[];
 
       const getManyMock = jest.fn().mockResolvedValue(mockAnnouncements);
       (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -214,15 +258,16 @@ describe('AnnouncementService', () => {
           deadlineAt: new Date('2025-04-20'),
           scheduledAt: new Date('2025-04-25'),
           status: AnnouncementStatus.OPEN,
-          type: AnnouncementType.EVENT,
+          category: { categoryId: 'cat-1', name: '행사' },
           address: 'addr',
           content: 'c',
           userId: 'u',
           fileId: 'f',
           majors: [],
-        })) as Announcement[];
+        })) as unknown as Announcement[];
 
       (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -239,6 +284,7 @@ describe('AnnouncementService', () => {
     it('status 필터가 전달되면 andWhere가 호출되어야 한다', async () => {
       const andWhereMock = jest.fn().mockReturnThis();
       (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         andWhere: andWhereMock,
@@ -247,14 +293,18 @@ describe('AnnouncementService', () => {
 
       await service.findList({ status: AnnouncementStatus.OPEN });
 
-      expect(andWhereMock).toHaveBeenCalledWith('announcement.status = :status', {
-        status: AnnouncementStatus.OPEN,
-      });
+      expect(andWhereMock).toHaveBeenCalledWith(
+        'announcement.status = :status',
+        {
+          status: AnnouncementStatus.OPEN,
+        },
+      );
     });
 
     it('cursor가 전달되면 andWhere에 cursor 조건이 포함되어야 한다', async () => {
       const andWhereMock = jest.fn().mockReturnThis();
       (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         andWhere: andWhereMock,
@@ -263,9 +313,12 @@ describe('AnnouncementService', () => {
 
       await service.findList({ cursor: 'some-post-id' });
 
-      expect(andWhereMock).toHaveBeenCalledWith('announcement.postId < :cursor', {
-        cursor: 'some-post-id',
-      });
+      expect(andWhereMock).toHaveBeenCalledWith(
+        'announcement.postId < :cursor',
+        {
+          cursor: 'some-post-id',
+        },
+      );
     });
   });
 });

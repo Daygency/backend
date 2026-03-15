@@ -43,6 +43,7 @@ describe('AnnouncementController', () => {
         scheduledAt: '2025-04-15T14:00:00.000Z',
         address: '서울',
         fileId: '550e8400-e29b-41d4-a716-446655440000',
+        categoryId: '550e8400-e29b-41d4-a716-446655440000',
         applicationConfig: { includeName: true },
       };
       const mockResult = {

@@ -1,7 +1,7 @@
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateAnnouncementDto } from './create-announcement.dto';
-import { AnnouncementStatus, AnnouncementType } from '../entities/announcement.entity';
+import { AnnouncementStatus } from '../entities/announcement.entity';
 
 describe('CreateAnnouncementDto', () => {
   const validDto = {
@@ -12,7 +12,7 @@ describe('CreateAnnouncementDto', () => {
     status: AnnouncementStatus.OPEN,
     address: '서울시 강남구',
     fileId: '550e8400-e29b-41d4-a716-446655440000',
-    type: AnnouncementType.EVENT,
+    categoryId: '550e8400-e29b-41d4-a716-446655440000',
     majorIds: ['550e8400-e29b-41d4-a716-446655440000'],
     applicationConfig: {
       includeName: true,
@@ -69,10 +69,10 @@ describe('CreateAnnouncementDto', () => {
     expect(errors.find((e) => e.property === 'applicationConfig')).toBeDefined();
   });
 
-  it('type이 enum에 없으면 실패한다', async () => {
-    const invalid = { ...validDto, type: 'INVALID_TYPE' };
+  it('categoryId가 UUID 형식이 아니면 실패한다', async () => {
+    const invalid = { ...validDto, categoryId: 'not-uuid' };
     const dto = plainToInstance(CreateAnnouncementDto, invalid);
     const errors = await validate(dto);
-    expect(errors.find((e) => e.property === 'type')).toBeDefined();
+    expect(errors.find((e) => e.property === 'categoryId')).toBeDefined();
   });
 });

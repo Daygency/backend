@@ -10,10 +10,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import {
-  AnnouncementStatus,
-  AnnouncementType,
-} from '../entities/announcement.entity';
+import { AnnouncementStatus } from '../entities/announcement.entity';
 import { ApplicationConfigDto } from './application-config.dto';
 
 export class CreateAnnouncementDto {
@@ -56,11 +53,11 @@ export class CreateAnnouncementDto {
   @IsUUID()
   fileId: string;
 
-  @ApiPropertyOptional({ description: '공고 유형', enum: AnnouncementType })
-  @IsOptional()
-  @IsEnum(AnnouncementType)
-  type?: AnnouncementType;
-
+  @ApiProperty({
+    description: '공고 유형 ID (announcement_category.category_id)',
+  })
+  @IsUUID()
+  categoryId: string;
   @ApiPropertyOptional({
     description: '모집 전공 ID 배열',
     example: [

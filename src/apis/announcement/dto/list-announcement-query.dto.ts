@@ -1,10 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
-import {
-  AnnouncementStatus,
-  AnnouncementType,
-} from '../entities/announcement.entity';
+import { AnnouncementStatus } from '../entities/announcement.entity';
 
 /**
  * 공고 목록 조회 Query DTO (무한스크롤 + 필터)
@@ -43,15 +40,14 @@ export class ListAnnouncementQueryDto {
   @IsEnum(AnnouncementStatus)
   status?: AnnouncementStatus;
 
-  /** 공고 유형 */
+  /** 공고 유형 ID (announcement_category.category_id) */
   @ApiPropertyOptional({
-    enum: AnnouncementType,
-    description:
-      '공고 유형: 오디션, 콩쿨, 입시평가회, 마스터클래스, 행사, 스탭구인, 기타',
+    description: '공고 유형 ID로 필터',
+    example: '550e8400-e29b-41d4-a716-446655440000',
   })
   @IsOptional()
-  @IsEnum(AnnouncementType)
-  type?: AnnouncementType;
+  @IsString()
+  categoryId?: string;
 
   /** 모집 전공 ID (여러 개 선택 시 콤마 구분) */
   @ApiPropertyOptional({
