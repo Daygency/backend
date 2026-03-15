@@ -121,6 +121,22 @@ export class AnnouncementService {
   }
 
   /**
+   * 공고 유형(announcement_category) 목록 조회
+   * 공고 작성/필터 시 사용하는 카테고리 목록 반환
+   */
+  async findAllCategories(): Promise<
+    Array<{ categoryId: string; name: string }>
+  > {
+    const categories = await this.categoryRepository.find({
+      order: { name: 'ASC' },
+    });
+    return categories.map((c) => ({
+      categoryId: c.categoryId,
+      name: c.name,
+    }));
+  }
+
+  /**
    * 공고 목록 조회 (무한스크롤 + 필터)
    * - cursor: 마지막 postId (없으면 첫 페이지)
    * - limit: 페이지 크기 (기본 20, 최대 50)

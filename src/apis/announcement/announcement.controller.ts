@@ -41,6 +41,13 @@ export class AnnouncementController {
     return this.announcementService.findList(query);
   }
 
+  @Get('categories')
+  @ApiOperation({ summary: '공고 유형(announcement_category) 목록 조회' })
+  @ApiResponse({ status: 200, description: '공고 유형 목록 반환' })
+  findCategories() {
+    return this.announcementService.findAllCategories();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.announcementService.findOne(id);
