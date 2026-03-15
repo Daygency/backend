@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -28,8 +29,8 @@ export class CommunityController {
   }
 
   @Get()
-  findAll() {
-    return this.communityService.findAll();
+  findAll(@Query('categoryId') categoryId?: string) {
+    return this.communityService.findAll(categoryId);
   }
 
   @Get('categories')

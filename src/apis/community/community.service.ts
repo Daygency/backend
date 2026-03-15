@@ -38,8 +38,11 @@ export class CommunityService {
     return this.communityRepository.save(community);
   }
 
-  findAll() {
+  findAll(categoryId?: string) {
+    const where = categoryId ? { category: { categoryId } } : {};
+
     return this.communityRepository.find({
+      where,
       relations: ['category', 'user', 'file'],
       order: { createdAt: 'DESC' },
     });
