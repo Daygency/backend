@@ -11,6 +11,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AnnouncementService } from './announcement.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
@@ -49,8 +50,11 @@ export class AnnouncementController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.announcementService.findOne(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiOperation({ summary: '공고 상세 조회' })
+  @ApiResponse({ status: 200, description: '공고 상세 반환 (로그인 시 isMine 포함)' })
+  findOne(@Param('id') id: string, @Request() req: { user?: { id: string } }) {
+    return this.announcementService.findOne(id, req.user?.id);
   }
 
   @Patch(':id')
