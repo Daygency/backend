@@ -3,6 +3,7 @@ import { UserModule } from './apis/user/user.module';
 import { AuthModule } from './apis/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AnnouncementModule } from './apis/announcement/announcement.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
       logging: true,
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
     }),
+    AnnouncementModule,
   ],
 })
 export class AppModule {}
