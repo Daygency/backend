@@ -6,6 +6,12 @@ import { Award } from '../entities/award.entity';
 import { Major } from '../../major/entities/major.entity';
 
 export class ProfileResponseDto {
+  @ApiProperty({
+    description: '유저 ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  userId: string;
+
   @ApiProperty({ description: '프로필 이미지 URL' })
   profileImgUrl: string;
 

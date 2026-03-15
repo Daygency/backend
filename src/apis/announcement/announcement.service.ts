@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -54,6 +55,8 @@ function toListItem(a: Announcement) {
 
 @Injectable()
 export class AnnouncementService {
+  private readonly logger = new Logger(AnnouncementService.name);
+
   constructor(
     @InjectRepository(Announcement)
     private readonly announcementRepository: Repository<Announcement>,
@@ -219,9 +222,16 @@ export class AnnouncementService {
     if (!announcement) {
       throw new NotFoundException('공고를 찾을 수 없습니다.');
     }
+    const authorId = (announcement.userId ?? '').trim().toLowerCase();
+    const requestUserId = (currentUserId ?? '').trim().toLowerCase();
+    const isMine = requestUserId.length > 0 && authorId === requestUserId;
+    // currentUserId가 undefined이면 Authorization 미전송 → isMine 항상 false
+    this.logger.log(
+      `[공고 상세] postId=${id}, currentUserId=${currentUserId ?? 'undefined'}, authorId=${authorId}, isMine=${isMine}`,
+    );
     return {
       ...announcement,
-      isMine: !!currentUserId && announcement.userId === currentUserId,
+      isMine,
     };
   }
 
@@ -309,7 +319,26 @@ export class AnnouncementService {
     return toListItem(updated!);
   }
 
-  remove(id: string) {
-    return `This action removes a #${id} announcement`;
+  /**
+   * 모집공고 삭제. 작성자만 삭제 가능.
+   * application_config, announcement_major(조인테이블) 함께 삭제.
+   */
+  async remove(userId: string, id: string): Promise<void> {
+    const announcement = await this.announcementRepository.findOne({
+      where: { postId: id },
+    });
+    if (!announcement) {
+      throw new NotFoundException('공고를 찾을 수 없습니다.');
+    }
+    if (announcement.userId !== userId) {
+      throw new ForbiddenException('삭제 권한이 없습니다.');
+    }
+
+    await this.applicationConfigRepository.delete({ postId: id });
+    await this.announcementRepository.manager.query(
+      'DELETE FROM announcement_major WHERE post_id = ?',
+      [id],
+    );
+    await this.announcementRepository.delete({ postId: id });
   }
 }

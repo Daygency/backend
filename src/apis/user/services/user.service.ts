@@ -133,6 +133,7 @@ export class UserService {
     }
 
     return {
+      userId: user.userId,
       profileImgUrl: user.profileImgUrl,
       nickname: user.nickname,
       activityName: user.activityName,
@@ -327,7 +328,9 @@ export class UserService {
     }
   }
 
-  async checkActivityNameAvailable(activityName: string): Promise<{ available: boolean }> {
+  async checkActivityNameAvailable(
+    activityName: string,
+  ): Promise<{ available: boolean }> {
     if (!activityName?.trim()) {
       return { available: false };
     }

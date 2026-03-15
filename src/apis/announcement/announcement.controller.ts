@@ -80,7 +80,13 @@ export class AnnouncementController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.announcementService.remove(id);
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '모집공고 삭제' })
+  @ApiResponse({ status: 200, description: '공고 삭제 완료' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  @ApiResponse({ status: 403, description: '삭제 권한 없음' })
+  @ApiResponse({ status: 404, description: '공고를 찾을 수 없음' })
+  remove(@Param('id') id: string, @Request() req: { user: { id: string } }) {
+    return this.announcementService.remove(req.user.id, id);
   }
 }

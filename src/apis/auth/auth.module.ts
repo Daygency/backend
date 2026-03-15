@@ -17,12 +17,12 @@ import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_ACCESS_SECRET'),
-        signOptions: { expiresIn: '1h' },
+        signOptions: { expiresIn: '30d' },
       }),
     }),
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtAccessStrategy, OptionalJwtAuthGuard],
-  exports: [OptionalJwtAuthGuard],
+  exports: [OptionalJwtAuthGuard, JwtModule],
 })
 export class AuthModule {}

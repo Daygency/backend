@@ -333,7 +333,7 @@ CreateAnnouncementDto의 모든 필드 **선택(partial)**. 수정할 필드만 
 
 ## 6. 공고 삭제
 
-공고를 삭제합니다.
+공고를 삭제합니다. 작성자 본인만 삭제 가능합니다.
 
 ### Endpoint
 
@@ -341,12 +341,29 @@ CreateAnnouncementDto의 모든 필드 **선택(partial)**. 수정할 필드만 
 DELETE /announcement/:id
 ```
 
+### Headers
+
+| 헤더          | 설명           |
+|--------------|----------------|
+| Authorization| Bearer {accessToken} |
+
 ### Path Parameters
 
 | 파라미터 | 타입   | 필수 | 설명    |
 |---------|--------|------|---------|
 | id      | string | O    | 공고 ID |
 
+### Response
+
+| 상태 | 설명                |
+|-----|---------------------|
+| 200 | 삭제 완료 (body 없음) |
+| 401 | 인증 필요           |
+| 403 | 삭제 권한 없음 (작성자 아님) |
+| 404 | 공고를 찾을 수 없음  |
+
 ### 참고
 
-- 구현 상태 확인 필요
+- 인증 필요 (access token)
+- 작성자 본인만 삭제 가능
+- application_config, announcement_major(조인테이블) 함께 삭제됨
