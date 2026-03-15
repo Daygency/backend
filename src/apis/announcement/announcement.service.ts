@@ -39,7 +39,9 @@ export class AnnouncementService {
    * - limit: 페이지 크기 (기본 20, 최대 50)
    * - status, type, major: 필터 파라미터
    */
-  async findList(query: ListAnnouncementQueryDto): Promise<AnnouncementListResponse> {
+  async findList(
+    query: ListAnnouncementQueryDto,
+  ): Promise<AnnouncementListResponse> {
     const { cursor, limit = 20, status, type, major } = query;
 
     const qb = this.announcementRepository
@@ -59,7 +61,10 @@ export class AnnouncementService {
       qb.andWhere('announcement.type = :type', { type });
     }
     if (major) {
-      const majors = major.split(',').map((m) => m.trim()).filter(Boolean);
+      const majors = major
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean);
       if (majors.length > 0) {
         qb.andWhere('announcement.major IN (:...majors)', { majors });
       }
