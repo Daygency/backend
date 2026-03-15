@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsOptional,
   IsUUID,
+  IsDefined,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -68,6 +69,7 @@ export class CreateAnnouncementDto {
   major?: string;
 
   @ApiProperty({ description: '지원서 양식 설정' })
+  @IsDefined()
   @ValidateNested()
   @Type(() => ApplicationConfigDto)
   applicationConfig: ApplicationConfigDto;
