@@ -51,7 +51,11 @@ export class CreateNewsDto {
   @MaxLength(30)
   contact: string;
 
-  @ApiProperty({ description: '대표 파일 ID (썸네일)' })
+  @ApiPropertyOptional({
+    description: '대표 파일 ID (썸네일). 없으면 프론트에서 default 이미지 사용',
+    nullable: true,
+  })
+  @IsOptional()
   @IsUUID()
-  fileId: string;
+  fileId?: string | null;
 }

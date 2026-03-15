@@ -42,7 +42,7 @@ export class News {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @ManyToOne(() => File)
+  @ManyToOne(() => File, { nullable: true })
   @JoinColumn({ name: 'file_id' })
-  file: File;
+  file: File | null;
 }

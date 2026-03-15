@@ -10,6 +10,8 @@
 |------|------|
 | [auth-api.md](./auth-api.md) | **인증 API** – 소셜 로그인/회원가입, 토큰 사용법 |
 | [announcement-api.md](./announcement-api.md) | **공고 API** – 공고 CRUD, 목록/상세/필터 |
+| [community-api.md](./community-api.md) | **커뮤니티 API** – 커뮤니티 게시판 CRUD, 카테고리 |
+| [news-api.md](./news-api.md) | **공연소식 API** – 공연소식 CRUD, 목록/상세 |
 | [api-readme.md](./api-readme.md) | **공통 API** – 활동아이디 중복확인, 공고 유형 목록 등 |
 
 ---

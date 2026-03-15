@@ -49,7 +49,7 @@ export class NewsService {
       endedAt: dto.endedAt ? new Date(dto.endedAt) : null,
       contact: dto.contact,
       user: { userId },
-      file: { fileId: dto.fileId },
+      file: dto.fileId ? { fileId: dto.fileId } : null,
     });
     const saved = await this.newsRepository.save(news);
     return {
