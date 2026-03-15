@@ -110,4 +110,10 @@ export class CommunityService {
 
     return { success: true };
   }
+
+  findAllCategories() {
+    return this.categoryRepository.find({
+      order: { name: 'ASC' },
+    });
+  }
 }

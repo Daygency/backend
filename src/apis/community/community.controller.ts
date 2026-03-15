@@ -32,6 +32,11 @@ export class CommunityController {
     return this.communityService.findAll();
   }
 
+  @Get('categories')
+  findCategories() {
+    return this.communityService.findAllCategories();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.communityService.findOne(id);
