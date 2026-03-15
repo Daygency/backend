@@ -327,6 +327,16 @@ export class UserService {
     }
   }
 
+  async checkActivityNameAvailable(activityName: string): Promise<{ available: boolean }> {
+    if (!activityName?.trim()) {
+      return { available: false };
+    }
+    const existing = await this.userRepository.findOne({
+      where: { activityName: activityName.trim() },
+    });
+    return { available: !existing };
+  }
+
   async findUsersByActivityName(activityName: string) {
     if (!activityName) {
       throw new NotFoundException('활동명을 입력해주세요.');

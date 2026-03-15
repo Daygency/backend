@@ -5,6 +5,9 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AnnouncementModule } from './apis/announcement/announcement.module';
 import { FileModule } from './apis/file/file.module';
+import { AnnouncementCategory } from './apis/announcement/entities/announcement-category.entity';
+import { Major } from './apis/major/entities/major.entity';
+import { DatabaseSeedService } from './common/database-seed.service';
 
 @Module({
   imports: [
@@ -18,12 +21,14 @@ import { FileModule } from './apis/file/file.module';
       username: process.env.DATABASE_USERNAME,
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME,
-      synchronize: false,
+      synchronize: true,
       logging: true,
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
     }),
+    TypeOrmModule.forFeature([AnnouncementCategory, Major]),
     FileModule,
     AnnouncementModule,
   ],
+  providers: [DatabaseSeedService],
 })
 export class AppModule {}

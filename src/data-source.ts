@@ -10,7 +10,7 @@ const options: DataSourceOptions & SeederOptions = {
   username: process.env.DATABASE_USERNAME,
   password: process.env.DATABASE_PASSWORD,
   database: process.env.DATABASE_NAME,
-  synchronize: false,
+  synchronize: true,
   logging: true,
   entities: ['src/**/*.entity{.ts,.js}'],
   seeds: ['database/seeds/**/*{.ts,.js}'],
