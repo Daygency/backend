@@ -50,6 +50,48 @@ export class UserController {
     return this.userService.checkActivityNameAvailable(activityName);
   }
 
+  @Get('posts/my')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '내가 쓴 작성글 목록 조회' })
+  @ApiResponse({
+    status: 200,
+    description: '내가 쓴 글(커뮤니티/공연소식/모집공고) 반환',
+  })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyWrittenPosts(@Request() req: { user: { id: string } }) {
+    return this.userService.getMyWrittenPosts(req.user.id);
+  }
+
+  @Get('posts/my/news')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '내가 쓴 공연소식 목록 조회' })
+  @ApiResponse({ status: 200, description: '내 공연소식 목록 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyNewsPosts(@Request() req: { user: { id: string } }) {
+    return this.userService.getMyNewsPosts(req.user.id);
+  }
+
+  @Get('posts/my/announcements')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '내가 쓴 모집공고 목록 조회' })
+  @ApiResponse({ status: 200, description: '내 모집공고 목록 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyAnnouncementPosts(@Request() req: { user: { id: string } }) {
+    return this.userService.getMyAnnouncementPosts(req.user.id);
+  }
+
+  @Get('posts/my/highlights')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({
+    summary:
+      '내 최신 글 묶음 조회 (커뮤니티 1개 + 공연소식 5개 + 모집공고 1개)',
+  })
+  @ApiResponse({ status: 200, description: '최신 글 묶음 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyPostHighlights(@Request() req: { user: { id: string } }) {
+    return this.userService.getMyPostHighlights(req.user.id);
+  }
+
   @Get('search')
   @ApiOperation({ summary: '사용자 검색 / 추천 목록' })
   @ApiResponse({

@@ -10,6 +10,9 @@ import { Award } from './entities/award.entity';
 import { Career } from './entities/career.entity';
 import { Education } from './entities/education.entity';
 import { Certificate } from './entities/certificate.entity';
+import { News } from '../news/entities/news.entity';
+import { Community } from '../community/entities/community.entity';
+import { Announcement } from '../announcement/entities/announcement.entity';
 
 @Module({
   imports: [
@@ -19,6 +22,9 @@ import { Certificate } from './entities/certificate.entity';
       Career,
       Education,
       Certificate,
+      News,
+      Community,
+      Announcement,
     ]),
     MajorModule,
     forwardRef(() => AuthModule),

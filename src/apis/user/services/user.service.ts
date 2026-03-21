@@ -19,6 +19,9 @@ import { Education } from '../entities/education.entity';
 import { Career } from '../entities/career.entity';
 import { Major } from '../../major/entities/major.entity';
 import { Award } from '../entities/award.entity';
+import { News } from '../../news/entities/news.entity';
+import { Community } from '../../community/entities/community.entity';
+import { Announcement } from '../../announcement/entities/announcement.entity';
 
 @Injectable()
 export class UserService {
@@ -33,6 +36,12 @@ export class UserService {
     private readonly majorRepository: Repository<Major>,
     @InjectRepository(Award)
     private readonly awardRepository: Repository<Award>,
+    @InjectRepository(News)
+    private readonly newsRepository: Repository<News>,
+    @InjectRepository(Community)
+    private readonly communityRepository: Repository<Community>,
+    @InjectRepository(Announcement)
+    private readonly announcementRepository: Repository<Announcement>,
   ) {}
 
   async findBySocial(
@@ -379,5 +388,125 @@ export class UserService {
       nickname: user.nickname,
       activityName: user.activityName,
     }));
+  }
+
+  async getMyWrittenPosts(userId: string) {
+    const [communities, news, announcements] = await Promise.all([
+      this.communityRepository.find({
+        where: { user: { userId } },
+        order: { createdAt: 'DESC' },
+        relations: ['category'],
+      }),
+      this.newsRepository.find({
+        where: { user: { userId } },
+        order: { createdAt: 'DESC' },
+      }),
+      this.announcementRepository.find({
+        where: { userId },
+        order: { postId: 'DESC' },
+        relations: ['category'],
+      }),
+    ]);
+
+    return {
+      community: communities.map((item) => ({
+        communityId: item.communityId,
+        title: item.title,
+        category: item.category?.name ?? null,
+        createdAt: item.createdAt,
+      })),
+      news: news.map((item) => ({
+        newsId: item.newsId,
+        title: item.title,
+        place: item.place,
+        createdAt: item.createdAt,
+      })),
+      announcements: announcements.map((item) => ({
+        postId: item.postId,
+        title: item.title,
+        category: item.category?.name ?? null,
+        scheduledAt: item.scheduledAt,
+        deadlineAt: item.deadlineAt,
+      })),
+    };
+  }
+
+  async getMyNewsPosts(userId: string) {
+    const news = await this.newsRepository.find({
+      where: { user: { userId } },
+      order: { createdAt: 'DESC' },
+    });
+
+    return news.map((item) => ({
+      newsId: item.newsId,
+      title: item.title,
+      place: item.place,
+      createdAt: item.createdAt,
+    }));
+  }
+
+  async getMyAnnouncementPosts(userId: string) {
+    const announcements = await this.announcementRepository.find({
+      where: { userId },
+      order: { postId: 'DESC' },
+      relations: ['category'],
+    });
+
+    return announcements.map((item) => ({
+      postId: item.postId,
+      title: item.title,
+      category: item.category?.name ?? null,
+      scheduledAt: item.scheduledAt,
+      deadlineAt: item.deadlineAt,
+      status: item.status,
+    }));
+  }
+
+  async getMyPostHighlights(userId: string) {
+    const [latestCommunity, recentNews, latestAnnouncement] = await Promise.all(
+      [
+        this.communityRepository.findOne({
+          where: { user: { userId } },
+          order: { createdAt: 'DESC' },
+          relations: ['category'],
+        }),
+        this.newsRepository.find({
+          where: { user: { userId } },
+          order: { createdAt: 'DESC' },
+          take: 5,
+        }),
+        this.announcementRepository.findOne({
+          where: { userId },
+          order: { postId: 'DESC' },
+          relations: ['category'],
+        }),
+      ],
+    );
+
+    return {
+      latestCommunity: latestCommunity
+        ? {
+            communityId: latestCommunity.communityId,
+            title: latestCommunity.title,
+            category: latestCommunity.category?.name ?? null,
+            createdAt: latestCommunity.createdAt,
+          }
+        : null,
+      recentNews: recentNews.map((item) => ({
+        newsId: item.newsId,
+        title: item.title,
+        place: item.place,
+        createdAt: item.createdAt,
+      })),
+      latestAnnouncement: latestAnnouncement
+        ? {
+            postId: latestAnnouncement.postId,
+            title: latestAnnouncement.title,
+            category: latestAnnouncement.category?.name ?? null,
+            scheduledAt: latestAnnouncement.scheduledAt,
+            deadlineAt: latestAnnouncement.deadlineAt,
+          }
+        : null,
+    };
   }
 }
