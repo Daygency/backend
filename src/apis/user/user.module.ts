@@ -13,6 +13,9 @@ import { Certificate } from './entities/certificate.entity';
 import { News } from '../news/entities/news.entity';
 import { Community } from '../community/entities/community.entity';
 import { Announcement } from '../announcement/entities/announcement.entity';
+import { Like } from '../like/entities/like.entity';
+import { Comment } from '../comment/entities/comment.entity';
+import { Scrap } from '../scrap/entities/scrap.entity';
 
 @Module({
   imports: [
@@ -25,6 +28,9 @@ import { Announcement } from '../announcement/entities/announcement.entity';
       News,
       Community,
       Announcement,
+      Like,
+      Comment,
+      Scrap,
     ]),
     MajorModule,
     forwardRef(() => AuthModule),

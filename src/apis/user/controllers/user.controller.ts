@@ -15,6 +15,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ProfileResponseDto } from '../dto/profile-response.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
+import { ListMyScrapAnnouncementQueryDto } from '../dto/list-my-scrap-announcement-query.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -78,6 +79,18 @@ export class UserController {
   @ApiResponse({ status: 401, description: '인증 필요' })
   getMyAnnouncementPosts(@Request() req: { user: { id: string } }) {
     return this.userService.getMyAnnouncementPosts(req.user.id);
+  }
+
+  @Get('posts/my/scraps/announcements')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '내가 스크랩한 모집공고 목록 조회 (무한스크롤)' })
+  @ApiResponse({ status: 200, description: '내 스크랩 모집공고 목록 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyScrappedAnnouncementPosts(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListMyScrapAnnouncementQueryDto,
+  ) {
+    return this.userService.getMyScrappedAnnouncementPosts(req.user.id, query);
   }
 
   @Get('posts/my/highlights')

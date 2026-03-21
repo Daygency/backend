@@ -22,6 +22,25 @@ import { Award } from '../entities/award.entity';
 import { News } from '../../news/entities/news.entity';
 import { Community } from '../../community/entities/community.entity';
 import { Announcement } from '../../announcement/entities/announcement.entity';
+import { Like, LikeType } from '../../like/entities/like.entity';
+import {
+  Comment,
+  CommentTargetType,
+} from '../../comment/entities/comment.entity';
+import { Scrap, ScrapTargetType } from '../../scrap/entities/scrap.entity';
+import { ListMyScrapAnnouncementQueryDto } from '../dto/list-my-scrap-announcement-query.dto';
+
+function calcDDay(deadlineAt: Date): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const deadline = new Date(deadlineAt);
+  deadline.setHours(0, 0, 0, 0);
+  const diffMs = deadline.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays > 0) return `D-${diffDays}`;
+  if (diffDays === 0) return 'D-Day';
+  return '마감';
+}
 
 @Injectable()
 export class UserService {
@@ -42,6 +61,12 @@ export class UserService {
     private readonly communityRepository: Repository<Community>,
     @InjectRepository(Announcement)
     private readonly announcementRepository: Repository<Announcement>,
+    @InjectRepository(Like)
+    private readonly likeRepository: Repository<Like>,
+    @InjectRepository(Comment)
+    private readonly commentRepository: Repository<Comment>,
+    @InjectRepository(Scrap)
+    private readonly scrapRepository: Repository<Scrap>,
   ) {}
 
   async findBySocial(
@@ -408,25 +433,63 @@ export class UserService {
       }),
     ]);
 
+    const [communityLikeCountMap, communityCommentCountMap] = await Promise.all(
+      [
+        this.getLikeCountMap(
+          LikeType.COMMUNITY,
+          communities.map((item) => item.communityId),
+        ),
+        this.getCommentCountMap(
+          CommentTargetType.COMMUNITY,
+          communities.map((item) => item.communityId),
+        ),
+      ],
+    );
+
+    const [newsLikeCountMap, newsCommentCountMap] = await Promise.all([
+      this.getLikeCountMap(
+        LikeType.NEWS,
+        news.map((item) => item.newsId),
+      ),
+      this.getCommentCountMap(
+        CommentTargetType.NEWS,
+        news.map((item) => item.newsId),
+      ),
+    ]);
+
+    const announcementLikeCountMap = await this.getLikeCountMap(
+      LikeType.ANNOUNCEMENT,
+      announcements.map((item) => item.postId),
+    );
+
     return {
-      community: communities.map((item) => ({
+      community: communities.map((item: Community) => ({
         communityId: item.communityId,
         title: item.title,
         category: item.category?.name ?? null,
         createdAt: item.createdAt,
+        likeCount: communityLikeCountMap.get(item.communityId) ?? 0,
+        viewCount: Number(item.viewCount ?? 0),
+        commentCount: communityCommentCountMap.get(item.communityId) ?? 0,
       })),
-      news: news.map((item) => ({
+      news: news.map((item: News) => ({
         newsId: item.newsId,
         title: item.title,
         place: item.place,
         createdAt: item.createdAt,
+        likeCount: newsLikeCountMap.get(item.newsId) ?? 0,
+        viewCount: Number(item.viewCount ?? 0),
+        commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
       })),
-      announcements: announcements.map((item) => ({
+      announcements: announcements.map((item: Announcement) => ({
         postId: item.postId,
         title: item.title,
         category: item.category?.name ?? null,
         scheduledAt: item.scheduledAt,
         deadlineAt: item.deadlineAt,
+        likeCount: announcementLikeCountMap.get(item.postId) ?? 0,
+        viewCount: 0,
+        commentCount: 0,
       })),
     };
   }
@@ -437,11 +500,25 @@ export class UserService {
       order: { createdAt: 'DESC' },
     });
 
-    return news.map((item) => ({
+    const [newsLikeCountMap, newsCommentCountMap] = await Promise.all([
+      this.getLikeCountMap(
+        LikeType.NEWS,
+        news.map((item) => item.newsId),
+      ),
+      this.getCommentCountMap(
+        CommentTargetType.NEWS,
+        news.map((item) => item.newsId),
+      ),
+    ]);
+
+    return news.map((item: News) => ({
       newsId: item.newsId,
       title: item.title,
       place: item.place,
       createdAt: item.createdAt,
+      likeCount: newsLikeCountMap.get(item.newsId) ?? 0,
+      viewCount: Number(item.viewCount ?? 0),
+      commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
     }));
   }
 
@@ -452,14 +529,94 @@ export class UserService {
       relations: ['category'],
     });
 
-    return announcements.map((item) => ({
+    const announcementLikeCountMap = await this.getLikeCountMap(
+      LikeType.ANNOUNCEMENT,
+      announcements.map((item) => item.postId),
+    );
+
+    return announcements.map((item: Announcement) => ({
       postId: item.postId,
       title: item.title,
       category: item.category?.name ?? null,
       scheduledAt: item.scheduledAt,
       deadlineAt: item.deadlineAt,
       status: item.status,
+      likeCount: announcementLikeCountMap.get(item.postId) ?? 0,
+      viewCount: 0,
+      commentCount: 0,
     }));
+  }
+
+  async getMyScrappedAnnouncementPosts(
+    userId: string,
+    query: ListMyScrapAnnouncementQueryDto,
+  ) {
+    const { cursor, limit = 20 } = query;
+
+    const qb = this.scrapRepository
+      .createQueryBuilder('scrap')
+      .innerJoin(
+        Announcement,
+        'announcement',
+        'announcement.postId = scrap.targetId',
+      )
+      .leftJoin('announcement.category', 'category')
+      .select([
+        'scrap.id AS scrapId',
+        'scrap.createdAt AS scrappedAt',
+        'announcement.postId AS postId',
+        'announcement.title AS title',
+        'announcement.status AS status',
+        'announcement.deadlineAt AS deadlineAt',
+        'category.name AS categoryName',
+      ])
+      .where('scrap.user_id = :userId', { userId })
+      .andWhere('scrap.target_type = :targetType', {
+        targetType: ScrapTargetType.ANNOUNCEMENT,
+      })
+      .orderBy('scrap.createdAt', 'DESC')
+      .addOrderBy('scrap.id', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      const cursorDate = new Date(cursor);
+      if (!Number.isNaN(cursorDate.getTime())) {
+        qb.andWhere('scrap.createdAt < :cursorDate', { cursorDate });
+      }
+    }
+
+    const rows = await qb.getRawMany<{
+      scrapId: string;
+      scrappedAt: Date;
+      postId: string;
+      title: string;
+      status: string;
+      deadlineAt: Date;
+      categoryName: string | null;
+    }>();
+
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+
+    const items = sliced.map((row) => ({
+      scrapId: row.scrapId,
+      scrappedAt: row.scrappedAt,
+      postId: row.postId,
+      title: row.title,
+      type: row.categoryName ?? '기타',
+      isRecruiting: row.status === 'OPEN',
+      dDay: calcDDay(new Date(row.deadlineAt)),
+    }));
+
+    const nextCursor = hasMore
+      ? new Date(items[items.length - 1].scrappedAt).toISOString()
+      : null;
+
+    return {
+      items,
+      nextCursor,
+      hasMore,
+    };
   }
 
   async getMyPostHighlights(userId: string) {
@@ -483,6 +640,35 @@ export class UserService {
       ],
     );
 
+    const [latestCommunityLikeCountMap, latestCommunityCommentCountMap] =
+      await Promise.all([
+        this.getLikeCountMap(
+          LikeType.COMMUNITY,
+          latestCommunity ? [latestCommunity.communityId] : [],
+        ),
+        this.getCommentCountMap(
+          CommentTargetType.COMMUNITY,
+          latestCommunity ? [latestCommunity.communityId] : [],
+        ),
+      ]);
+
+    const [recentNewsLikeCountMap, recentNewsCommentCountMap] =
+      await Promise.all([
+        this.getLikeCountMap(
+          LikeType.NEWS,
+          recentNews.map((item) => item.newsId),
+        ),
+        this.getCommentCountMap(
+          CommentTargetType.NEWS,
+          recentNews.map((item) => item.newsId),
+        ),
+      ]);
+
+    const latestAnnouncementLikeCountMap = await this.getLikeCountMap(
+      LikeType.ANNOUNCEMENT,
+      latestAnnouncement ? [latestAnnouncement.postId] : [],
+    );
+
     return {
       latestCommunity: latestCommunity
         ? {
@@ -490,13 +676,22 @@ export class UserService {
             title: latestCommunity.title,
             category: latestCommunity.category?.name ?? null,
             createdAt: latestCommunity.createdAt,
+            likeCount:
+              latestCommunityLikeCountMap.get(latestCommunity.communityId) ?? 0,
+            viewCount: Number(latestCommunity.viewCount ?? 0),
+            commentCount:
+              latestCommunityCommentCountMap.get(latestCommunity.communityId) ??
+              0,
           }
         : null,
-      recentNews: recentNews.map((item) => ({
+      recentNews: recentNews.map((item: News) => ({
         newsId: item.newsId,
         title: item.title,
         place: item.place,
         createdAt: item.createdAt,
+        likeCount: recentNewsLikeCountMap.get(item.newsId) ?? 0,
+        viewCount: Number(item.viewCount ?? 0),
+        commentCount: recentNewsCommentCountMap.get(item.newsId) ?? 0,
       })),
       latestAnnouncement: latestAnnouncement
         ? {
@@ -505,8 +700,53 @@ export class UserService {
             category: latestAnnouncement.category?.name ?? null,
             scheduledAt: latestAnnouncement.scheduledAt,
             deadlineAt: latestAnnouncement.deadlineAt,
+            likeCount:
+              latestAnnouncementLikeCountMap.get(latestAnnouncement.postId) ??
+              0,
+            viewCount: 0,
+            commentCount: 0,
           }
         : null,
     };
+  }
+
+  private async getLikeCountMap(
+    type: LikeType,
+    targetIds: string[],
+  ): Promise<Map<string, number>> {
+    if (!targetIds.length) return new Map<string, number>();
+
+    const rows = await this.likeRepository
+      .createQueryBuilder('l')
+      .select('l.targetId', 'targetId')
+      .addSelect('COUNT(*)', 'count')
+      .where('l.likeType = :type', { type })
+      .andWhere('l.targetId IN (:...targetIds)', { targetIds })
+      .groupBy('l.targetId')
+      .getRawMany<{ targetId: string; count: string }>();
+
+    return new Map<string, number>(
+      rows.map((row) => [row.targetId, Number(row.count)]),
+    );
+  }
+
+  private async getCommentCountMap(
+    type: CommentTargetType,
+    targetIds: string[],
+  ): Promise<Map<string, number>> {
+    if (!targetIds.length) return new Map<string, number>();
+
+    const rows = await this.commentRepository
+      .createQueryBuilder('c')
+      .select('c.targetId', 'targetId')
+      .addSelect('COUNT(*)', 'count')
+      .where('c.targetType = :type', { type })
+      .andWhere('c.targetId IN (:...targetIds)', { targetIds })
+      .groupBy('c.targetId')
+      .getRawMany<{ targetId: string; count: string }>();
+
+    return new Map<string, number>(
+      rows.map((row) => [row.targetId, Number(row.count)]),
+    );
   }
 }
