@@ -9,6 +9,8 @@ import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 import { ListNewsQueryDto } from './dto/list-news-query.dto';
 import { News } from './entities/news.entity';
+import { Like, LikeType } from '../like/entities/like.entity';
+import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
 
 export interface NewsListResponse {
   items: Array<{
@@ -16,6 +18,8 @@ export interface NewsListResponse {
     title: string;
     place: string;
     startedAt: Date;
+    likeCount: number;
+    commentCount: number;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
@@ -26,6 +30,10 @@ export class NewsService {
   constructor(
     @InjectRepository(News)
     private readonly newsRepository: Repository<News>,
+    @InjectRepository(Like)
+    private readonly likeRepository: Repository<Like>,
+    @InjectRepository(Comment)
+    private readonly commentRepository: Repository<Comment>,
   ) {}
 
   /**
@@ -78,11 +86,48 @@ export class NewsService {
     const rows = await qb.getMany();
 
     const hasMore = rows.length > limit;
-    const items = (hasMore ? rows.slice(0, limit) : rows).map((n) => ({
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+    const newsIds = sliced.map((n) => n.newsId);
+
+    const [likeCounts, commentCounts] = await Promise.all([
+      newsIds.length
+        ? this.likeRepository
+            .createQueryBuilder('l')
+            .select('l.targetId', 'targetId')
+            .addSelect('COUNT(*)', 'count')
+            .where('l.likeType = :likeType', { likeType: LikeType.NEWS })
+            .andWhere('l.targetId IN (:...newsIds)', { newsIds })
+            .groupBy('l.targetId')
+            .getRawMany<{ targetId: string; count: string }>()
+        : Promise.resolve([]),
+      newsIds.length
+        ? this.commentRepository
+            .createQueryBuilder('c')
+            .select('c.targetId', 'targetId')
+            .addSelect('COUNT(*)', 'count')
+            .where('c.targetType = :targetType', {
+              targetType: CommentTargetType.NEWS,
+            })
+            .andWhere('c.targetId IN (:...newsIds)', { newsIds })
+            .groupBy('c.targetId')
+            .getRawMany<{ targetId: string; count: string }>()
+        : Promise.resolve([]),
+    ]);
+
+    const likeCountMap = new Map(
+      likeCounts.map((row) => [row.targetId, Number(row.count)]),
+    );
+    const commentCountMap = new Map(
+      commentCounts.map((row) => [row.targetId, Number(row.count)]),
+    );
+
+    const items = sliced.map((n) => ({
       newsId: n.newsId,
       title: n.title,
       place: n.place,
       startedAt: n.startedAt,
+      likeCount: likeCountMap.get(n.newsId) ?? 0,
+      commentCount: commentCountMap.get(n.newsId) ?? 0,
     }));
 
     const nextCursor = hasMore ? items[items.length - 1].newsId : null;
@@ -105,9 +150,29 @@ export class NewsService {
     const requestUserId = (currentUserId ?? '').trim().toLowerCase();
     const isMine = requestUserId.length > 0 && authorId === requestUserId;
 
+    await this.newsRepository.increment({ newsId }, 'viewCount', 1);
+    news.viewCount += 1;
+
+    const [likeCount, commentCount] = await Promise.all([
+      this.likeRepository.count({
+        where: {
+          likeType: LikeType.NEWS,
+          targetId: newsId,
+        },
+      }),
+      this.commentRepository.count({
+        where: {
+          targetType: CommentTargetType.NEWS,
+          targetId: newsId,
+        },
+      }),
+    ]);
+
     return {
       ...news,
       isMine,
+      likeCount,
+      commentCount,
     };
   }
 

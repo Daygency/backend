@@ -38,6 +38,9 @@ export class News {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
+  @Column({ name: 'view_count', type: 'int', default: 0 })
+  viewCount: number;
+
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id' })
   user: User;
