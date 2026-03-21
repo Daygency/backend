@@ -9,6 +9,15 @@ export const ANNOUNCEMENT_CATEGORY_OPTIONS = [
   '기타',
 ] as const;
 
+/** 커뮤니티 카테고리 (community_category 시드용) */
+export const COMMUNITY_CATEGORY_OPTIONS = [
+  '자유게시판',
+  '구인',
+  '입시정보',
+  '학원운용',
+  '학원/연습실 매매',
+] as const;
+
 export const MAJOR_OPTIONS = [
   '건반악기',
   '현악',
