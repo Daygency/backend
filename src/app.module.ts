@@ -11,6 +11,7 @@ import { Major } from './apis/major/entities/major.entity';
 import { DatabaseSeedService } from './common/database-seed.service';
 import { CommunityModule } from './apis/community/community.module';
 import { NewsModule } from './apis/news/news.module';
+import { CommentModule } from './apis/comment/comment.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { NewsModule } from './apis/news/news.module';
     AnnouncementModule,
     CommunityModule,
     NewsModule,
+    CommentModule,
   ],
   providers: [DatabaseSeedService],
 })
