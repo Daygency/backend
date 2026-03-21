@@ -13,6 +13,7 @@ import { CommunityModule } from './apis/community/community.module';
 import { NewsModule } from './apis/news/news.module';
 import { CommentModule } from './apis/comment/comment.module';
 import { LikeModule } from './apis/like/like.module';
+import { ScrapModule } from './apis/scrap/scrap.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { LikeModule } from './apis/like/like.module';
     NewsModule,
     CommentModule,
     LikeModule,
+    ScrapModule,
   ],
   providers: [DatabaseSeedService],
 })
