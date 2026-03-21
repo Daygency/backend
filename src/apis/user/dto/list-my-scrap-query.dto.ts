@@ -2,9 +2,9 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
-export class ListMyScrapAnnouncementQueryDto {
+export class ListMyScrapQueryDto {
   @ApiPropertyOptional({
-    description: '커서 (마지막으로 조회한 스크랩 생성 시각, ISO 8601)',
+    description: '커서 (마지막으로 조회한 항목의 스크랩 시각, ISO 8601)',
     example: '2026-03-21T10:00:00.000Z',
   })
   @IsOptional()

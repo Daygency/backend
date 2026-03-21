@@ -28,7 +28,7 @@ import {
   CommentTargetType,
 } from '../../comment/entities/comment.entity';
 import { Scrap, ScrapTargetType } from '../../scrap/entities/scrap.entity';
-import { ListMyScrapAnnouncementQueryDto } from '../dto/list-my-scrap-announcement-query.dto';
+import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -549,7 +549,7 @@ export class UserService {
 
   async getMyScrappedAnnouncementPosts(
     userId: string,
-    query: ListMyScrapAnnouncementQueryDto,
+    query: ListMyScrapQueryDto,
   ) {
     const { cursor, limit = 20 } = query;
 
@@ -616,6 +616,268 @@ export class UserService {
       items,
       nextCursor,
       hasMore,
+    };
+  }
+
+  async getMyScrappedCommunityPosts(
+    userId: string,
+    query: ListMyScrapQueryDto,
+  ) {
+    const { cursor, limit = 20 } = query;
+
+    const qb = this.scrapRepository
+      .createQueryBuilder('scrap')
+      .innerJoin(
+        Community,
+        'community',
+        'community.communityId = scrap.targetId',
+      )
+      .leftJoin('community.category', 'category')
+      .select([
+        'scrap.id AS scrapId',
+        'scrap.createdAt AS scrappedAt',
+        'community.communityId AS communityId',
+        'community.title AS title',
+        'community.createdAt AS createdAt',
+        'community.viewCount AS viewCount',
+        'category.name AS categoryName',
+      ])
+      .where('scrap.user_id = :userId', { userId })
+      .andWhere('scrap.target_type = :targetType', {
+        targetType: ScrapTargetType.COMMUNITY,
+      })
+      .orderBy('scrap.createdAt', 'DESC')
+      .addOrderBy('scrap.id', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      const cursorDate = new Date(cursor);
+      if (!Number.isNaN(cursorDate.getTime())) {
+        qb.andWhere('scrap.createdAt < :cursorDate', { cursorDate });
+      }
+    }
+
+    const rows = await qb.getRawMany<{
+      scrapId: string;
+      scrappedAt: Date;
+      communityId: string;
+      title: string;
+      createdAt: Date;
+      viewCount: number;
+      categoryName: string | null;
+    }>();
+
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+    const communityIds = sliced.map((row) => row.communityId);
+
+    const [likeCountMap, commentCountMap] = await Promise.all([
+      this.getLikeCountMap(LikeType.COMMUNITY, communityIds),
+      this.getCommentCountMap(CommentTargetType.COMMUNITY, communityIds),
+    ]);
+
+    const items = sliced.map((row) => ({
+      scrapId: row.scrapId,
+      scrappedAt: row.scrappedAt,
+      communityId: row.communityId,
+      title: row.title,
+      category: row.categoryName ?? null,
+      createdAt: row.createdAt,
+      likeCount: likeCountMap.get(row.communityId) ?? 0,
+      viewCount: Number(row.viewCount ?? 0),
+      commentCount: commentCountMap.get(row.communityId) ?? 0,
+    }));
+
+    const nextCursor = hasMore
+      ? new Date(items[items.length - 1].scrappedAt).toISOString()
+      : null;
+
+    return {
+      items,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  async getMyScrappedNewsPosts(userId: string, query: ListMyScrapQueryDto) {
+    const { cursor, limit = 20 } = query;
+
+    const qb = this.scrapRepository
+      .createQueryBuilder('scrap')
+      .innerJoin(News, 'news', 'news.newsId = scrap.targetId')
+      .select([
+        'scrap.id AS scrapId',
+        'scrap.createdAt AS scrappedAt',
+        'news.newsId AS newsId',
+        'news.title AS title',
+        'news.place AS place',
+        'news.createdAt AS createdAt',
+        'news.viewCount AS viewCount',
+      ])
+      .where('scrap.user_id = :userId', { userId })
+      .andWhere('scrap.target_type = :targetType', {
+        targetType: ScrapTargetType.NEWS,
+      })
+      .orderBy('scrap.createdAt', 'DESC')
+      .addOrderBy('scrap.id', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      const cursorDate = new Date(cursor);
+      if (!Number.isNaN(cursorDate.getTime())) {
+        qb.andWhere('scrap.createdAt < :cursorDate', { cursorDate });
+      }
+    }
+
+    const rows = await qb.getRawMany<{
+      scrapId: string;
+      scrappedAt: Date;
+      newsId: string;
+      title: string;
+      place: string;
+      createdAt: Date;
+      viewCount: number;
+    }>();
+
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+    const newsIds = sliced.map((row) => row.newsId);
+
+    const [likeCountMap, commentCountMap] = await Promise.all([
+      this.getLikeCountMap(LikeType.NEWS, newsIds),
+      this.getCommentCountMap(CommentTargetType.NEWS, newsIds),
+    ]);
+
+    const items = sliced.map((row) => ({
+      scrapId: row.scrapId,
+      scrappedAt: row.scrappedAt,
+      newsId: row.newsId,
+      title: row.title,
+      place: row.place,
+      createdAt: row.createdAt,
+      likeCount: likeCountMap.get(row.newsId) ?? 0,
+      viewCount: Number(row.viewCount ?? 0),
+      commentCount: commentCountMap.get(row.newsId) ?? 0,
+    }));
+
+    const nextCursor = hasMore
+      ? new Date(items[items.length - 1].scrappedAt).toISOString()
+      : null;
+
+    return {
+      items,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  async getMyScrappedPostHighlights(userId: string) {
+    const [latestCommunityRows, recentNewsRows] = await Promise.all([
+      this.scrapRepository
+        .createQueryBuilder('scrap')
+        .innerJoin(
+          Community,
+          'community',
+          'community.communityId = scrap.targetId',
+        )
+        .leftJoin('community.category', 'category')
+        .select([
+          'scrap.id AS scrapId',
+          'scrap.createdAt AS scrappedAt',
+          'community.communityId AS communityId',
+          'community.title AS title',
+          'community.createdAt AS createdAt',
+          'community.viewCount AS viewCount',
+          'category.name AS categoryName',
+        ])
+        .where('scrap.user_id = :userId', { userId })
+        .andWhere('scrap.target_type = :targetType', {
+          targetType: ScrapTargetType.COMMUNITY,
+        })
+        .orderBy('scrap.createdAt', 'DESC')
+        .addOrderBy('scrap.id', 'DESC')
+        .take(1)
+        .getRawMany<{
+          scrapId: string;
+          scrappedAt: Date;
+          communityId: string;
+          title: string;
+          createdAt: Date;
+          viewCount: number;
+          categoryName: string | null;
+        }>(),
+      this.scrapRepository
+        .createQueryBuilder('scrap')
+        .innerJoin(News, 'news', 'news.newsId = scrap.targetId')
+        .select([
+          'scrap.id AS scrapId',
+          'scrap.createdAt AS scrappedAt',
+          'news.newsId AS newsId',
+          'news.title AS title',
+          'news.place AS place',
+          'news.createdAt AS createdAt',
+          'news.viewCount AS viewCount',
+        ])
+        .where('scrap.user_id = :userId', { userId })
+        .andWhere('scrap.target_type = :targetType', {
+          targetType: ScrapTargetType.NEWS,
+        })
+        .orderBy('scrap.createdAt', 'DESC')
+        .addOrderBy('scrap.id', 'DESC')
+        .take(5)
+        .getRawMany<{
+          scrapId: string;
+          scrappedAt: Date;
+          newsId: string;
+          title: string;
+          place: string;
+          createdAt: Date;
+          viewCount: number;
+        }>(),
+    ]);
+
+    const latestCommunity = latestCommunityRows[0] ?? null;
+    const communityIds = latestCommunity ? [latestCommunity.communityId] : [];
+    const newsIds = recentNewsRows.map((row) => row.newsId);
+
+    const [communityLikeCountMap, communityCommentCountMap] = await Promise.all(
+      [
+        this.getLikeCountMap(LikeType.COMMUNITY, communityIds),
+        this.getCommentCountMap(CommentTargetType.COMMUNITY, communityIds),
+      ],
+    );
+    const [newsLikeCountMap, newsCommentCountMap] = await Promise.all([
+      this.getLikeCountMap(LikeType.NEWS, newsIds),
+      this.getCommentCountMap(CommentTargetType.NEWS, newsIds),
+    ]);
+
+    return {
+      latestScrappedCommunity: latestCommunity
+        ? {
+            scrapId: latestCommunity.scrapId,
+            scrappedAt: latestCommunity.scrappedAt,
+            communityId: latestCommunity.communityId,
+            title: latestCommunity.title,
+            category: latestCommunity.categoryName ?? null,
+            createdAt: latestCommunity.createdAt,
+            likeCount:
+              communityLikeCountMap.get(latestCommunity.communityId) ?? 0,
+            viewCount: Number(latestCommunity.viewCount ?? 0),
+            commentCount:
+              communityCommentCountMap.get(latestCommunity.communityId) ?? 0,
+          }
+        : null,
+      latestScrappedNews: recentNewsRows.map((row) => ({
+        scrapId: row.scrapId,
+        scrappedAt: row.scrappedAt,
+        newsId: row.newsId,
+        title: row.title,
+        place: row.place,
+        createdAt: row.createdAt,
+        likeCount: newsLikeCountMap.get(row.newsId) ?? 0,
+        viewCount: Number(row.viewCount ?? 0),
+        commentCount: newsCommentCountMap.get(row.newsId) ?? 0,
+      })),
     };
   }
 
