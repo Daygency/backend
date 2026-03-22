@@ -1,10 +1,18 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 
-/** 첨부 대상 도메인 — DB 컬럼 `type`(enum: NEWS, COMMUNITY, ANNOUNCEMENT) */
+/**
+ * 첨부 출처 — DB `type` enum 값과 동일 (모집공고 / 공연소식 / 커뮤니티).
+ * `target_id`는 각 게시글의 PK (`post_id`, `news_id`, `community_id`).
+ */
 export enum FileTargetType {
-  NEWS = 'NEWS',
-  COMMUNITY = 'COMMUNITY',
-  ANNOUNCEMENT = 'ANNOUNCEMENT',
+  ANNOUNCEMENT = 'announcement',
+  NEWS = 'news',
+  COMMUNITY = 'community',
 }
 
 @Entity('file')

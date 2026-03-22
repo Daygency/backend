@@ -11,24 +11,13 @@ npm run start:dev
 
 개발 기본 URL: `http://localhost:3000`
 
-## 문서
+상세 문서 목차는 [docs/README.md](./docs/README.md)를 참고하세요.
 
-상세 API 목차·인증 요약은 [docs/README.md](./docs/README.md)를 참고하세요.
+---
 
-### 프로필 응답 필드 (팔로우)
+## 파일 도메인 (`file`)
 
-- **`GET /users/profile/my`** (인증) · **`GET /users/:id/profile`** (공개)
-
-응답 JSON에 **`followingCount`**, **`followerCount`**(number)가 포함됩니다.
-
-- `followingCount`: 그 유저가 팔로우한 사람 수  
-- `followerCount`: 그 유저를 팔로우한 사람 수  
-
-`PATCH /users/profile/my` 성공 응답도 동일합니다.
-
-## 파일 (S3)
-
-`.env`에 다음 변수가 있어야 `FileService`로 업로드·삭제가 동작합니다.
+### 환경 변수 (S3)
 
 | 변수 | 설명 |
 |------|------|
@@ -37,6 +26,35 @@ npm run start:dev
 | `AWS_REGION` | 리전 (예: `ap-northeast-2`) |
 | `AWS_S3_BUCKET` | 버킷 이름 |
 
-- **`file` 테이블**: `file_id`, `img_url`, `original_name`, `order`, `stored_name`, `extention`, `type`(enum), `target_id`, `created_at`  
-- 서비스: `FileService.uploadAndSave()` — S3 `PutObject` 후 DB 저장, `findByTarget()`, `removeFile()`  
-- 공고/뉴스/커뮤니티의 `file_id`는 기존처럼 대표 1건 참조, 나머지 첨부는 같은 테이블에서 `type` + `target_id`로 조회하면 됩니다.
+### `file` 테이블 의미
+
+| 컬럼 | 의미 |
+|------|------|
+| `type` | 첨부가 **어느 게시판에서 올린 것인지** — `announcement` \| `news` \| `community` |
+| `target_id` | 해당 게시글의 PK — 모집공고면 `post_id`, 공연소식이면 `news_id`, 커뮤니티면 `community_id` |
+| `order` | 같은 글에 여러 파일일 때 표시 순서 |
+
+대표 썸네일 등으로 `announcement` / `news` / `community` 엔티티의 `file_id`를 쓰는 경우, 추가 이미지·첨부는 같은 `file` 테이블에 `type` + `target_id`로 여러 행을 두고 조회하면 됩니다.
+
+### 서비스 역할
+
+| 서비스 | 용도 |
+|--------|------|
+| `FileService` | S3 업로드/삭제, DB `file` CRUD, `findByTarget(type, targetId)` |
+| `AnnouncementFileService` | 모집공고용 — `attachFilesToPost(postId, items)`, `listFilesForPost(postId)` |
+| `NewsFileService` | 공연소식용 — 동일 API, `type` = `news` |
+| `CommunityFileService` | 커뮤니티용 — 동일 API, `type` = `community` |
+
+업로드 항목 타입: `PostFileUploadItem` (`buffer`, `originalName`, `contentType?`, `sortOrder?`).
+
+**흐름 예시:** 게시글 본문을 먼저 저장해 ID를 받은 뒤, 해당 ID로 `attachFilesToPost`를 호출합니다. 그러면 각 파일 행에 올바른 `type`·`target_id`가 들어갑니다.
+
+```typescript
+// 예: 공고 저장 후
+const saved = await announcementService.create(userId, dto);
+await announcementFileService.attachFilesToPost(saved.postId, [
+  { buffer, originalName: 'a.jpg', contentType: 'image/jpeg' },
+]);
+```
+
+모듈에서 각 `*FileService`는 `export` 되어 있어 다른 모듈에서 주입해 사용할 수 있습니다.

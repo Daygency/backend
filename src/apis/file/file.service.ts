@@ -81,7 +81,7 @@ export class FileService {
     const storedName = `${randomUUID()}.${ext}`;
     const prefix =
       input.targetType && input.targetId
-        ? `${input.targetType.toLowerCase()}/${input.targetId}`
+        ? `${input.targetType}/${input.targetId}`
         : 'misc';
     const key = `uploads/${prefix}/${storedName}`;
 
