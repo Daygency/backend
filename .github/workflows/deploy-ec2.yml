@@ -16,6 +16,10 @@ jobs:
       EC2_RESTART_COMMAND: ${{ secrets.EC2_RESTART_COMMAND }}
 
     steps:
+      - name: Agent debug (runner meta, no secrets)
+        run: |
+          echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H0\",\"message\":\"workflow_job_start\",\"data\":{\"ref\":\"${{ github.ref }}\",\"ref_name\":\"${{ github.ref_name }}\"},\"timestamp\":$(date +%s)000}"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -27,6 +31,9 @@ jobs:
           debug: true
           script: |
             set -e
+            # #region agent log
+            echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H5\",\"message\":\"remote_shell\",\"data\":{\"shell\":\"$0\",\"bash_version\":\"${BASH_VERSION:-}\",\"home\":\"${HOME}\"},\"timestamp\":$(date +%s)000}"
+            # #endregion
             # 비로그인 SSH 에서 nvm / fnm 등으로 깐 Node 가 PATH 에 없으면 npm 을 못 찾음
             if [ -s "$HOME/.nvm/nvm.sh" ]; then
               . "$HOME/.nvm/nvm.sh"
@@ -38,6 +45,7 @@ jobs:
             command -v npm >/dev/null 2>&1 || { echo "::error::EC2 에 npm 을 찾을 수 없습니다. Node 설치 또는 nvm default 설정 후 PATH 확인"; exit 1; }
 
             DEPLOY_PATH="${{ secrets.EC2_DEPLOY_PATH }}"
+            DEPLOY_PATH="${DEPLOY_PATH//$'\r'/}"
             if [[ "$DEPLOY_PATH" == \~* ]]; then
               DEPLOY_PATH="${DEPLOY_PATH/#\~/$HOME}"
             fi
@@ -45,13 +53,31 @@ jobs:
               echo "::error::EC2_DEPLOY_PATH Secret 이 비었거나 잘못됐습니다."
               exit 1
             fi
+            # #region agent log
+            _has_cr=0
+            case "$DEPLOY_PATH" in *$'\r'*) _has_cr=1 ;; esac
+            _git_exists=0
+            [ -d "$DEPLOY_PATH/.git" ] && _git_exists=1
+            echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H1\",\"message\":\"deploy_path_after_normalize\",\"data\":{\"deploy_path_len\":${#DEPLOY_PATH},\"path_has_cr\":${_has_cr},\"git_dir_exists\":${_git_exists}},\"timestamp\":$(date +%s)000}"
+            # #endregion
             echo "Deploy path: $DEPLOY_PATH"
             echo "Branch: ${{ github.ref_name }}"
 
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
             BRANCH="${{ github.ref_name }}"
+            BRANCH="${BRANCH//$'\r'/}"
+
+            export GIT_TERMINAL_PROMPT=0
+            if [ -d "$DEPLOY_PATH/.git" ]; then
+              echo ">>> .git OK (existing repo)"
+            else
+              echo ">>> .git 없음 — clone 분기 또는 오류"
+            fi
 
             if [ ! -d "$DEPLOY_PATH/.git" ]; then
+              # #region agent log
+              echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H3\",\"message\":\"branch_taken\",\"data\":{\"path\":\"clone\"},\"timestamp\":$(date +%s)000}"
+              # #endregion
               if [ -d "$DEPLOY_PATH" ] && [ -n "$(ls -A "$DEPLOY_PATH" 2>/dev/null)" ]; then
                 echo "::error::EC2_DEPLOY_PATH 가 이미 있고 비어 있지 않습니다 (.git 없음). 폴더를 비우거나 다른 경로를 쓰세요: $DEPLOY_PATH"
                 exit 1
@@ -59,34 +85,74 @@ jobs:
               mkdir -p "$(dirname "$DEPLOY_PATH")"
               echo ">>> git clone (첫 배포, 브랜치 $BRANCH)"
               # 기본 브랜치만 clone 후 checkout develop 하면 원격에 develop 만 있을 때 실패할 수 있음 → clone 시 브랜치 지정
-              git clone -b "$BRANCH" "$REPO_URL" "$DEPLOY_PATH" || {
+              set +e
+              git clone -b "$BRANCH" "$REPO_URL" "$DEPLOY_PATH"
+              ec_clone=$?
+              set -e
+              echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H2\",\"message\":\"git_clone\",\"data\":{\"exit\":${ec_clone}},\"timestamp\":$(date +%s)000}"
+              if [ "$ec_clone" -ne 0 ]; then
                 echo "::error::git clone 실패 — 원격에 브랜치 $BRANCH 가 있는지, GITHUB_TOKEN 권한(Contents read) 확인"
                 exit 1
-              }
+              fi
             else
+              # #region agent log
+              echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H3\",\"message\":\"branch_taken\",\"data\":{\"path\":\"update_existing\"},\"timestamp\":$(date +%s)000}"
+              # #endregion
               echo ">>> 기존 저장소 갱신"
+              set +e
               git -C "$DEPLOY_PATH" remote set-url origin "$REPO_URL"
-              git -C "$DEPLOY_PATH" fetch origin "$BRANCH" || {
+              ec_seturl=$?
+              set -e
+              echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H2\",\"message\":\"git_remote_set_url\",\"data\":{\"exit\":${ec_seturl}},\"timestamp\":$(date +%s)000}"
+              if [ "$ec_seturl" -ne 0 ]; then
+                echo "::error::git remote set-url 실패 — 권한 또는 $DEPLOY_PATH 가 git 저장소인지 확인"
+                exit 1
+              fi
+              set +e
+              git -C "$DEPLOY_PATH" fetch origin "$BRANCH"
+              ec_fetch=$?
+              set -e
+              echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H2\",\"message\":\"git_fetch\",\"data\":{\"exit\":${ec_fetch},\"branch\":\"${BRANCH}\"},\"timestamp\":$(date +%s)000}"
+              if [ "$ec_fetch" -ne 0 ]; then
                 echo "::error::git fetch 실패"
                 exit 1
-              }
-              git -C "$DEPLOY_PATH" reset --hard "origin/$BRANCH" || {
+              fi
+              set +e
+              git -C "$DEPLOY_PATH" reset --hard "origin/$BRANCH"
+              ec_reset=$?
+              set -e
+              echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H2\",\"message\":\"git_reset_hard\",\"data\":{\"exit\":${ec_reset}},\"timestamp\":$(date +%s)000}"
+              if [ "$ec_reset" -ne 0 ]; then
                 echo "::error::git reset 실패 — origin/$BRANCH 존재 여부 확인 (git branch -r)"
                 exit 1
-              }
+              fi
             fi
 
+            # #region agent log
+            echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H2\",\"message\":\"git_block_complete\",\"data\":{\"ok\":true},\"timestamp\":$(date +%s)000}"
+            echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H4\",\"message\":\"pre_npm\",\"data\":{\"node\":\"$(node -v)\",\"npm\":\"$(npm -v)\"},\"timestamp\":$(date +%s)000}"
+            # #endregion
             echo ">>> node $(node -v) npm $(npm -v)"
             echo ">>> npm ci"
-            (cd "$DEPLOY_PATH" && npm ci) || {
+            set +e
+            (cd "$DEPLOY_PATH" && npm ci)
+            ec_npm_ci=$?
+            set -e
+            echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H4\",\"message\":\"npm_ci\",\"data\":{\"exit\":${ec_npm_ci}},\"timestamp\":$(date +%s)000}"
+            if [ "$ec_npm_ci" -ne 0 ]; then
               echo "::error::npm ci 실패 — EC2 에서 같은 경로로 npm ci 실행해 로그 확인"
               exit 1
-            }
+            fi
             echo ">>> npm run build"
-            (cd "$DEPLOY_PATH" && npm run build) || {
+            set +e
+            (cd "$DEPLOY_PATH" && npm run build)
+            ec_build=$?
+            set -e
+            echo "{\"sessionId\":\"12ac6f\",\"hypothesisId\":\"H4\",\"message\":\"npm_run_build\",\"data\":{\"exit\":${ec_build}},\"timestamp\":$(date +%s)000}"
+            if [ "$ec_build" -ne 0 ]; then
               echo "::error::npm run build 실패"
               exit 1
-            }
+            fi
 
             if [ -n "${EC2_RESTART_COMMAND:-}" ]; then
               echo ">>> restart"
