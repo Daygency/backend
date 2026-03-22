@@ -174,11 +174,73 @@ export class AnnouncementService {
     }
     if (categoryId) {
       qb.andWhere('category.categoryId = :categoryId', {
-        categoryId: categoryId as string,
+        categoryId: categoryId,
       });
     }
     if (majorIdsStr) {
-      const str = majorIdsStr as string;
+      const str = majorIdsStr;
+      const majorIds: string[] = str
+        .split(',')
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0);
+      if (majorIds.length > 0) {
+        qb.innerJoin('announcement.majors', 'am')
+          .andWhere('am.majorId IN (:...majorIds)', { majorIds })
+          .distinct(true);
+      }
+    }
+
+    const rows = await qb.getMany();
+
+    const hasMore = rows.length > limit;
+    const items = (hasMore ? rows.slice(0, limit) : rows).map((a) => ({
+      postId: a.postId,
+      title: a.title,
+      type: a.category?.name ?? '기타',
+      isRecruiting: a.status === AnnouncementStatus.OPEN,
+      dDay: calcDDay(a.deadlineAt),
+    }));
+
+    const nextCursor = hasMore ? items[items.length - 1].postId : null;
+
+    return { items, nextCursor, hasMore };
+  }
+
+  /**
+   * 내가 작성한 모집공고 목록 (무한스크롤 + 필터, findList와 동일한 쿼리 파라미터)
+   */
+  async findMyList(
+    userId: string,
+    query: ListAnnouncementQueryDto,
+  ): Promise<AnnouncementListResponse> {
+    const {
+      cursor,
+      limit = 20,
+      status,
+      categoryId,
+      majorIds: majorIdsStr,
+    } = query;
+
+    const qb = this.announcementRepository
+      .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category')
+      .where('announcement.userId = :userId', { userId })
+      .orderBy('announcement.postId', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      qb.andWhere('announcement.postId < :cursor', { cursor });
+    }
+    if (status) {
+      qb.andWhere('announcement.status = :status', { status });
+    }
+    if (categoryId) {
+      qb.andWhere('category.categoryId = :categoryId', {
+        categoryId: categoryId,
+      });
+    }
+    if (majorIdsStr) {
+      const str = majorIdsStr;
       const majorIds: string[] = str
         .split(',')
         .map((m) => m.trim())

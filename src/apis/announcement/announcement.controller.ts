@@ -42,6 +42,19 @@ export class AnnouncementController {
     return this.announcementService.findList(query);
   }
 
+  @Get('my')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({
+    summary: '내가 작성한 공고 목록 (무한스크롤 + 필터, 전체 목록과 동일 쿼리)',
+  })
+  @ApiResponse({ status: 200, description: '내 공고 목록 반환' })
+  findMy(
+    @Query() query: ListAnnouncementQueryDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.announcementService.findMyList(req.user.id, query);
+  }
+
   @Get('categories')
   @ApiOperation({ summary: '공고 유형(announcement_category) 목록 조회' })
   @ApiResponse({ status: 200, description: '공고 유형 목록 반환' })
