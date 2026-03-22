@@ -102,10 +102,15 @@ export class AnnouncementController {
 
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
-  @ApiOperation({ summary: '공고 상세 조회' })
+  @ApiOperation({
+    summary: '공고 상세 조회',
+    description:
+      'category, majors, applicationConfig(지원서 양식) 포함. 로그인 시 isMine 포함.',
+  })
   @ApiResponse({
     status: 200,
-    description: '공고 상세 반환 (로그인 시 isMine 포함)',
+    description:
+      '공고 상세 반환 — applicationConfig에 include* 불리언으로 지원 폼 항목 노출 여부',
   })
   findOne(@Param('id') id: string, @Request() req: { user?: { id: string } }) {
     return this.announcementService.findOne(id, req.user?.id);

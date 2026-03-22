@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { UsePipes, ValidationPipe } from '@nestjs/common';
+import { forwardRef, Inject, UsePipes, ValidationPipe } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -11,7 +11,7 @@ import {
   WsException,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { ChatService } from './chat.service';
+import { ChatService, MessagePayload } from './chat.service';
 import { JoinRoomSocketDto } from './dto/join-room-socket.dto';
 import { SendMessageSocketDto } from './dto/send-message-socket.dto';
 
@@ -40,10 +40,16 @@ export class ChatGateway implements OnGatewayConnection {
   server: Server;
 
   constructor(
+    @Inject(forwardRef(() => ChatService))
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
+
+  /** HTTP 등에서 저장한 메시지를 해당 방 구독자에게 브로드캐스트 */
+  emitMessageToRoom(chatRoomId: string, payload: MessagePayload): void {
+    this.server.to(chatRoomId).emit('message', payload);
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -102,7 +108,6 @@ export class ChatGateway implements OnGatewayConnection {
       userId,
       body.content,
     );
-    this.server.to(body.chatRoomId).emit('message', payload);
     return { ok: true, messageId: payload.id };
   }
 

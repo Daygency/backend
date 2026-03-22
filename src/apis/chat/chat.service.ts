@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
+import { ChatGateway } from './chat.gateway';
 import { Announcement } from '../announcement/entities/announcement.entity';
 import { Application } from '../application/entities/application.entity';
 import { User } from '../user/entities/user.entity';
@@ -56,6 +59,8 @@ export class ChatService {
     private readonly announcementRepo: Repository<Announcement>,
     @InjectRepository(Application)
     private readonly applicationRepo: Repository<Application>,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly chatGateway: ChatGateway,
   ) {}
 
   private static orderParticipantPair(a: string, b: string): [string, string] {
@@ -161,6 +166,69 @@ export class ChatService {
     return room;
   }
 
+  /**
+   * 지원서 제출 직후: 공고–지원자 1:1 채팅방을 만들고 첫 메시지를 남깁니다.
+   * 방이 이미 있으면(동시 요청 등) 메시지는 보내지 않습니다.
+   */
+  async ensureAnnouncementRoomAfterApply(
+    applicantUserId: string,
+    postId: string,
+    applicationId: string,
+  ): Promise<void> {
+    let room = await this.chatRoomRepo.findOne({
+      where: {
+        kind: ChatRoomKind.ANNOUNCEMENT,
+        postId,
+        applicantUserId,
+      },
+    });
+    let isNewRoom = false;
+    if (!room) {
+      room = this.chatRoomRepo.create({
+        kind: ChatRoomKind.ANNOUNCEMENT,
+        postId,
+        applicantUserId,
+        participantLowId: null,
+        participantHighId: null,
+        formId: applicationId,
+      });
+      try {
+        room = await this.chatRoomRepo.save(room);
+        isNewRoom = true;
+      } catch (err) {
+        const dup =
+          err instanceof QueryFailedError &&
+          (err as QueryFailedError).driverError &&
+          (err as QueryFailedError).driverError['errno'] === 1062;
+        if (!dup) {
+          throw err;
+        }
+        room = await this.chatRoomRepo.findOne({
+          where: {
+            kind: ChatRoomKind.ANNOUNCEMENT,
+            postId,
+            applicantUserId,
+          },
+        });
+        if (!room) {
+          throw err;
+        }
+      }
+    }
+    if (!room) {
+      return;
+    }
+
+    if (!isNewRoom) {
+      return;
+    }
+
+    const post = await this.announcementRepo.findOne({ where: { postId } });
+    const title = post?.title?.trim() ? post.title.trim() : '공고';
+    const msg = `[${title}] 공고에 신청하였습니다.`;
+    await this.createMessage(room.id, applicantUserId, msg);
+  }
+
   async findRoomForUserOrThrow(
     roomId: string,
     userId: string,
@@ -218,13 +286,15 @@ export class ChatService {
         user: { userId } as User,
       }),
     );
-    return {
+    const payload: MessagePayload = {
       id: message.id,
       chatRoomId,
       userId,
       content: message.content,
       createdAt: message.createdAt,
     };
+    this.chatGateway.emitMessageToRoom(chatRoomId, payload);
+    return payload;
   }
 
   async listMessages(

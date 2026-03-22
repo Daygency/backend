@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { ChatModule } from '../chat/chat.module';
 import { Announcement } from '../announcement/entities/announcement.entity';
 import { ApplicationConfig } from '../announcement/entities/application-config.entity';
 import { Application } from './entities/application.entity';
@@ -11,6 +12,7 @@ import { ApplicationController } from './application.controller';
   imports: [
     TypeOrmModule.forFeature([Application, Announcement, ApplicationConfig]),
     AuthModule,
+    ChatModule,
   ],
   controllers: [ApplicationController],
   providers: [ApplicationService],

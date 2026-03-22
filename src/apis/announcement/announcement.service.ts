@@ -317,7 +317,7 @@ export class AnnouncementService {
   async findOne(id: string, currentUserId?: string) {
     const announcement = await this.announcementRepository.findOne({
       where: { postId: id },
-      relations: ['category', 'majors'],
+      relations: ['category', 'majors', 'applicationConfig'],
     });
     if (!announcement) {
       throw new NotFoundException('공고를 찾을 수 없습니다.');
