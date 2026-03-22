@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { File } from './entities/file.entity';
+import { FileService } from './file.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([File])],
-  exports: [TypeOrmModule],
+  providers: [FileService],
+  exports: [TypeOrmModule, FileService],
 })
 export class FileModule {}
