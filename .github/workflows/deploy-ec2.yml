@@ -13,6 +13,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      EC2_RESTART_COMMAND: ${{ secrets.EC2_RESTART_COMMAND }}
 
     steps:
       - name: Deploy over SSH
@@ -21,6 +23,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          envs: EC2_RESTART_COMMAND
           script_stop: true
           debug: true
           script: |
@@ -43,6 +46,8 @@ jobs:
             echo "Branch: ${{ github.ref_name }}"
 
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            BRANCH="${{ github.ref_name }}"
+
             if [ ! -d "$DEPLOY_PATH/.git" ]; then
               if [ -d "$DEPLOY_PATH" ] && [ -n "$(ls -A "$DEPLOY_PATH" 2>/dev/null)" ]; then
                 echo "::error::EC2_DEPLOY_PATH 가 이미 있고 비어 있지 않습니다 (.git 없음). 폴더를 비우거나 다른 경로를 쓰세요: $DEPLOY_PATH"
@@ -50,27 +55,26 @@ jobs:
               fi
               mkdir -p "$(dirname "$DEPLOY_PATH")"
               echo ">>> git clone (첫 배포)"
-              # --depth 1 --branch 는 원격 브랜치/권한 이슈로 자주 실패 → 전체 클론 후 체크아웃
               git clone "$REPO_URL" "$DEPLOY_PATH"
-              cd "$DEPLOY_PATH"
-              echo ">>> checkout ${{ github.ref_name }}"
-              git fetch origin
-              git checkout -f "${{ github.ref_name }}"
+              echo ">>> checkout $BRANCH"
+              git -C "$DEPLOY_PATH" fetch origin
+              git -C "$DEPLOY_PATH" checkout -f "$BRANCH"
             else
               echo ">>> 기존 저장소 갱신"
-              cd "$DEPLOY_PATH"
-              git fetch origin
-              git reset --hard "origin/${{ github.ref_name }}"
+              # EC2 에 예전에 SSH/수동 clone 만 해둔 경우 origin 에 토큰이 없어 fetch 가 401 로 실패함 → 매번 토큰 URL로 맞춤
+              git -C "$DEPLOY_PATH" remote set-url origin "$REPO_URL"
+              git -C "$DEPLOY_PATH" fetch origin
+              git -C "$DEPLOY_PATH" reset --hard "origin/$BRANCH"
             fi
 
             echo ">>> npm ci"
-            npm ci
+            (cd "$DEPLOY_PATH" && npm ci)
             echo ">>> npm run build"
-            npm run build
+            (cd "$DEPLOY_PATH" && npm run build)
 
-            if [ -n "${{ secrets.EC2_RESTART_COMMAND }}" ]; then
+            if [ -n "${EC2_RESTART_COMMAND:-}" ]; then
               echo ">>> restart"
-              eval "${{ secrets.EC2_RESTART_COMMAND }}"
+              (cd "$DEPLOY_PATH" && eval "$EC2_RESTART_COMMAND")
             fi
 
 # =============================================================================
@@ -85,6 +89,10 @@ jobs:
 #
 #    선택
 #    EC2_RESTART_COMMAND   빌드 후 한 줄 (예: pm2 restart all). 비우면 빌드만 하고 재시작 안 함
+#
+#    git fetch / reset 실패 시
+#    - 원격에 해당 브랜치(develop 등)가 push 되어 있는지
+#    - 위처럼 기존 clone 이면 origin 을 Actions 토큰 URL 로 덮어쓰므로 Private 도 fetch 가능
 #
 #    SSH 포트가 22가 아니면 appleboy/ssh-action 의 port 입력을 워크플로에 추가하거나,
 #    Variables 로 EC2_SSH_PORT 를 두고 with.port 에 연결
