@@ -22,18 +22,31 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script_stop: true
+          debug: true
           script: |
             set -e
+            # 비로그인 SSH 에서 nvm / fnm 등으로 깐 Node 가 PATH 에 없으면 npm 을 못 찾음
+            if [ -s "$HOME/.nvm/nvm.sh" ]; then
+              . "$HOME/.nvm/nvm.sh"
+            fi
+            if command -v fnm >/dev/null 2>&1; then
+              eval "$(fnm env)"
+            fi
+            command -v git >/dev/null 2>&1 || { echo "::error::EC2 에 git 이 없습니다. sudo apt install -y git"; exit 1; }
+            command -v npm >/dev/null 2>&1 || { echo "::error::EC2 에 npm 을 찾을 수 없습니다. Node 설치 또는 nvm default 설정 후 PATH 확인"; exit 1; }
+
             DEPLOY_PATH="${{ secrets.EC2_DEPLOY_PATH }}"
             if [[ "$DEPLOY_PATH" == \~* ]]; then
               DEPLOY_PATH="${DEPLOY_PATH/#\~/$HOME}"
             fi
+            echo "Deploy path: $DEPLOY_PATH"
+            echo "Branch: ${{ github.ref_name }}"
+
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
             if [ ! -d "$DEPLOY_PATH/.git" ]; then
               mkdir -p "$(dirname "$DEPLOY_PATH")"
-              git clone "$REPO_URL" "$DEPLOY_PATH"
+              git clone --depth 1 --branch "${{ github.ref_name }}" "$REPO_URL" "$DEPLOY_PATH"
               cd "$DEPLOY_PATH"
-              git checkout "${{ github.ref_name }}"
             else
               cd "$DEPLOY_PATH"
               git fetch origin
