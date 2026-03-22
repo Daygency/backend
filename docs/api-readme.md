@@ -147,3 +147,92 @@ GET /announcement/categories
 
 - 인증 불필요 (public API)
 - name 오름차순 정렬로 반환
+
+---
+
+## 팔로우 / 차단
+
+`follow`·`block` 테이블은 각각 **복합 PK** (`sender_id`+`receiver_id`, `blocker_id`+`blocked_id`).  
+**차단 시** 서버가 두 유저 사이 **양방향 팔로우**를 모두 삭제한 뒤 `block` 행을 저장합니다.
+
+### 팔로우
+
+#### Endpoint
+
+```
+POST /follow
+```
+
+`Authorization: Bearer <access_token>` 필수
+
+#### Body
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| receiverId | string (UUID) | O | 팔로우할 상대 `user_id` |
+
+#### 동작
+
+- 자기 자신 불가
+- **차단 관계**(한쪽이 다른 쪽을 차단한 적 있음, 양방향 모두)가 있으면 403
+- 이미 팔로우 중이면 409
+
+---
+
+### 언팔로우
+
+#### Endpoint
+
+```
+DELETE /follow/:receiverId
+```
+
+`Authorization: Bearer <access_token>` 필수
+
+#### Path
+
+| 파라미터 | 설명 |
+|----------|------|
+| receiverId | 언팔로우할 상대 `user_id` (UUID) |
+
+---
+
+### 차단
+
+#### Endpoint
+
+```
+POST /block
+```
+
+`Authorization: Bearer <access_token>` 필수
+
+#### Body
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| blockedId | string (UUID) | O | 차단할 상대 `user_id` |
+
+#### 동작
+
+- 자기 자신 불가
+- **트랜잭션**: `(A→B)`, `(B→A)` 팔로우 행이 있으면 **전부 삭제** 후 `block` 저장
+- 이미 동일 차단이 있으면 409
+
+---
+
+### 차단 해제
+
+#### Endpoint
+
+```
+DELETE /block/:blockedId
+```
+
+`Authorization: Bearer <access_token>` 필수
+
+#### Path
+
+| 파라미터 | 설명 |
+|----------|------|
+| blockedId | 차단 해제할 상대 `user_id` (UUID) |
