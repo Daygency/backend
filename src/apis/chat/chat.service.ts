@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Announcement } from '../announcement/entities/announcement.entity';
+import { Application } from '../announcement/entities/application.entity';
 import { User } from '../user/entities/user.entity';
 import { CreateAnnouncementChatRoomDto } from './dto/create-announcement-chat-room.dto';
 import { ListChatRoomsQueryDto } from './dto/list-chat-rooms-query.dto';
@@ -53,6 +54,8 @@ export class ChatService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(Announcement)
     private readonly announcementRepo: Repository<Announcement>,
+    @InjectRepository(Application)
+    private readonly applicationRepo: Repository<Application>,
   ) {}
 
   private static orderParticipantPair(a: string, b: string): [string, string] {
@@ -128,6 +131,15 @@ export class ChatService {
       throw new NotFoundException('지원자 사용자를 찾을 수 없습니다.');
     }
 
+    const submitted = await this.applicationRepo.findOne({
+      where: { postId: dto.postId, userId: applicantUserId },
+    });
+    if (!submitted) {
+      throw new BadRequestException(
+        '해당 공고에 지원을 완료한 뒤에만 채팅방을 열 수 있습니다.',
+      );
+    }
+
     let room = await this.chatRoomRepo.findOne({
       where: {
         kind: ChatRoomKind.ANNOUNCEMENT,
@@ -142,7 +154,7 @@ export class ChatService {
         applicantUserId,
         participantLowId: null,
         participantHighId: null,
-        formId: null,
+        formId: submitted.id,
       });
       room = await this.chatRoomRepo.save(room);
     }

@@ -25,21 +25,35 @@ PORT=3000
 
 ---
 
+## 모집공고 · 지원서 양식 · 지원폼 (DB 개념)
+
+| 테이블 | 역할 |
+|--------|------|
+| **`announcement_category`** | 공고 유형 (`category_id`, `name`). `announcement.category_id`로 연결 |
+| **`announcement`** | 모집공고 본문·마감·작성자 등 |
+| **`application_config`** | 공고 1건당 1개. 모집자가 **어떤 항목을 받을지** `include_*` 플래그(tinyint)로 지정 |
+| **`application`** | 지원자가 제출한 **실제 지원폼** 1건. `post_id` + `user_id` 유니크. 컬럼명은 양식과 대응하되 **값**이 들어감 (`include_name`에 이름 문자열, `include_gender`는 `FEMALE`/`MALE`/`NONE` 등) |
+
+지원서 제출 API는 `application_config`를 읽어, 켜진 항목만 필수 입력으로 검증합니다.
+
+---
+
 ## 채팅 유형 (요약)
 
 | 유형 | 설명 |
 |------|------|
 | **커피챗(COFFEE)** | 일반 1:1. 사용자 두 명의 UUID를 정렬해 `(participant_low_id, participant_high_id)`로 유일하게 둡니다. |
-| **공고(ANNOUNCEMENT)** | 특정 **모집공고(`announcement.post_id`)** × **지원자 1명**당 채팅방 1개. 작성자와 그 지원자만 입장합니다. |
+| **공고(ANNOUNCEMENT)** | 특정 **모집공고** × **지원자 1명**당 채팅방 1개. **해당 공고에 지원(`application`)을 제출한 뒤에만** 방을 열 수 있습니다. `chat_room.form_id`에는 그 지원폼의 `application.id`가 들어갑니다. |
 
 **화면 흐름 예시**
 
 1. **커피챗 목록**: `GET /chat/rooms/coffee`
-2. **내가 지원한 공고 채팅 목록**: `GET /chat/rooms/applied`
-3. **내가 만든 공고 목록**: `GET /announcement/my` → 공고 하나 선택
-4. **그 공고에 매핑된 지원자별 1:1 방 목록**: `GET /chat/rooms/by-post/:postId` (해당 공고 **작성자**만)
+2. **공고 지원 → 지원폼 제출**: `POST /announcement/:postId/applications` (아래 REST 참고)
+3. **내가 지원한 공고 채팅 목록**: `GET /chat/rooms/applied`
+4. **내가 만든 공고 목록**: `GET /announcement/my` → 공고 하나 선택
+5. **그 공고에 매핑된 지원자별 1:1 방 목록**: `GET /chat/rooms/by-post/:postId` (해당 공고 **작성자**만)
 
-방이 없으면 `POST /chat/rooms/coffee` 또는 `POST /chat/rooms/announcement`로 생성·조회(get-or-create)합니다.
+방이 없으면 `POST /chat/rooms/coffee` 또는 `POST /chat/rooms/announcement`로 생성·조회(get-or-create)합니다. 공고 채팅은 **지원 완료 후**에만 생성됩니다.
 
 ---
 
@@ -56,7 +70,7 @@ TypeORM 엔티티(`synchronize: true` 사용 시)와 동일한 구조입니다. 
 | `participant_low_id`, `participant_high_id` | `char(36)` | NULL | **COFFEE**일 때만 사용. 두 사용자 ID를 문자열 순으로 정렬해 저장 |
 | `post_id` | `char(36)` | NULL | **ANNOUNCEMENT**일 때 `announcement.post_id` |
 | `applicant_user_id` | `char(36)` | NULL | **ANNOUNCEMENT**일 때 지원자 `user_id` (공고 작성자와 1:1) |
-| `form_id` | `char(36)` | NULL | 예비(외부 지원서 엔티티 등) |
+| `form_id` | `char(36)` | NULL | **ANNOUNCEMENT**일 때 제출된 **`application.id`** |
 | `created_at` | `datetime(6)` | NOT NULL | 생성 시각 |
 | `deleted_at` | `datetime` | NULL | 소프트 삭제 |
 
@@ -71,6 +85,20 @@ TypeORM 엔티티(`synchronize: true` 사용 시)와 동일한 구조입니다. 
 | `user_id` | `char(36)` | FK → `user.user_id` | 발신자 |
 | `content` | `varchar(255)` | NULL | 본문 |
 | `created_at` | `datetime(6)` | NOT NULL | 작성 시각 |
+
+---
+
+## REST API — 지원폼 (`application`)
+
+`Authorization: Bearer <access_token>`
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| POST | `/announcement/:postId/applications` | 지원서 제출 (공고당·유저당 1회). Body는 `CreateApplicationDto` — `application_config`에서 켜진 항목만 필수 |
+| GET | `/announcement/:postId/applications/me` | 내가 제출한 지원서 조회 (없으면 404) |
+| GET | `/announcement/:postId/applications` | 해당 공고의 지원서 목록 (**공고 작성자**만) |
+
+제출 조건: 공고가 `OPEN`이고, 마감일(`deadline_at`) 전이며, 본인이 작성한 공고에는 지원할 수 없습니다.
 
 ---
 
@@ -186,5 +214,6 @@ npm run start:dev
 | 서비스 | `src/apis/chat/chat.service.ts` |
 | 엔티티 | `src/apis/chat/entities/*.entity.ts` |
 | 내 공고 목록 | `src/apis/announcement/announcement.controller.ts` (`GET /announcement/my`) |
+| 지원폼 제출·목록 | `src/apis/announcement/application.controller.ts`, `application.service.ts`, `entities/application.entity.ts` |
 
 WebSocket 어댑터는 `src/main.ts`에서 `IoAdapter`로 등록되어 있습니다.

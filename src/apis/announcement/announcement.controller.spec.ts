@@ -55,11 +55,17 @@ describe('AnnouncementController', () => {
       };
       mockAnnouncementService.create.mockResolvedValue(mockResult);
 
-      const result = await controller.create(dto as any, {
-        user: { id: 'user-123' },
-      } as any);
+      const result = await controller.create(
+        dto as any,
+        {
+          user: { id: 'user-123' },
+        } as any,
+      );
 
-      expect(mockAnnouncementService.create).toHaveBeenCalledWith('user-123', dto);
+      expect(mockAnnouncementService.create).toHaveBeenCalledWith(
+        'user-123',
+        dto,
+      );
       expect(result).toEqual(mockResult);
     });
   });
@@ -67,7 +73,15 @@ describe('AnnouncementController', () => {
   describe('findAll (목록 조회)', () => {
     it('findList를 호출하고 결과를 반환한다', async () => {
       const mockResult = {
-        items: [{ postId: 'p1', title: '공고1', type: '행사', isRecruiting: true, dDay: 'D-7' }],
+        items: [
+          {
+            postId: 'p1',
+            title: '공고1',
+            type: '행사',
+            isRecruiting: true,
+            dDay: 'D-7',
+          },
+        ],
         nextCursor: null,
         hasMore: false,
       };
@@ -75,7 +89,9 @@ describe('AnnouncementController', () => {
 
       const result = await controller.findAll({ limit: 20 } as any);
 
-      expect(mockAnnouncementService.findList).toHaveBeenCalledWith({ limit: 20 });
+      expect(mockAnnouncementService.findList).toHaveBeenCalledWith({
+        limit: 20,
+      });
       expect(result).toEqual(mockResult);
     });
   });
