@@ -42,6 +42,10 @@ jobs:
             if [[ "$DEPLOY_PATH" == \~* ]]; then
               DEPLOY_PATH="${DEPLOY_PATH/#\~/$HOME}"
             fi
+            if [ -z "$DEPLOY_PATH" ]; then
+              echo "::error::EC2_DEPLOY_PATH Secret 이 비었거나 잘못됐습니다."
+              exit 1
+            fi
             echo "Deploy path: $DEPLOY_PATH"
             echo "Branch: ${{ github.ref_name }}"
 
@@ -54,23 +58,36 @@ jobs:
                 exit 1
               fi
               mkdir -p "$(dirname "$DEPLOY_PATH")"
-              echo ">>> git clone (첫 배포)"
-              git clone "$REPO_URL" "$DEPLOY_PATH"
-              echo ">>> checkout $BRANCH"
-              git -C "$DEPLOY_PATH" fetch origin
-              git -C "$DEPLOY_PATH" checkout -f "$BRANCH"
+              echo ">>> git clone (첫 배포, 브랜치 $BRANCH)"
+              # 기본 브랜치만 clone 후 checkout develop 하면 원격에 develop 만 있을 때 실패할 수 있음 → clone 시 브랜치 지정
+              git clone -b "$BRANCH" "$REPO_URL" "$DEPLOY_PATH" || {
+                echo "::error::git clone 실패 — 원격에 브랜치 $BRANCH 가 있는지, GITHUB_TOKEN 권한(Contents read) 확인"
+                exit 1
+              }
             else
               echo ">>> 기존 저장소 갱신"
-              # EC2 에 예전에 SSH/수동 clone 만 해둔 경우 origin 에 토큰이 없어 fetch 가 401 로 실패함 → 매번 토큰 URL로 맞춤
               git -C "$DEPLOY_PATH" remote set-url origin "$REPO_URL"
-              git -C "$DEPLOY_PATH" fetch origin
-              git -C "$DEPLOY_PATH" reset --hard "origin/$BRANCH"
+              git -C "$DEPLOY_PATH" fetch origin "$BRANCH" || {
+                echo "::error::git fetch 실패"
+                exit 1
+              }
+              git -C "$DEPLOY_PATH" reset --hard "origin/$BRANCH" || {
+                echo "::error::git reset 실패 — origin/$BRANCH 존재 여부 확인 (git branch -r)"
+                exit 1
+              }
             fi
 
+            echo ">>> node $(node -v) npm $(npm -v)"
             echo ">>> npm ci"
-            (cd "$DEPLOY_PATH" && npm ci)
+            (cd "$DEPLOY_PATH" && npm ci) || {
+              echo "::error::npm ci 실패 — EC2 에서 같은 경로로 npm ci 실행해 로그 확인"
+              exit 1
+            }
             echo ">>> npm run build"
-            (cd "$DEPLOY_PATH" && npm run build)
+            (cd "$DEPLOY_PATH" && npm run build) || {
+              echo "::error::npm run build 실패"
+              exit 1
+            }
 
             if [ -n "${EC2_RESTART_COMMAND:-}" ]; then
               echo ">>> restart"
