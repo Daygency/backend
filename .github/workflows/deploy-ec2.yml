@@ -44,17 +44,34 @@ jobs:
 
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
             if [ ! -d "$DEPLOY_PATH/.git" ]; then
+              if [ -d "$DEPLOY_PATH" ] && [ -n "$(ls -A "$DEPLOY_PATH" 2>/dev/null)" ]; then
+                echo "::error::EC2_DEPLOY_PATH 가 이미 있고 비어 있지 않습니다 (.git 없음). 폴더를 비우거나 다른 경로를 쓰세요: $DEPLOY_PATH"
+                exit 1
+              fi
               mkdir -p "$(dirname "$DEPLOY_PATH")"
-              git clone --depth 1 --branch "${{ github.ref_name }}" "$REPO_URL" "$DEPLOY_PATH"
+              echo ">>> git clone (첫 배포)"
+              # --depth 1 --branch 는 원격 브랜치/권한 이슈로 자주 실패 → 전체 클론 후 체크아웃
+              git clone "$REPO_URL" "$DEPLOY_PATH"
               cd "$DEPLOY_PATH"
+              echo ">>> checkout ${{ github.ref_name }}"
+              git fetch origin
+              git checkout -f "${{ github.ref_name }}"
             else
+              echo ">>> 기존 저장소 갱신"
               cd "$DEPLOY_PATH"
               git fetch origin
               git reset --hard "origin/${{ github.ref_name }}"
             fi
+
+            echo ">>> npm ci"
             npm ci
+            echo ">>> npm run build"
             npm run build
-            ${{ secrets.EC2_RESTART_COMMAND }}
+
+            if [ -n "${{ secrets.EC2_RESTART_COMMAND }}" ]; then
+              echo ">>> restart"
+              eval "${{ secrets.EC2_RESTART_COMMAND }}"
+            fi
 
 # =============================================================================
 # 1) GitHub Repository → Secrets and variables → Actions → Secrets
