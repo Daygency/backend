@@ -7,16 +7,16 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CreateApplicationDto } from './dto/create-application.dto';
 import {
   Announcement,
   AnnouncementStatus,
-} from './entities/announcement.entity';
+} from '../announcement/entities/announcement.entity';
+import { ApplicationConfig } from '../announcement/entities/application-config.entity';
+import { CreateApplicationDto } from './dto/create-application.dto';
 import { Application } from './entities/application.entity';
-import { ApplicationConfig } from './entities/application-config.entity';
 
 @Injectable()
-export class ApplicationSubmissionService {
+export class ApplicationService {
   constructor(
     @InjectRepository(Application)
     private readonly applicationRepo: Repository<Application>,
@@ -27,10 +27,10 @@ export class ApplicationSubmissionService {
   ) {}
 
   async submit(
-    postId: string,
     applicantUserId: string,
     dto: CreateApplicationDto,
   ): Promise<Application> {
+    const postId = dto.postId;
     const announcement = await this.announcementRepo.findOne({
       where: { postId },
       relations: { applicationConfig: true },

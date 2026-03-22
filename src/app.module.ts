@@ -15,6 +15,7 @@ import { CommentModule } from './apis/comment/comment.module';
 import { LikeModule } from './apis/like/like.module';
 import { ScrapModule } from './apis/scrap/scrap.module';
 import { ChatModule } from './apis/chat/chat.module';
+import { ApplicationModule } from './apis/application/application.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ChatModule } from './apis/chat/chat.module';
     TypeOrmModule.forFeature([AnnouncementCategory, CommunityCategory, Major]),
     FileModule,
     AnnouncementModule,
+    ApplicationModule,
     CommunityModule,
     NewsModule,
     CommentModule,

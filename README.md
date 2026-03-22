@@ -48,7 +48,7 @@ PORT=3000
 **화면 흐름 예시**
 
 1. **커피챗 목록**: `GET /chat/rooms/coffee`
-2. **공고 지원 → 지원폼 제출**: `POST /announcement/:postId/applications` (아래 REST 참고)
+2. **공고 지원 → 지원폼 제출**: `POST /applications` (Body에 `postId`, 아래 REST 참고)
 3. **내가 지원한 공고 채팅 목록**: `GET /chat/rooms/applied`
 4. **내가 만든 공고 목록**: `GET /announcement/my` → 공고 하나 선택
 5. **그 공고에 매핑된 지원자별 1:1 방 목록**: `GET /chat/rooms/by-post/:postId` (해당 공고 **작성자**만)
@@ -88,15 +88,15 @@ TypeORM 엔티티(`synchronize: true` 사용 시)와 동일한 구조입니다. 
 
 ---
 
-## REST API — 지원폼 (`application`)
+## REST API — 지원 접수 (`application` 도메인)
 
-`Authorization: Bearer <access_token>`
+별도 모듈 `src/apis/application`. `Authorization: Bearer <access_token>`
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| POST | `/announcement/:postId/applications` | 지원서 제출 (공고당·유저당 1회). Body는 `CreateApplicationDto` — `application_config`에서 켜진 항목만 필수 |
-| GET | `/announcement/:postId/applications/me` | 내가 제출한 지원서 조회 (없으면 404) |
-| GET | `/announcement/:postId/applications` | 해당 공고의 지원서 목록 (**공고 작성자**만) |
+| POST | `/applications` | 지원서 제출 (공고당·유저당 1회). Body: `postId`(UUID) + `CreateApplicationDto` 필드 — `application_config`에서 켜진 항목만 필수 |
+| GET | `/applications/post/:postId/me` | 해당 공고에 내가 제출한 지원서 (없으면 404) |
+| GET | `/applications/post/:postId` | 해당 공고의 지원서 목록 (**공고 작성자**만) |
 
 제출 조건: 공고가 `OPEN`이고, 마감일(`deadline_at`) 전이며, 본인이 작성한 공고에는 지원할 수 없습니다.
 
@@ -214,6 +214,6 @@ npm run start:dev
 | 서비스 | `src/apis/chat/chat.service.ts` |
 | 엔티티 | `src/apis/chat/entities/*.entity.ts` |
 | 내 공고 목록 | `src/apis/announcement/announcement.controller.ts` (`GET /announcement/my`) |
-| 지원폼 제출·목록 | `src/apis/announcement/application.controller.ts`, `application.service.ts`, `entities/application.entity.ts` |
+| 지원 접수 (`application`) | `src/apis/application/application.module.ts`, `application.controller.ts`, `application.service.ts`, `entities/application.entity.ts` |
 
 WebSocket 어댑터는 `src/main.ts`에서 `IoAdapter`로 등록되어 있습니다.

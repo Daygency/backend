@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Announcement } from '../announcement/entities/announcement.entity';
-import { Application } from '../announcement/entities/application.entity';
+import { Application } from '../application/entities/application.entity';
 import { User } from '../user/entities/user.entity';
 import { CreateAnnouncementChatRoomDto } from './dto/create-announcement-chat-room.dto';
 import { ListChatRoomsQueryDto } from './dto/list-chat-rooms-query.dto';

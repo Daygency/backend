@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
-import { Announcement } from './announcement.entity';
+import { Announcement } from '../../announcement/entities/announcement.entity';
 import { User } from '../../user/entities/user.entity';
 
 /** 지원서 응답 성별 (지원폼 테이블) */

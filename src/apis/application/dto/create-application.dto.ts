@@ -1,9 +1,10 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
@@ -13,6 +14,10 @@ import { ApplicationGender } from '../entities/application.entity';
  * 지원폼 제출 DTO — application_config에서 true인 항목만 서비스에서 필수 검증
  */
 export class CreateApplicationDto {
+  @ApiProperty({ description: '모집공고 post_id' })
+  @IsUUID()
+  postId: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
