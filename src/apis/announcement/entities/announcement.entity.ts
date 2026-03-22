@@ -69,7 +69,7 @@ export class Announcement {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  /** 대표 파일 (썸네일 등) - file_id. 하위 파일은 File.children (parent_id=self) */
+  /** 대표 파일 (썸네일 등) — 추가 첨부는 `file` 테이블 `type`·`target_id`로 조회 */
   @ManyToOne(() => File, { nullable: true })
   @JoinColumn({ name: 'file_id' })
   file: File | null;

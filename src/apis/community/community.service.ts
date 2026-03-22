@@ -1,3 +1,4 @@
+import type { Express } from 'express';
 import {
   ForbiddenException,
   Injectable,
@@ -11,6 +12,9 @@ import { Community } from './entities/community.entity';
 import { CommunityCategory } from './entities/community-category.entity';
 import { Like, LikeType } from '../like/entities/like.entity';
 import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
+import { File, FileTargetType } from '../file/entities/file.entity';
+import { FileService } from '../file/file.service';
+import { CommunityFileService } from './community-file.service';
 
 @Injectable()
 export class CommunityService {
@@ -23,10 +27,16 @@ export class CommunityService {
     private readonly likeRepository: Repository<Like>,
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
+    private readonly fileService: FileService,
+    private readonly communityFileService: CommunityFileService,
   ) {}
 
-  async create(userId: string, createCommunityDto: CreateCommunityDto) {
-    const { categoryId, ...rest } = createCommunityDto;
+  async create(
+    userId: string,
+    createCommunityDto: CreateCommunityDto,
+    files?: Express.Multer.File[],
+  ) {
+    const { categoryId, fileId: dtoFileId, ...rest } = createCommunityDto;
 
     const category = await this.categoryRepository.findOne({
       where: { categoryId },
@@ -39,9 +49,41 @@ export class CommunityService {
       ...rest,
       category,
       user: { userId },
+      file: dtoFileId ? { fileId: dtoFileId } : null,
     });
 
-    return this.communityRepository.save(community);
+    const saved = await this.communityRepository.save(community);
+
+    let uploaded: File[] = [];
+    if (files?.length) {
+      uploaded = await this.communityFileService.attachFilesToPost(
+        saved.communityId,
+        files.map((f, i) => ({
+          buffer: f.buffer,
+          originalName: f.originalname,
+          contentType: f.mimetype,
+          sortOrder: i,
+        })),
+      );
+      const primaryFileId = dtoFileId ?? uploaded[0]?.fileId ?? null;
+      if (primaryFileId) {
+        await this.communityRepository.save({
+          ...saved,
+          file: { fileId: primaryFileId } as File,
+        });
+      }
+    }
+
+    const attachments = uploaded.map((f) => ({
+      fileId: f.fileId,
+      imgUrl: f.imgUrl,
+      sortOrder: f.sortOrder,
+    }));
+
+    return {
+      ...saved,
+      attachments,
+    };
   }
 
   async findAll(categoryId?: string) {
@@ -86,10 +128,21 @@ export class CommunityService {
       commentCounts.map((row) => [row.targetId, Number(row.count)]),
     );
 
+    const thumbMap =
+      await this.fileService.getSmallestOrderThumbnailByTargetIds(
+        FileTargetType.COMMUNITY,
+        communityIds,
+      );
+
     return communities.map((community) => ({
       ...community,
       likeCount: likeCountMap.get(community.communityId) ?? 0,
       commentCount: commentCountMap.get(community.communityId) ?? 0,
+      /** `file.type`+`target_id` 첨부 중 `order` 최소 1장, 없으면 기존 `file_id` 대표 이미지 */
+      thumbnailUrl:
+        thumbMap.get(community.communityId)?.imgUrl ??
+        community.file?.imgUrl ??
+        null,
     }));
   }
 

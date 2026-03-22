@@ -14,6 +14,10 @@ import { NewsModule } from './apis/news/news.module';
 import { CommentModule } from './apis/comment/comment.module';
 import { LikeModule } from './apis/like/like.module';
 import { ScrapModule } from './apis/scrap/scrap.module';
+import { ChatModule } from './apis/chat/chat.module';
+import { ApplicationModule } from './apis/application/application.module';
+import { FollowModule } from './apis/follow/follow.module';
+import { BlockModule } from './apis/block/block.module';
 
 @Module({
   imports: [
@@ -34,11 +38,15 @@ import { ScrapModule } from './apis/scrap/scrap.module';
     TypeOrmModule.forFeature([AnnouncementCategory, CommunityCategory, Major]),
     FileModule,
     AnnouncementModule,
+    ApplicationModule,
     CommunityModule,
     NewsModule,
     CommentModule,
     LikeModule,
     ScrapModule,
+    ChatModule,
+    FollowModule,
+    BlockModule,
   ],
   providers: [DatabaseSeedService],
 })

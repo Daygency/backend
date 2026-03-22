@@ -55,7 +55,10 @@ export class ApplicationConfigDto {
   @IsBoolean()
   includeMusic?: boolean = false;
 
-  @ApiProperty({ description: '상장/트로피 배송 주소 포함 여부', default: false })
+  @ApiProperty({
+    description: '상장/트로피 배송 주소 포함 여부',
+    default: false,
+  })
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -9,6 +10,7 @@ import { CreateUserDto } from '../dto/create-user.dto';
 import { User, SocialProvider, UserRole } from '../entities/user.entity';
 import type { SocialProfile } from '../../auth/types/social-profile.type';
 import { ProfileResponseDto } from '../dto/profile-response.dto';
+import { PublicProfileResponseDto } from '../dto/public-profile-response.dto';
 import {
   UpdateAwardDto,
   UpdateCareerDto,
@@ -29,6 +31,26 @@ import {
 } from '../../comment/entities/comment.entity';
 import { Scrap, ScrapTargetType } from '../../scrap/entities/scrap.entity';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
+import { ListUsersQueryDto } from '../dto/list-users-query.dto';
+import { Follow } from '../../follow/entities/follow.entity';
+
+function encodeUserListCursor(createdAt: Date, userId: string): string {
+  return Buffer.from(
+    JSON.stringify({ ca: createdAt.toISOString(), uid: userId }),
+    'utf8',
+  ).toString('base64url');
+}
+
+function decodeUserListCursor(cursor: string): { ca: string; uid: string } {
+  try {
+    const raw = Buffer.from(cursor, 'base64url').toString('utf8');
+    const o = JSON.parse(raw) as { ca?: string; uid?: string };
+    if (!o?.ca || !o?.uid) throw new Error('invalid');
+    return { ca: o.ca, uid: o.uid };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor입니다.');
+  }
+}
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -67,6 +89,8 @@ export class UserService {
     private readonly commentRepository: Repository<Comment>,
     @InjectRepository(Scrap)
     private readonly scrapRepository: Repository<Scrap>,
+    @InjectRepository(Follow)
+    private readonly followRepository: Repository<Follow>,
   ) {}
 
   async findBySocial(
@@ -166,6 +190,11 @@ export class UserService {
       throw new NotFoundException('프로필을 찾을 수 없습니다.');
     }
 
+    const [followingCount, followerCount] = await Promise.all([
+      this.followRepository.count({ where: { senderId: userId } }),
+      this.followRepository.count({ where: { receiverId: userId } }),
+    ]);
+
     return {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
@@ -182,6 +211,51 @@ export class UserService {
         email: user.email,
         phoneNumber: user.phoneNumber,
       },
+      followingCount,
+      followerCount,
+    };
+  }
+
+  /**
+   * 타인 프로필(포트폴리오) — 내 프로필 조회와 동일 필드, 연락처 제외
+   */
+  async getPublicProfile(userId: string): Promise<PublicProfileResponseDto> {
+    const user = await this.userRepository.findOne({
+      where: { userId },
+      relations: ['educations', 'careers', 'awards', 'major'],
+      select: [
+        'userId',
+        'profileImgUrl',
+        'activityName',
+        'nickname',
+        'role',
+        'aboutMe',
+        'selfIntroduction',
+      ],
+    });
+    if (!user) {
+      throw new NotFoundException('프로필을 찾을 수 없습니다.');
+    }
+
+    const [followingCount, followerCount] = await Promise.all([
+      this.followRepository.count({ where: { senderId: userId } }),
+      this.followRepository.count({ where: { receiverId: userId } }),
+    ]);
+
+    return {
+      userId: user.userId,
+      profileImgUrl: user.profileImgUrl,
+      nickname: user.nickname,
+      activityName: user.activityName,
+      role: user.role,
+      aboutMe: user.aboutMe,
+      selfIntroduction: user.selfIntroduction,
+      educations: user.educations ?? null,
+      careers: user.careers ?? null,
+      awards: user.awards ?? null,
+      major: user.major ?? null,
+      followingCount,
+      followerCount,
     };
   }
 
@@ -1010,5 +1084,71 @@ export class UserService {
     return new Map<string, number>(
       rows.map((row) => [row.targetId, Number(row.count)]),
     );
+  }
+
+  /**
+   * 유저 목록 — 가입일(createdAt) 최신순, 무한스크롤.
+   * majorIds 지정 시: 해당 전공 ID 중 하나에 매칭되는 유저만 (전공 미설정 유저는 제외).
+   */
+  async findList(query: ListUsersQueryDto): Promise<{
+    items: Array<{
+      userId: string;
+      nickname: string;
+      activityName: string;
+      profileImgUrl: string;
+      aboutMe: string | null;
+      createdAt: Date;
+      major: { majorId: string; name: string } | null;
+    }>;
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const limit = query.limit ?? 20;
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.major', 'major')
+      .orderBy('user.createdAt', 'DESC')
+      .addOrderBy('user.userId', 'DESC')
+      .take(limit + 1);
+
+    if (query.majorIds) {
+      const mids = query.majorIds
+        .split(',')
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0);
+      if (mids.length > 0) {
+        qb.andWhere('major.majorId IN (:...mids)', { mids });
+      }
+    }
+
+    if (query.cursor) {
+      const { ca, uid } = decodeUserListCursor(query.cursor);
+      qb.andWhere(
+        '(user.createdAt < :ca OR (user.createdAt = :ca AND user.userId < :uid))',
+        { ca: new Date(ca), uid },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+
+    const items = slice.map((u) => ({
+      userId: u.userId,
+      nickname: u.nickname,
+      activityName: u.activityName,
+      profileImgUrl: u.profileImgUrl,
+      aboutMe: u.aboutMe,
+      createdAt: u.createdAt,
+      major: u.major ? { majorId: u.major.majorId, name: u.major.name } : null,
+    }));
+
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeUserListCursor(last.createdAt, last.userId)
+        : null;
+
+    return { items, nextCursor, hasMore };
   }
 }

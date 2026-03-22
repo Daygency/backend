@@ -1,10 +1,4 @@
-import {
-  Column,
-  Entity,
-  JoinColumn,
-  OneToOne,
-  PrimaryColumn,
-} from 'typeorm';
+import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn } from 'typeorm';
 import { Announcement } from './announcement.entity';
 
 /**
@@ -58,7 +52,10 @@ export class ApplicationConfig {
   @Column({ name: 'include_introduce', type: 'tinyint', default: false })
   includeIntroduce: boolean;
 
-  @OneToOne(() => Announcement, (announcement) => announcement.applicationConfig)
+  @OneToOne(
+    () => Announcement,
+    (announcement) => announcement.applicationConfig,
+  )
   @JoinColumn({ name: 'post_id' })
   announcement: Announcement;
 }

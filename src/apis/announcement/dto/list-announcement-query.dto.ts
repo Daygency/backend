@@ -1,5 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { AnnouncementStatus } from '../entities/announcement.entity';
 
@@ -51,9 +58,9 @@ export class ListAnnouncementQueryDto {
 
   /** 모집 전공 ID (여러 개 선택 시 콤마 구분) */
   @ApiPropertyOptional({
-    description:
-      '모집 전공 ID. 복수 선택 시 콤마 구분 (예: uuid1,uuid2,uuid3)',
-    example: '550e8400-e29b-41d4-a716-446655440000,550e8400-e29b-41d4-a716-446655440001',
+    description: '모집 전공 ID. 복수 선택 시 콤마 구분 (예: uuid1,uuid2,uuid3)',
+    example:
+      '550e8400-e29b-41d4-a716-446655440000,550e8400-e29b-41d4-a716-446655440001',
   })
   @IsOptional()
   @IsString()

@@ -1,3 +1,4 @@
+import type { Express } from 'express';
 import {
   Injectable,
   NotFoundException,
@@ -17,6 +18,8 @@ import {
 import { AnnouncementCategory } from './entities/announcement-category.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
+import { File } from '../file/entities/file.entity';
+import { AnnouncementFileService } from './announcement-file.service';
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -66,6 +69,7 @@ export class AnnouncementService {
     private readonly majorRepository: Repository<Major>,
     @InjectRepository(AnnouncementCategory)
     private readonly categoryRepository: Repository<AnnouncementCategory>,
+    private readonly announcementFileService: AnnouncementFileService,
   ) {}
 
   /**
@@ -75,12 +79,18 @@ export class AnnouncementService {
   async create(
     userId: string,
     dto: CreateAnnouncementDto,
+    files?: Express.Multer.File[],
   ): Promise<{
     postId: string;
     title: string;
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    attachments: Array<{
+      fileId: string;
+      imgUrl: string;
+      sortOrder: number;
+    }>;
   }> {
     const ac: ApplicationConfigDto = dto.applicationConfig;
 
@@ -120,11 +130,39 @@ export class AnnouncementService {
     });
     await this.applicationConfigRepository.save(applicationConfig);
 
+    let uploaded: File[] = [];
+    if (files?.length) {
+      uploaded = await this.announcementFileService.attachFilesToPost(
+        saved.postId,
+        files.map((f, i) => ({
+          buffer: f.buffer,
+          originalName: f.originalname,
+          contentType: f.mimetype,
+          sortOrder: i,
+        })),
+      );
+      const primaryFileId = dto.fileId ?? uploaded[0]?.fileId;
+      if (primaryFileId) {
+        await this.announcementRepository.update(
+          { postId: saved.postId },
+          { fileId: primaryFileId },
+        );
+      }
+    }
+
     const withCategory = await this.announcementRepository.findOne({
       where: { postId: saved.postId },
       relations: ['category'],
     });
-    return toListItem(withCategory ?? saved);
+    const list = toListItem(withCategory ?? saved);
+    return {
+      ...list,
+      attachments: uploaded.map((f) => ({
+        fileId: f.fileId,
+        imgUrl: f.imgUrl,
+        sortOrder: f.sortOrder,
+      })),
+    };
   }
 
   /**
@@ -174,11 +212,73 @@ export class AnnouncementService {
     }
     if (categoryId) {
       qb.andWhere('category.categoryId = :categoryId', {
-        categoryId: categoryId as string,
+        categoryId: categoryId,
       });
     }
     if (majorIdsStr) {
-      const str = majorIdsStr as string;
+      const str = majorIdsStr;
+      const majorIds: string[] = str
+        .split(',')
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0);
+      if (majorIds.length > 0) {
+        qb.innerJoin('announcement.majors', 'am')
+          .andWhere('am.majorId IN (:...majorIds)', { majorIds })
+          .distinct(true);
+      }
+    }
+
+    const rows = await qb.getMany();
+
+    const hasMore = rows.length > limit;
+    const items = (hasMore ? rows.slice(0, limit) : rows).map((a) => ({
+      postId: a.postId,
+      title: a.title,
+      type: a.category?.name ?? '기타',
+      isRecruiting: a.status === AnnouncementStatus.OPEN,
+      dDay: calcDDay(a.deadlineAt),
+    }));
+
+    const nextCursor = hasMore ? items[items.length - 1].postId : null;
+
+    return { items, nextCursor, hasMore };
+  }
+
+  /**
+   * 내가 작성한 모집공고 목록 (무한스크롤 + 필터, findList와 동일한 쿼리 파라미터)
+   */
+  async findMyList(
+    userId: string,
+    query: ListAnnouncementQueryDto,
+  ): Promise<AnnouncementListResponse> {
+    const {
+      cursor,
+      limit = 20,
+      status,
+      categoryId,
+      majorIds: majorIdsStr,
+    } = query;
+
+    const qb = this.announcementRepository
+      .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category')
+      .where('announcement.userId = :userId', { userId })
+      .orderBy('announcement.postId', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      qb.andWhere('announcement.postId < :cursor', { cursor });
+    }
+    if (status) {
+      qb.andWhere('announcement.status = :status', { status });
+    }
+    if (categoryId) {
+      qb.andWhere('category.categoryId = :categoryId', {
+        categoryId: categoryId,
+      });
+    }
+    if (majorIdsStr) {
+      const str = majorIdsStr;
       const majorIds: string[] = str
         .split(',')
         .map((m) => m.trim())
@@ -217,7 +317,7 @@ export class AnnouncementService {
   async findOne(id: string, currentUserId?: string) {
     const announcement = await this.announcementRepository.findOne({
       where: { postId: id },
-      relations: ['category', 'majors'],
+      relations: ['category', 'majors', 'applicationConfig'],
     });
     if (!announcement) {
       throw new NotFoundException('공고를 찾을 수 없습니다.');

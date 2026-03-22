@@ -66,7 +66,9 @@ describe('CreateAnnouncementDto', () => {
     const invalid = { ...validDto, applicationConfig: undefined };
     const dto = plainToInstance(CreateAnnouncementDto, invalid);
     const errors = await validate(dto);
-    expect(errors.find((e) => e.property === 'applicationConfig')).toBeDefined();
+    expect(
+      errors.find((e) => e.property === 'applicationConfig'),
+    ).toBeDefined();
   });
 
   it('categoryId가 UUID 형식이 아니면 실패한다', async () => {
