@@ -34,7 +34,7 @@ describe('AnnouncementController', () => {
     expect(controller).toBeDefined();
   });
 
-  describe('create (모집공고 작성)', () => {
+  describe('createJson (모집공고 작성 JSON)', () => {
     it('create를 호출하고 목록 아이템 형태를 반환한다', async () => {
       const dto = {
         title: '공고 제목',
@@ -52,15 +52,13 @@ describe('AnnouncementController', () => {
         type: '행사',
         isRecruiting: true,
         dDay: 'D-7',
+        attachments: [],
       };
       mockAnnouncementService.create.mockResolvedValue(mockResult);
 
-      const result = await controller.create(
-        dto as any,
-        {
-          user: { id: 'user-123' },
-        } as any,
-      );
+      const result = await controller.createJson(dto as any, {
+        user: { id: 'user-123' },
+      } as any);
 
       expect(mockAnnouncementService.create).toHaveBeenCalledWith(
         'user-123',

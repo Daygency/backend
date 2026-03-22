@@ -1,3 +1,4 @@
+import type { Express } from 'express';
 import {
   Body,
   Controller,
@@ -8,9 +9,15 @@ import {
   Post,
   Query,
   Request,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiConsumes, ApiOperation } from '@nestjs/swagger';
+import { parseAndValidateJsonPayload } from '../../common/parse-json-payload.util';
 import { CommunityService } from './community.service';
 import { CreateCommunityDto } from './dto/create-community.dto';
 import { UpdateCommunityDto } from './dto/update-community.dto';
@@ -19,13 +26,38 @@ import { UpdateCommunityDto } from './dto/update-community.dto';
 export class CommunityController {
   constructor(private readonly communityService: CommunityService) {}
 
-  @Post()
+  @Post('json')
   @UseGuards(AuthGuard('access'))
-  create(
+  @ApiOperation({ summary: '커뮤니티 글 작성 (JSON만, 이미지 없음)' })
+  createJson(
     @Body() createCommunityDto: CreateCommunityDto,
     @Request() req: { user: { id: string } },
   ) {
     return this.communityService.create(req.user.id, createCommunityDto);
+  }
+
+  @Post()
+  @UseGuards(AuthGuard('access'))
+  @UseInterceptors(
+    FilesInterceptor('files', 20, {
+      storage: memoryStorage(),
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      '커뮤니티 글 작성 — FormData: payload(JSON 문자열) + files(이미지, 필드명 files 반복)',
+  })
+  async create(
+    @Body('payload') payload: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Request() req: { user: { id: string } },
+  ) {
+    const dto = await parseAndValidateJsonPayload(
+      CreateCommunityDto,
+      payload,
+    );
+    return this.communityService.create(req.user.id, dto, files ?? []);
   }
 
   @Get()

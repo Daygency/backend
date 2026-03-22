@@ -1,18 +1,29 @@
+import type { Express } from 'express';
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
   Query,
-  UseGuards,
   Request,
+  UploadedFiles,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiConsumes,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { parseAndValidateJsonPayload } from '../../common/parse-json-payload.util';
 import { AnnouncementService } from './announcement.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
@@ -23,16 +34,43 @@ import { ListAnnouncementQueryDto } from './dto/list-announcement-query.dto';
 export class AnnouncementController {
   constructor(private readonly announcementService: AnnouncementService) {}
 
-  @Post()
+  @Post('json')
   @UseGuards(AuthGuard('access'))
-  @ApiOperation({ summary: '모집공고 작성' })
+  @ApiOperation({ summary: '모집공고 작성 (JSON Body만, 이미지 없음)' })
   @ApiResponse({ status: 201, description: '공고 작성 완료' })
   @ApiResponse({ status: 401, description: '인증 필요' })
-  create(
+  createJson(
     @Body() createAnnouncementDto: CreateAnnouncementDto,
     @Request() req: { user: { id: string } },
   ) {
     return this.announcementService.create(req.user.id, createAnnouncementDto);
+  }
+
+  @Post()
+  @UseGuards(AuthGuard('access'))
+  @UseInterceptors(
+    FilesInterceptor('files', 20, {
+      storage: memoryStorage(),
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      '모집공고 작성 — FormData: payload(JSON 문자열, applicationConfig 포함) + files',
+  })
+  @ApiResponse({ status: 201, description: '공고 작성 완료' })
+  @ApiResponse({ status: 400, description: 'payload JSON/유효성 오류' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  async create(
+    @Body('payload') payload: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Request() req: { user: { id: string } },
+  ) {
+    const dto = await parseAndValidateJsonPayload(
+      CreateAnnouncementDto,
+      payload,
+    );
+    return this.announcementService.create(req.user.id, dto, files ?? []);
   }
 
   @Get()

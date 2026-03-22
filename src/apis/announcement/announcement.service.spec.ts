@@ -10,6 +10,7 @@ import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
 import { AnnouncementStatus } from './entities/announcement.entity';
 import { AnnouncementCategory } from './entities/announcement-category.entity';
+import { AnnouncementFileService } from './announcement-file.service';
 
 describe('AnnouncementService', () => {
   let service: AnnouncementService;
@@ -67,6 +68,7 @@ describe('AnnouncementService', () => {
     const mockAnnouncementRepo = {
       create: jest.fn().mockReturnValue({ ...mockSavedAnnouncement }),
       save: jest.fn().mockResolvedValue({ ...mockSavedAnnouncement }),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       findOne: jest.fn().mockResolvedValue({
         ...mockSavedAnnouncement,
         category: mockCategory,
@@ -107,6 +109,12 @@ describe('AnnouncementService', () => {
         {
           provide: getRepositoryToken(AnnouncementCategory),
           useValue: mockCategoryRepo,
+        },
+        {
+          provide: AnnouncementFileService,
+          useValue: {
+            attachFilesToPost: jest.fn().mockResolvedValue([]),
+          },
         },
       ],
     }).compile();
@@ -165,6 +173,7 @@ describe('AnnouncementService', () => {
         title: validCreateDto.title,
         type: '행사',
         isRecruiting: true,
+        attachments: [],
       });
       expect(result).toHaveProperty('dDay');
       expect(typeof result.dDay).toBe('string');

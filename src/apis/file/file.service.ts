@@ -12,8 +12,14 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { File, FileTargetType } from './entities/file.entity';
+
+/** 목록 썸네일용 — `order`(sortOrder) 최소 1건 */
+export type ThumbnailPick = {
+  fileId: string;
+  imgUrl: string;
+};
 
 export interface UploadFileToS3Input {
   buffer: Buffer;
@@ -120,6 +126,52 @@ export class FileService {
       where: { targetType, targetId },
       order: { sortOrder: 'ASC', createdAt: 'ASC' },
     });
+  }
+
+  /**
+   * 목록용: 각 `target_id`마다 **`order`(sortOrder)가 가장 작은** 파일 한 건.
+   * 동일 `order`면 `created_at`이 더 이른 것.
+   */
+  async getSmallestOrderThumbnailByTargetIds(
+    targetType: FileTargetType,
+    targetIds: string[],
+  ): Promise<Map<string, ThumbnailPick>> {
+    if (targetIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.fileRepository.find({
+      where: { targetType, targetId: In(targetIds) },
+      select: [
+        'fileId',
+        'imgUrl',
+        'targetId',
+        'sortOrder',
+        'createdAt',
+      ],
+    });
+    const best = new Map<string, File>();
+    for (const row of rows) {
+      if (!row.targetId) {
+        continue;
+      }
+      const prev = best.get(row.targetId);
+      if (!prev) {
+        best.set(row.targetId, row);
+        continue;
+      }
+      if (row.sortOrder < prev.sortOrder) {
+        best.set(row.targetId, row);
+      } else if (row.sortOrder === prev.sortOrder) {
+        if (row.createdAt < prev.createdAt) {
+          best.set(row.targetId, row);
+        }
+      }
+    }
+    const out = new Map<string, ThumbnailPick>();
+    for (const [tid, f] of best) {
+      out.set(tid, { fileId: f.fileId, imgUrl: f.imgUrl });
+    }
+    return out;
   }
 
   /**

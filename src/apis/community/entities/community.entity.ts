@@ -35,7 +35,8 @@ export class Community {
   @JoinColumn({ name: 'category_id', referencedColumnName: 'categoryId' })
   category: CommunityCategory;
 
-  @ManyToOne(() => File)
+  /** 대표 이미지(레거시 `file_id`). 첨부만 `file` 테이블로 쓰는 경우 null 가능 */
+  @ManyToOne(() => File, { nullable: true })
   @JoinColumn({ name: 'file_id' })
-  file: File;
+  file: File | null;
 }

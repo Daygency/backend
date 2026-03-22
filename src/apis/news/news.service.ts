@@ -1,3 +1,4 @@
+import type { Express } from 'express';
 import {
   Injectable,
   NotFoundException,
@@ -11,6 +12,9 @@ import { ListNewsQueryDto } from './dto/list-news-query.dto';
 import { News } from './entities/news.entity';
 import { Like, LikeType } from '../like/entities/like.entity';
 import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
+import { File, FileTargetType } from '../file/entities/file.entity';
+import { FileService } from '../file/file.service';
+import { NewsFileService } from './news-file.service';
 
 export interface NewsListResponse {
   items: Array<{
@@ -20,6 +24,8 @@ export interface NewsListResponse {
     startedAt: Date;
     likeCount: number;
     commentCount: number;
+    /** `file.type`+`news_id` 첨부 중 `order` 최소 1장, 없으면 글의 `file_id` 대표 이미지 */
+    thumbnailUrl: string | null;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
@@ -34,19 +40,27 @@ export class NewsService {
     private readonly likeRepository: Repository<Like>,
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
+    private readonly fileService: FileService,
+    private readonly newsFileService: NewsFileService,
   ) {}
 
   /**
-   * 공연소식 작성
+   * 공연소식 작성 (`files`가 있으면 S3 + `file` 테이블에 연결, 첫 장을 대표 `file_id`로 설정 가능)
    */
   async create(
     userId: string,
     dto: CreateNewsDto,
+    files?: Express.Multer.File[],
   ): Promise<{
     newsId: string;
     title: string;
     place: string;
     startedAt: Date;
+    attachments: Array<{
+      fileId: string;
+      imgUrl: string;
+      sortOrder: number;
+    }>;
   }> {
     const news = this.newsRepository.create({
       title: dto.title,
@@ -60,11 +74,39 @@ export class NewsService {
       file: dto.fileId ? { fileId: dto.fileId } : null,
     });
     const saved = await this.newsRepository.save(news);
+
+    let uploaded: File[] = [];
+    if (files?.length) {
+      uploaded = await this.newsFileService.attachFilesToPost(
+        saved.newsId,
+        files.map((f, i) => ({
+          buffer: f.buffer,
+          originalName: f.originalname,
+          contentType: f.mimetype,
+          sortOrder: i,
+        })),
+      );
+      const primaryFileId = dto.fileId ?? uploaded[0]?.fileId;
+      if (primaryFileId) {
+        await this.newsRepository.save({
+          ...saved,
+          file: { fileId: primaryFileId } as File,
+        });
+      }
+    }
+
+    const attachments = uploaded.map((f) => ({
+      fileId: f.fileId,
+      imgUrl: f.imgUrl,
+      sortOrder: f.sortOrder,
+    }));
+
     return {
       newsId: saved.newsId,
       title: saved.title,
       place: saved.place,
       startedAt: saved.startedAt,
+      attachments,
     };
   }
 
@@ -76,6 +118,7 @@ export class NewsService {
 
     const qb = this.newsRepository
       .createQueryBuilder('news')
+      .leftJoinAndSelect('news.file', 'file')
       .orderBy('news.newsId', 'DESC')
       .take(limit + 1);
 
@@ -121,6 +164,12 @@ export class NewsService {
       commentCounts.map((row) => [row.targetId, Number(row.count)]),
     );
 
+    const thumbMap =
+      await this.fileService.getSmallestOrderThumbnailByTargetIds(
+        FileTargetType.NEWS,
+        newsIds,
+      );
+
     const items = sliced.map((n) => ({
       newsId: n.newsId,
       title: n.title,
@@ -128,6 +177,8 @@ export class NewsService {
       startedAt: n.startedAt,
       likeCount: likeCountMap.get(n.newsId) ?? 0,
       commentCount: commentCountMap.get(n.newsId) ?? 0,
+      thumbnailUrl:
+        thumbMap.get(n.newsId)?.imgUrl ?? n.file?.imgUrl ?? null,
     }));
 
     const nextCursor = hasMore ? items[items.length - 1].newsId : null;

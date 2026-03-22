@@ -1,3 +1,4 @@
+import type { Express } from 'express';
 import {
   Injectable,
   NotFoundException,
@@ -17,6 +18,8 @@ import {
 import { AnnouncementCategory } from './entities/announcement-category.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
+import { File } from '../file/entities/file.entity';
+import { AnnouncementFileService } from './announcement-file.service';
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -66,6 +69,7 @@ export class AnnouncementService {
     private readonly majorRepository: Repository<Major>,
     @InjectRepository(AnnouncementCategory)
     private readonly categoryRepository: Repository<AnnouncementCategory>,
+    private readonly announcementFileService: AnnouncementFileService,
   ) {}
 
   /**
@@ -75,12 +79,18 @@ export class AnnouncementService {
   async create(
     userId: string,
     dto: CreateAnnouncementDto,
+    files?: Express.Multer.File[],
   ): Promise<{
     postId: string;
     title: string;
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    attachments: Array<{
+      fileId: string;
+      imgUrl: string;
+      sortOrder: number;
+    }>;
   }> {
     const ac: ApplicationConfigDto = dto.applicationConfig;
 
@@ -120,11 +130,39 @@ export class AnnouncementService {
     });
     await this.applicationConfigRepository.save(applicationConfig);
 
+    let uploaded: File[] = [];
+    if (files?.length) {
+      uploaded = await this.announcementFileService.attachFilesToPost(
+        saved.postId,
+        files.map((f, i) => ({
+          buffer: f.buffer,
+          originalName: f.originalname,
+          contentType: f.mimetype,
+          sortOrder: i,
+        })),
+      );
+      const primaryFileId = dto.fileId ?? uploaded[0]?.fileId;
+      if (primaryFileId) {
+        await this.announcementRepository.update(
+          { postId: saved.postId },
+          { fileId: primaryFileId },
+        );
+      }
+    }
+
     const withCategory = await this.announcementRepository.findOne({
       where: { postId: saved.postId },
       relations: ['category'],
     });
-    return toListItem(withCategory ?? saved);
+    const list = toListItem(withCategory ?? saved);
+    return {
+      ...list,
+      attachments: uploaded.map((f) => ({
+        fileId: f.fileId,
+        imgUrl: f.imgUrl,
+        sortOrder: f.sortOrder,
+      })),
+    };
   }
 
   /**
