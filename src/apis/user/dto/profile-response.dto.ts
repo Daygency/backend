@@ -47,4 +47,10 @@ export class ProfileResponseDto {
     email: string;
     phoneNumber: string;
   };
+
+  @ApiProperty({ description: '팔로잉 수 (내가 팔로우한 사람 수)' })
+  followingCount: number;
+
+  @ApiProperty({ description: '팔로워 수 (나를 팔로우한 사람 수)' })
+  followerCount: number;
 }

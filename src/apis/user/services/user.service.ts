@@ -32,6 +32,7 @@ import {
 import { Scrap, ScrapTargetType } from '../../scrap/entities/scrap.entity';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
+import { Follow } from '../../follow/entities/follow.entity';
 
 function encodeUserListCursor(createdAt: Date, userId: string): string {
   return Buffer.from(
@@ -88,6 +89,8 @@ export class UserService {
     private readonly commentRepository: Repository<Comment>,
     @InjectRepository(Scrap)
     private readonly scrapRepository: Repository<Scrap>,
+    @InjectRepository(Follow)
+    private readonly followRepository: Repository<Follow>,
   ) {}
 
   async findBySocial(
@@ -187,6 +190,11 @@ export class UserService {
       throw new NotFoundException('프로필을 찾을 수 없습니다.');
     }
 
+    const [followingCount, followerCount] = await Promise.all([
+      this.followRepository.count({ where: { senderId: userId } }),
+      this.followRepository.count({ where: { receiverId: userId } }),
+    ]);
+
     return {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
@@ -203,6 +211,8 @@ export class UserService {
         email: user.email,
         phoneNumber: user.phoneNumber,
       },
+      followingCount,
+      followerCount,
     };
   }
 
@@ -227,6 +237,11 @@ export class UserService {
       throw new NotFoundException('프로필을 찾을 수 없습니다.');
     }
 
+    const [followingCount, followerCount] = await Promise.all([
+      this.followRepository.count({ where: { senderId: userId } }),
+      this.followRepository.count({ where: { receiverId: userId } }),
+    ]);
+
     return {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
@@ -239,6 +254,8 @@ export class UserService {
       careers: user.careers ?? null,
       awards: user.awards ?? null,
       major: user.major ?? null,
+      followingCount,
+      followerCount,
     };
   }
 

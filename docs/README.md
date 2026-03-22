@@ -16,6 +16,24 @@
 
 ---
 
+## 유저 프로필 (팔로잉·팔로워 수)
+
+| 엔드포인트 | 인증 | 설명 |
+|------------|------|------|
+| `GET /users/profile/my` | Bearer 필요 | 내 프로필 (연락처 포함) |
+| `GET /users/:id/profile` | 불필요 | 타인 프로필 (연락처 제외) |
+
+위 두 응답 모두에 아래 숫자 필드가 **포함**됩니다.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `followingCount` | number | 해당 유저가 팔로우한 사람 수 (`follow`에서 `sender_id` = 본인) |
+| `followerCount` | number | 해당 유저를 팔로우한 사람 수 (`follow`에서 `receiver_id` = 본인) |
+
+내 프로필 수정(`PATCH /users/profile/my`) 후 응답도 `getMyProfile`과 동일 스키마이므로 동일하게 포함됩니다.
+
+---
+
 ## 인증 (토큰) 요약
 
 - **Access Token**: 1시간 | **Refresh Token**: 30일 (만료 시 `POST /auth/refresh`)
