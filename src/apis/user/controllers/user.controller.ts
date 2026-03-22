@@ -6,16 +6,21 @@ import {
   Body,
   Get,
   Param,
+  ParseUUIDPipe,
   UseGuards,
   Request,
   Patch,
   Query,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ProfileResponseDto } from '../dto/profile-response.dto';
+import { PublicProfileResponseDto } from '../dto/public-profile-response.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
+import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -155,6 +160,31 @@ export class UserController {
       return this.userService.getRecommendedUsers();
     }
     return this.userService.findUsersByActivityName(activityName);
+  }
+
+  @Get()
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @ApiOperation({
+    summary: '유저 목록 (가입일 최신순, 무한스크롤) — 전공 필터 복수 선택 가능',
+  })
+  @ApiResponse({ status: 200, description: '유저 목록 반환' })
+  findList(@Query() query: ListUsersQueryDto) {
+    return this.userService.findList(query);
+  }
+
+  @Get(':id/profile')
+  @ApiOperation({
+    summary:
+      '유저 상세(포트폴리오) — 내 프로필 조회와 동일, 연락처(이메일·전화) 제외',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '프로필 조회 성공',
+    type: PublicProfileResponseDto,
+  })
+  @ApiResponse({ status: 404, description: '유저 없음' })
+  getUserProfile(@Param('id', ParseUUIDPipe) id: string) {
+    return this.userService.getPublicProfile(id);
   }
 
   @Get(':id')
