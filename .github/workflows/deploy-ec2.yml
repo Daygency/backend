@@ -1,4 +1,4 @@
-name: Deploy EC2 #
+name: Deploy EC2
 
 on:
   push:
@@ -16,17 +16,15 @@ jobs:
       EC2_RESTART_COMMAND: ${{ secrets.EC2_RESTART_COMMAND }}
 
     steps:
-      - name: Deploy over SSH
+      - name: Preflight over SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: EC2_RESTART_COMMAND
           script_stop: true
           script: |
             set -e
-            # 비로그인 SSH 에서 nvm / fnm 등으로 깐 Node 가 PATH 에 없으면 npm 을 못 찾음
             if [ -s "$HOME/.nvm/nvm.sh" ]; then
               . "$HOME/.nvm/nvm.sh"
             fi
@@ -45,15 +43,31 @@ jobs:
               echo "::error::EC2_DEPLOY_PATH Secret 이 비었거나 잘못됐습니다."
               exit 1
             fi
+
             echo "Deploy path: $DEPLOY_PATH"
             echo "Branch: ${{ github.ref_name }}"
+            echo ">>> node $(node -v) npm $(npm -v)"
+
+      - name: Git sync over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            DEPLOY_PATH="${{ secrets.EC2_DEPLOY_PATH }}"
+            DEPLOY_PATH="${DEPLOY_PATH//$'\r'/}"
+            if [[ "$DEPLOY_PATH" == \~* ]]; then
+              DEPLOY_PATH="${DEPLOY_PATH/#\~/$HOME}"
+            fi
 
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
             BRANCH="${{ github.ref_name }}"
             BRANCH="${BRANCH//$'\r'/}"
-
             export GIT_TERMINAL_PROMPT=0
-            # Drone SSH 등 비대화형 환경에서 `if [ ! -d ... ]` + set -e 조합이 조기 종료될 수 있어 긍정 검사로 분기
+
             if [ -d "$DEPLOY_PATH/.git" ]; then
               echo ">>> .git OK (existing repo)"
               echo ">>> 기존 저장소 갱신"
@@ -89,7 +103,6 @@ jobs:
               fi
               mkdir -p "$(dirname "$DEPLOY_PATH")"
               echo ">>> git clone (첫 배포, 브랜치 $BRANCH)"
-              # 기본 브랜치만 clone 후 checkout develop 하면 원격에 develop 만 있을 때 실패할 수 있음 → clone 시 브랜치 지정
               set +e
               git clone -b "$BRANCH" "$REPO_URL" "$DEPLOY_PATH"
               ec_clone=$?
@@ -100,7 +113,29 @@ jobs:
               fi
             fi
 
-            echo ">>> node $(node -v) npm $(npm -v)"
+      - name: Install & build over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            if [ -s "$HOME/.nvm/nvm.sh" ]; then
+              . "$HOME/.nvm/nvm.sh"
+            fi
+            if command -v fnm >/dev/null 2>&1; then
+              eval "$(fnm env)"
+            fi
+
+            DEPLOY_PATH="${{ secrets.EC2_DEPLOY_PATH }}"
+            DEPLOY_PATH="${DEPLOY_PATH//$'\r'/}"
+            if [[ "$DEPLOY_PATH" == \~* ]]; then
+              DEPLOY_PATH="${DEPLOY_PATH/#\~/$HOME}"
+            fi
+
             echo ">>> npm install"
             set +e
             (cd "$DEPLOY_PATH" && npm install)
@@ -110,6 +145,7 @@ jobs:
               echo "::error::npm install 실패 — EC2 에서 같은 경로로 npm install 실행해 로그 확인"
               exit 1
             fi
+
             echo ">>> npm run build"
             set +e
             (cd "$DEPLOY_PATH" && npm run build)
@@ -119,6 +155,7 @@ jobs:
               echo "::error::npm run build 실패"
               exit 1
             fi
+
             echo ">>> npm prune --omit=dev"
             set +e
             (cd "$DEPLOY_PATH" && npm prune --omit=dev)
@@ -129,10 +166,24 @@ jobs:
               exit 1
             fi
 
-            if [ -n "${EC2_RESTART_COMMAND:-}" ]; then
-              echo ">>> restart"
-              (cd "$DEPLOY_PATH" && eval "$EC2_RESTART_COMMAND")
+      - name: Restart over SSH (optional)
+        if: ${{ env.EC2_RESTART_COMMAND != '' }}
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          envs: EC2_RESTART_COMMAND
+          script_stop: true
+          script: |
+            set -e
+            DEPLOY_PATH="${{ secrets.EC2_DEPLOY_PATH }}"
+            DEPLOY_PATH="${DEPLOY_PATH//$'\r'/}"
+            if [[ "$DEPLOY_PATH" == \~* ]]; then
+              DEPLOY_PATH="${DEPLOY_PATH/#\~/$HOME}"
             fi
+            echo ">>> restart"
+            (cd "$DEPLOY_PATH" && eval "$EC2_RESTART_COMMAND")
 
 # =============================================================================
 # 1) GitHub Repository → Secrets and variables → Actions → Secrets
