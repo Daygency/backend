@@ -101,13 +101,13 @@ jobs:
             fi
 
             echo ">>> node $(node -v) npm $(npm -v)"
-            echo ">>> npm ci"
+            echo ">>> npm install"
             set +e
-            (cd "$DEPLOY_PATH" && npm ci)
-            ec_npm_ci=$?
+            (cd "$DEPLOY_PATH" && npm install)
+            ec_npm_install=$?
             set -e
-            if [ "$ec_npm_ci" -ne 0 ]; then
-              echo "::error::npm ci 실패 — EC2 에서 같은 경로로 npm ci 실행해 로그 확인"
+            if [ "$ec_npm_install" -ne 0 ]; then
+              echo "::error::npm install 실패 — EC2 에서 같은 경로로 npm install 실행해 로그 확인"
               exit 1
             fi
             echo ">>> npm run build"
@@ -117,6 +117,15 @@ jobs:
             set -e
             if [ "$ec_build" -ne 0 ]; then
               echo "::error::npm run build 실패"
+              exit 1
+            fi
+            echo ">>> npm prune --omit=dev"
+            set +e
+            (cd "$DEPLOY_PATH" && npm prune --omit=dev)
+            ec_prune=$?
+            set -e
+            if [ "$ec_prune" -ne 0 ]; then
+              echo "::error::npm prune --omit=dev 실패"
               exit 1
             fi
 
