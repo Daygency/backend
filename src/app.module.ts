@@ -18,6 +18,7 @@ import { ChatModule } from './apis/chat/chat.module';
 import { ApplicationModule } from './apis/application/application.module';
 import { FollowModule } from './apis/follow/follow.module';
 import { BlockModule } from './apis/block/block.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { BlockModule } from './apis/block/block.module';
     ChatModule,
     FollowModule,
     BlockModule,
+    HealthModule,
   ],
   providers: [DatabaseSeedService],
 })
