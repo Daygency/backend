@@ -65,8 +65,6 @@ export class HomeService {
             ? {
                 communityId: post.communityId,
                 title: post.title,
-                createdAt: post.createdAt,
-                viewCount: Number(post.viewCount ?? 0),
               }
             : null,
         };
