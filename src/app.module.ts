@@ -20,6 +20,7 @@ import { FollowModule } from './apis/follow/follow.module';
 import { BlockModule } from './apis/block/block.module';
 import { HealthModule } from './health/health.module';
 import { HomeModule } from './apis/home/home.module';
+import { NoticeModule } from './apis/notice/notice.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { HomeModule } from './apis/home/home.module';
     BlockModule,
     HealthModule,
     HomeModule,
+    NoticeModule,
   ],
   providers: [DatabaseSeedService],
 })

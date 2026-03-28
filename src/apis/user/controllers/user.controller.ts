@@ -1,3 +1,4 @@
+import type { Express } from 'express';
 import { UserService } from '../services/user.service';
 import { CreateUserDto } from '../dto/create-user.dto';
 import {
@@ -13,14 +14,19 @@ import {
   Query,
   UsePipes,
   ValidationPipe,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ProfileResponseDto } from '../dto/profile-response.dto';
 import { PublicProfileResponseDto } from '../dto/public-profile-response.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
+import { parseAndValidateJsonPayload } from '../../../common/parse-json-payload.util';
 
 @ApiTags('users')
 @Controller('users')
@@ -194,6 +200,12 @@ export class UserController {
 
   @Patch('profile/my')
   @UseGuards(AuthGuard('access'))
+  @UseInterceptors(
+    FileInterceptor('profileImage', {
+      storage: memoryStorage(),
+    }),
+  )
+  @ApiConsumes('application/json', 'multipart/form-data')
   @ApiOperation({ summary: '내 프로필 수정' })
   @ApiResponse({
     status: 200,
@@ -201,11 +213,16 @@ export class UserController {
     type: ProfileResponseDto,
   })
   @ApiResponse({ status: 401, description: '인증 필요' })
-  updateMyProfile(
+  async updateMyProfile(
     @Body() updateUserDto: UpdateUserDto,
+    @Body('payload') payload: string | undefined,
+    @UploadedFile() profileImage: Express.Multer.File | undefined,
     @Request() req: { user: { id: string } },
   ) {
     const userId = req.user.id;
-    return this.userService.updateMyProfile(userId, updateUserDto);
+    const dto = payload
+      ? await parseAndValidateJsonPayload(UpdateUserDto, payload)
+      : updateUserDto;
+    return this.userService.updateMyProfile(userId, dto, profileImage);
   }
 }

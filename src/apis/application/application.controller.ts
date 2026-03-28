@@ -67,8 +67,7 @@ export class ApplicationController {
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
   @ApiOperation({
-    summary:
-      '지원서 단건 조회 (지원자 본인 또는 해당 공고 작성자)',
+    summary: '지원서 단건 조회 (지원자 본인 또는 해당 공고 작성자)',
   })
   findOne(
     @Param('id', ParseUUIDPipe) id: string,

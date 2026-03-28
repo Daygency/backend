@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { NoticeModule } from '../notice/notice.module';
+import { User } from '../user/entities/user.entity';
 import { LikeController } from './like.controller';
 import { LikeService } from './like.service';
 import { Like } from './entities/like.entity';
@@ -10,7 +12,15 @@ import { Comment } from '../comment/entities/comment.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Like, News, Community, Announcement, Comment]),
+    TypeOrmModule.forFeature([
+      Like,
+      News,
+      Community,
+      Announcement,
+      Comment,
+      User,
+    ]),
+    NoticeModule,
   ],
   controllers: [LikeController],
   providers: [LikeService],
