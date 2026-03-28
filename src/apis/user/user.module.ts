@@ -17,6 +17,7 @@ import { Like } from '../like/entities/like.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { Scrap } from '../scrap/entities/scrap.entity';
 import { Follow } from '../follow/entities/follow.entity';
+import { FileModule } from '../file/file.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { Follow } from '../follow/entities/follow.entity';
       Scrap,
       Follow,
     ]),
+    FileModule,
     MajorModule,
     forwardRef(() => AuthModule),
   ],

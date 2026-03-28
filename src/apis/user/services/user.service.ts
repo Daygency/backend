@@ -1,3 +1,4 @@
+import type { Express } from 'express';
 import {
   BadRequestException,
   ConflictException,
@@ -33,6 +34,7 @@ import { Scrap, ScrapTargetType } from '../../scrap/entities/scrap.entity';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { Follow } from '../../follow/entities/follow.entity';
+import { FileService } from '../../file/file.service';
 
 function encodeUserListCursor(createdAt: Date, userId: string): string {
   return Buffer.from(
@@ -91,6 +93,7 @@ export class UserService {
     private readonly scrapRepository: Repository<Scrap>,
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
+    private readonly fileService: FileService,
   ) {}
 
   async findBySocial(
@@ -259,7 +262,11 @@ export class UserService {
     };
   }
 
-  async updateMyProfile(userId: string, updateUserDto: UpdateUserDto) {
+  async updateMyProfile(
+    userId: string,
+    updateUserDto: UpdateUserDto,
+    profileImage?: Express.Multer.File,
+  ) {
     const user = await this.userRepository.findOne({
       where: { userId },
       relations: ['educations', 'careers', 'awards', 'major'],
@@ -281,6 +288,18 @@ export class UserService {
         throw new NotFoundException('전공을 찾을 수 없습니다.');
       }
       user.major = major;
+    }
+
+    if (profileImage) {
+      const uploaded = await this.fileService.uploadAndSave({
+        buffer: profileImage.buffer,
+        originalName: profileImage.originalname,
+        contentType: profileImage.mimetype,
+        targetType: null,
+        targetId: null,
+        sortOrder: 0,
+      });
+      user.profileImgUrl = uploaded.imgUrl;
     }
 
     const savedUser = await this.userRepository.save(user);
