@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -11,9 +12,14 @@ import { ListCommentQueryDto } from './dto/list-comment-query.dto';
 import { Comment, CommentTargetType } from './entities/comment.entity';
 import { News } from '../news/entities/news.entity';
 import { Community } from '../community/entities/community.entity';
+import { NoticeTargetType } from '../notice/entities/notice.entity';
+import { NoticeService } from '../notice/notice.service';
+import { User } from '../user/entities/user.entity';
 
 @Injectable()
 export class CommentService {
+  private readonly logger = new Logger(CommentService.name);
+
   constructor(
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
@@ -21,6 +27,9 @@ export class CommentService {
     private readonly newsRepository: Repository<News>,
     @InjectRepository(Community)
     private readonly communityRepository: Repository<Community>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly noticeService: NoticeService,
   ) {}
 
   async create(userId: string, dto: CreateCommentDto) {
@@ -35,7 +44,10 @@ export class CommentService {
         throw new NotFoundException('부모 댓글이 존재하지 않습니다.');
       }
 
-      if (parent.targetType !== dto.targetType || parent.targetId !== dto.targetId) {
+      if (
+        parent.targetType !== dto.targetType ||
+        parent.targetId !== dto.targetId
+      ) {
         throw new ForbiddenException(
           '부모 댓글과 같은 게시글에만 대댓글을 작성할 수 있습니다.',
         );
@@ -50,7 +62,9 @@ export class CommentService {
       user: { userId },
     });
 
-    return this.commentRepository.save(comment);
+    const saved = await this.commentRepository.save(comment);
+    void this.notifyCommentCreated(saved, userId);
+    return saved;
   }
 
   async findAll(query: ListCommentQueryDto) {
@@ -119,9 +133,69 @@ export class CommentService {
     return { success: true };
   }
 
-  private async validateTarget(targetType: CommentTargetType, targetId: string) {
+  private async notifyCommentCreated(
+    comment: Comment,
+    commenterUserId: string,
+  ): Promise<void> {
+    try {
+      let recipientUserId: string | undefined;
+      if (comment.parentId) {
+        const parent = await this.commentRepository.findOne({
+          where: { id: comment.parentId },
+          relations: { user: true },
+        });
+        recipientUserId = parent?.user?.userId;
+      } else if (comment.targetType === CommentTargetType.NEWS) {
+        const news = await this.newsRepository.findOne({
+          where: { newsId: comment.targetId },
+          relations: { user: true },
+        });
+        recipientUserId = news?.user?.userId;
+      } else {
+        const community = await this.communityRepository.findOne({
+          where: { communityId: comment.targetId },
+          relations: { user: true },
+        });
+        recipientUserId = community?.user?.userId;
+      }
+      if (!recipientUserId || recipientUserId === commenterUserId) {
+        return;
+      }
+
+      const commenter = await this.userRepository.findOne({
+        where: { userId: commenterUserId },
+        select: ['nickname', 'activityName'],
+      });
+      const name = commenter?.activityName ?? commenter?.nickname ?? '회원';
+      const preview =
+        comment.content.length > 200
+          ? `${comment.content.slice(0, 200)}…`
+          : comment.content;
+      const prefix = comment.parentId
+        ? `${name}님이 대댓글을 남겼습니다: `
+        : `${name}님이 댓글을 남겼습니다: `;
+      const content = `${prefix}${preview}`.slice(0, 500);
+
+      await this.noticeService.createAndDispatchPush({
+        actorUserId: commenterUserId,
+        targetType: NoticeTargetType.COMMENT,
+        targetId: comment.id,
+        content,
+        recipientUserIds: [recipientUserId],
+      });
+    } catch (e) {
+      this.logger.error('notifyCommentCreated failed', e);
+    }
+  }
+
+  private async validateTarget(
+    targetType: CommentTargetType,
+    targetId: string,
+  ) {
     if (targetType === CommentTargetType.NEWS) {
-      const news = await this.newsRepository.findOne({ where: { newsId: targetId } });
+      const news = await this.newsRepository.findOne({
+        where: { newsId: targetId },
+      });
       if (!news) {
         throw new NotFoundException('댓글 대상 뉴스를 찾을 수 없습니다.');
       }
@@ -132,7 +206,9 @@ export class CommentService {
       where: { communityId: targetId },
     });
     if (!community) {
-      throw new NotFoundException('댓글 대상 커뮤니티 게시글을 찾을 수 없습니다.');
+      throw new NotFoundException(
+        '댓글 대상 커뮤니티 게시글을 찾을 수 없습니다.',
+      );
     }
   }
 }

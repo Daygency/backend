@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,9 +14,14 @@ import { News } from '../news/entities/news.entity';
 import { Community } from '../community/entities/community.entity';
 import { Announcement } from '../announcement/entities/announcement.entity';
 import { Comment } from '../comment/entities/comment.entity';
+import { NoticeTargetType } from '../notice/entities/notice.entity';
+import { NoticeService } from '../notice/notice.service';
+import { User } from '../user/entities/user.entity';
 
 @Injectable()
 export class LikeService {
+  private readonly logger = new Logger(LikeService.name);
+
   constructor(
     @InjectRepository(Like)
     private readonly likeRepository: Repository<Like>,
@@ -27,6 +33,9 @@ export class LikeService {
     private readonly announcementRepository: Repository<Announcement>,
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly noticeService: NoticeService,
   ) {}
 
   async create(userId: string, dto: CreateLikeDto) {
@@ -51,7 +60,92 @@ export class LikeService {
       user: { userId },
     });
 
-    return this.likeRepository.save(like);
+    const saved = await this.likeRepository.save(like);
+    void this.notifyLikeCreated(userId, saved);
+    return saved;
+  }
+
+  private likeTargetLabel(likeType: LikeType): string {
+    switch (likeType) {
+      case LikeType.NEWS:
+        return '뉴스';
+      case LikeType.COMMUNITY:
+        return '게시글';
+      case LikeType.ANNOUNCEMENT:
+        return '공고';
+      case LikeType.COMMENT:
+        return '댓글';
+      default:
+        return '게시글';
+    }
+  }
+
+  private async resolveLikeTargetOwnerId(
+    likeType: LikeType,
+    targetId: string,
+  ): Promise<string | undefined> {
+    if (likeType === LikeType.NEWS) {
+      const row = await this.newsRepository.findOne({
+        where: { newsId: targetId },
+        relations: { user: true },
+      });
+      return row?.user?.userId;
+    }
+    if (likeType === LikeType.COMMUNITY) {
+      const row = await this.communityRepository.findOne({
+        where: { communityId: targetId },
+        relations: { user: true },
+      });
+      return row?.user?.userId;
+    }
+    if (likeType === LikeType.ANNOUNCEMENT) {
+      const row = await this.announcementRepository.findOne({
+        where: { postId: targetId },
+      });
+      return row?.userId;
+    }
+    const row = await this.commentRepository.findOne({
+      where: { id: targetId },
+      relations: { user: true },
+    });
+    return row?.user?.userId;
+  }
+
+  private async notifyLikeCreated(
+    likerUserId: string,
+    like: Like,
+  ): Promise<void> {
+    try {
+      const ownerId = await this.resolveLikeTargetOwnerId(
+        like.likeType,
+        like.targetId,
+      );
+      if (!ownerId || ownerId === likerUserId) {
+        return;
+      }
+
+      const liker = await this.userRepository.findOne({
+        where: { userId: likerUserId },
+        select: ['nickname', 'activityName'],
+      });
+      const name = liker?.activityName ?? liker?.nickname ?? '회원';
+      const label = this.likeTargetLabel(like.likeType);
+      const content = `${name}님이 내 ${label}에 좋아요를 눌렀습니다.`.slice(
+        0,
+        500,
+      );
+
+      await this.noticeService.createAndDispatchPush({
+        actorUserId: likerUserId,
+        targetType: NoticeTargetType.LIKE,
+        targetId: like.targetId,
+        likeKind: like.likeType,
+        content,
+        recipientUserIds: [ownerId],
+      });
+    } catch (e) {
+      this.logger.error('notifyLikeCreated failed', e);
+    }
   }
 
   async findAll(query: ListLikeQueryDto) {
@@ -127,7 +221,9 @@ export class LikeService {
 
   private async validateTarget(likeType: LikeType, targetId: string) {
     if (likeType === LikeType.NEWS) {
-      const news = await this.newsRepository.findOne({ where: { newsId: targetId } });
+      const news = await this.newsRepository.findOne({
+        where: { newsId: targetId },
+      });
       if (!news) {
         throw new NotFoundException('좋아요 대상 뉴스를 찾을 수 없습니다.');
       }
@@ -139,7 +235,9 @@ export class LikeService {
         where: { communityId: targetId },
       });
       if (!community) {
-        throw new NotFoundException('좋아요 대상 커뮤니티 게시글을 찾을 수 없습니다.');
+        throw new NotFoundException(
+          '좋아요 대상 커뮤니티 게시글을 찾을 수 없습니다.',
+        );
       }
       return;
     }
@@ -154,7 +252,9 @@ export class LikeService {
       return;
     }
 
-    const comment = await this.commentRepository.findOne({ where: { id: targetId } });
+    const comment = await this.commentRepository.findOne({
+      where: { id: targetId },
+    });
     if (!comment) {
       throw new NotFoundException('좋아요 대상 댓글을 찾을 수 없습니다.');
     }

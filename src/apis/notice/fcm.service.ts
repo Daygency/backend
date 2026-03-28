@@ -1,5 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as admin from 'firebase-admin';
 
 @Injectable()
@@ -8,14 +11,53 @@ export class FcmService implements OnModuleInit {
 
   constructor(private readonly config: ConfigService) {}
 
+  /** `{` 로 시작하면 JSON 문자열, 아니면 서비스 계정 파일 경로로 처리 */
+  private resolveServiceAccountJsonString(): string | null {
+    const raw =
+      this.config.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON')?.trim() ||
+      this.config.get<string>('fire_service_account_json')?.trim() ||
+      this.config.get<string>('firebase_service_account_json')?.trim();
+    if (!raw) {
+      return null;
+    }
+    if (raw.startsWith('{')) {
+      return raw;
+    }
+    const filePath = this.resolveCredentialPath(raw);
+    try {
+      return fs.readFileSync(filePath, 'utf8');
+    } catch (e) {
+      this.logger.error(
+        `Could not read Firebase service account file: ${filePath}`,
+        e,
+      );
+      return null;
+    }
+  }
+
+  private resolveCredentialPath(p: string): string {
+    const normalized = p.trim();
+    if (normalized.startsWith('~/')) {
+      return path.join(os.homedir(), normalized.slice(2));
+    }
+    if (normalized === '~') {
+      return os.homedir();
+    }
+    if (path.isAbsolute(normalized)) {
+      return normalized;
+    }
+    return path.resolve(process.cwd(), normalized);
+  }
+
   onModuleInit() {
     if (admin.apps.length > 0) {
       return;
     }
-    const json = this.config.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON');
-    if (!json?.trim()) {
+    const json = this.resolveServiceAccountJsonString();
+    if (!json) {
       this.logger.warn(
-        'FIREBASE_SERVICE_ACCOUNT_JSON is not set; FCM delivery is disabled.',
+        'Set FIREBASE_SERVICE_ACCOUNT_JSON (or fire_service_account_json): ' +
+          'paste minified JSON, or a path to the *.json key file. FCM disabled.',
       );
       return;
     }
@@ -26,7 +68,7 @@ export class FcmService implements OnModuleInit {
       });
       this.logger.log('Firebase Admin initialized for FCM.');
     } catch (e) {
-      this.logger.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON', e);
+      this.logger.error('Failed to parse Firebase service account JSON', e);
     }
   }
 

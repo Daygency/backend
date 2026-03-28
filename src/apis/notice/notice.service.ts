@@ -2,11 +2,14 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository, DataSource } from 'typeorm';
 import { User } from '../user/entities/user.entity';
+import { LikeType } from '../like/entities/like.entity';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { RegisterPushDeviceDto } from './dto/register-push-device.dto';
 import { Notice, NoticeTargetType } from './entities/notice.entity';
@@ -18,12 +21,15 @@ const PUSH_TITLE_BY_TARGET: Record<NoticeTargetType, string> = {
   [NoticeTargetType.COMMENT]: '댓글',
   [NoticeTargetType.FOLLOW]: '팔로우',
   [NoticeTargetType.APPLICATION]: '지원',
+  [NoticeTargetType.LIKE]: '좋아요',
 };
 
 export interface CreateNoticePayload {
   actorUserId: string;
   targetType: NoticeTargetType;
   targetId: string;
+  /** `targetType === LIKE` 일 때 좋아요 대상 구분 */
+  likeKind?: LikeType | null;
   /** 인박스 표시 + FCM 알림 본문 */
   content?: string | null;
   recipientUserIds: string[];
@@ -60,6 +66,8 @@ function decodeNotificationCursor(cursor: string): { t: number; i: string } {
 
 @Injectable()
 export class NoticeService {
+  private readonly logger = new Logger(NoticeService.name);
+
   constructor(
     @InjectRepository(Notice)
     private readonly noticeRepo: Repository<Notice>,
@@ -143,6 +151,7 @@ export class NoticeService {
           id: nr.notice.id,
           targetType: nr.notice.targetType,
           targetId: nr.notice.targetId,
+          likeKind: nr.notice.likeKind,
           content: nr.notice.content,
           createdAt: nr.notice.createdAt,
           actor: nr.notice.actorUser
@@ -156,6 +165,75 @@ export class NoticeService {
         },
       })),
       nextCursor,
+      hasMore,
+    };
+  }
+
+  async getUnreadCount(userId: string): Promise<{ unreadCount: number }> {
+    const unreadCount = await this.recipientRepo
+      .createQueryBuilder('nr')
+      .where('nr.user_id = :userId', { userId })
+      .andWhere('nr.read_at IS NULL')
+      .getCount();
+    return { unreadCount };
+  }
+
+  async markAllRead(userId: string): Promise<{ updated: number }> {
+    const result = await this.recipientRepo
+      .createQueryBuilder()
+      .update(NoticeRecipient)
+      .set({ readAt: new Date() })
+      .where('user_id = :userId', { userId })
+      .andWhere('read_at IS NULL')
+      .execute();
+    return { updated: result.affected ?? 0 };
+  }
+
+  /**
+   * 현재 로그인 유저에게 등록된 모든 FCM 토큰으로 테스트 푸시.
+   * `isPushEnabled`와 무관하게 전송(연동 검증용).
+   */
+  async sendTestPushToSelf(userId: string): Promise<{
+    tokenCount: number;
+    successCount: number;
+    failureCount: number;
+    failedTokens: string[];
+  }> {
+    if (!this.fcm.isEnabled()) {
+      throw new ServiceUnavailableException(
+        'FCM is not configured (check service account env / JSON file).',
+      );
+    }
+    const tokenRows = await this.pushDeviceRepo
+      .createQueryBuilder('d')
+      .select('d.fcm_token', 'fcmToken')
+      .where('d.user_id = :userId', { userId })
+      .getRawMany<{ fcmToken: string }>();
+    const tokens = tokenRows.map((r) => r.fcmToken);
+    if (tokens.length === 0) {
+      throw new BadRequestException(
+        '등록된 FCM 토큰이 없습니다. 앱에서 POST /notifications/devices 로 토큰을 등록하세요.',
+      );
+    }
+    const { failedTokens } = await this.fcm.sendMulticast({
+      tokens,
+      title: 'Daygency 푸시 테스트',
+      body: '테스트 알림이 도착했습니다.',
+      data: {
+        test: 'true',
+        targetType: 'TEST',
+        targetId: userId,
+      },
+    });
+    if (failedTokens.length > 0) {
+      await this.pushDeviceRepo.delete({ fcmToken: In(failedTokens) });
+    }
+    const successCount = tokens.length - failedTokens.length;
+    return {
+      tokenCount: tokens.length,
+      successCount,
+      failureCount: failedTokens.length,
+      failedTokens,
     };
   }
 
@@ -180,18 +258,27 @@ export class NoticeService {
    * 알림 row 생성 + 수신자 매핑 + (설정된 경우) FCM 전송.
    * 댓글/팔로우 등 다른 모듈에서 주입해 호출하면 됩니다.
    */
-  async createAndDispatchPush(payload: CreateNoticePayload): Promise<Notice> {
+  async createAndDispatchPush(
+    payload: CreateNoticePayload,
+  ): Promise<Notice | null> {
     const recipients = [
       ...new Set(
         payload.recipientUserIds.filter((id) => id !== payload.actorUserId),
       ),
     ];
+    if (recipients.length === 0) {
+      return null;
+    }
 
     const notice = await this.dataSource.transaction(async (em) => {
       const n = em.create(Notice, {
         actorUser: { userId: payload.actorUserId } as User,
         targetType: payload.targetType,
         targetId: payload.targetId,
+        likeKind:
+          payload.targetType === NoticeTargetType.LIKE
+            ? (payload.likeKind ?? null)
+            : null,
         content: payload.content ?? null,
       });
       await em.save(n);
@@ -208,38 +295,46 @@ export class NoticeService {
       return n;
     });
 
-    if (recipients.length === 0 || !this.fcm.isEnabled()) {
+    if (!this.fcm.isEnabled()) {
       return notice;
     }
 
-    const pushAllowed = await this.userRepo.find({
-      where: {
-        userId: In(recipients),
-        isPushEnabled: true,
-      },
-      select: ['userId'],
-    });
-    const allowedIds = new Set(pushAllowed.map((u) => u.userId));
-    const ids = [...allowedIds];
-    const tokenRows = await this.pushDeviceRepo
-      .createQueryBuilder('d')
-      .select('d.fcm_token', 'fcmToken')
-      .where('d.user_id IN (:...ids)', { ids })
-      .getRawMany<{ fcmToken: string }>();
-    const tokens = tokenRows.map((r) => r.fcmToken);
-    const body = (payload.content ?? '').trim();
-    const { failedTokens } = await this.fcm.sendMulticast({
-      tokens,
-      title: PUSH_TITLE_BY_TARGET[payload.targetType],
-      body: body || PUSH_TITLE_BY_TARGET[payload.targetType],
-      data: {
+    try {
+      const pushAllowed = await this.userRepo.find({
+        where: {
+          userId: In(recipients),
+          isPushEnabled: true,
+        },
+        select: ['userId'],
+      });
+      const allowedIds = new Set(pushAllowed.map((u) => u.userId));
+      const ids = [...allowedIds];
+      const tokenRows = await this.pushDeviceRepo
+        .createQueryBuilder('d')
+        .select('d.fcm_token', 'fcmToken')
+        .where('d.user_id IN (:...ids)', { ids })
+        .getRawMany<{ fcmToken: string }>();
+      const tokens = tokenRows.map((r) => r.fcmToken);
+      const body = (payload.content ?? '').trim();
+      const data: Record<string, string> = {
         noticeId: notice.id,
         targetType: payload.targetType,
         targetId: payload.targetId,
-      },
-    });
-    if (failedTokens.length > 0) {
-      await this.pushDeviceRepo.delete({ fcmToken: In(failedTokens) });
+      };
+      if (payload.likeKind) {
+        data.likeKind = payload.likeKind;
+      }
+      const { failedTokens } = await this.fcm.sendMulticast({
+        tokens,
+        title: PUSH_TITLE_BY_TARGET[payload.targetType],
+        body: body || PUSH_TITLE_BY_TARGET[payload.targetType],
+        data,
+      });
+      if (failedTokens.length > 0) {
+        await this.pushDeviceRepo.delete({ fcmToken: In(failedTokens) });
+      }
+    } catch (e) {
+      this.logger.error('FCM send failed (notice was saved)', e);
     }
 
     return notice;

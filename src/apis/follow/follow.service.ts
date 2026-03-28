@@ -3,12 +3,15 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { Block } from '../block/entities/block.entity';
+import { NoticeTargetType } from '../notice/entities/notice.entity';
+import { NoticeService } from '../notice/notice.service';
 import { Follow } from './entities/follow.entity';
 import { ListFollowQueryDto } from './dto/list-follow-query.dto';
 
@@ -28,6 +31,8 @@ export type FollowListResponse = {
 
 @Injectable()
 export class FollowService {
+  private readonly logger = new Logger(FollowService.name);
+
   constructor(
     @InjectRepository(Follow)
     private readonly followRepo: Repository<Follow>,
@@ -35,6 +40,7 @@ export class FollowService {
     private readonly blockRepo: Repository<Block>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly noticeService: NoticeService,
   ) {}
 
   async follow(senderId: string, receiverId: string): Promise<Follow> {
@@ -48,9 +54,7 @@ export class FollowService {
       throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
     if (await this.hasBlockBetween(senderId, receiverId)) {
-      throw new ForbiddenException(
-        '차단 관계가 있어 팔로우할 수 없습니다.',
-      );
+      throw new ForbiddenException('차단 관계가 있어 팔로우할 수 없습니다.');
     }
     const existing = await this.followRepo.findOne({
       where: { senderId, receiverId },
@@ -59,7 +63,31 @@ export class FollowService {
       throw new ConflictException('이미 팔로우한 사용자입니다.');
     }
     const row = this.followRepo.create({ senderId, receiverId });
-    return this.followRepo.save(row);
+    const saved = await this.followRepo.save(row);
+    void this.notifyNewFollow(senderId, receiverId);
+    return saved;
+  }
+
+  private async notifyNewFollow(
+    senderId: string,
+    receiverId: string,
+  ): Promise<void> {
+    try {
+      const sender = await this.userRepo.findOne({
+        where: { userId: senderId },
+        select: ['nickname', 'activityName'],
+      });
+      const name = sender?.activityName ?? sender?.nickname ?? '회원';
+      await this.noticeService.createAndDispatchPush({
+        actorUserId: senderId,
+        targetType: NoticeTargetType.FOLLOW,
+        targetId: senderId,
+        content: `${name}님이 나를 팔로우했습니다.`.slice(0, 500),
+        recipientUserIds: [receiverId],
+      });
+    } catch (e) {
+      this.logger.error('notifyNewFollow failed', e);
+    }
   }
 
   async unfollow(senderId: string, receiverId: string): Promise<void> {

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -12,6 +13,9 @@ import {
   AnnouncementStatus,
 } from '../announcement/entities/announcement.entity';
 import { ApplicationConfig } from '../announcement/entities/application-config.entity';
+import { NoticeTargetType } from '../notice/entities/notice.entity';
+import { NoticeService } from '../notice/notice.service';
+import { User } from '../user/entities/user.entity';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { UpdateApplicationDto } from './dto/update-application.dto';
 import { Application } from './entities/application.entity';
@@ -19,6 +23,8 @@ import { ChatService } from '../chat/chat.service';
 
 @Injectable()
 export class ApplicationService {
+  private readonly logger = new Logger(ApplicationService.name);
+
   constructor(
     @InjectRepository(Application)
     private readonly applicationRepo: Repository<Application>,
@@ -26,7 +32,10 @@ export class ApplicationService {
     private readonly announcementRepo: Repository<Announcement>,
     @InjectRepository(ApplicationConfig)
     private readonly applicationConfigRepo: Repository<ApplicationConfig>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly chatService: ChatService,
+    private readonly noticeService: NoticeService,
   ) {}
 
   async submit(
@@ -102,7 +111,38 @@ export class ApplicationService {
       await this.applicationRepo.delete({ id: saved.id });
       throw err;
     }
+    void this.notifyAnnouncementApplication(applicantUserId, announcement);
     return saved;
+  }
+
+  private async notifyAnnouncementApplication(
+    applicantUserId: string,
+    announcement: Announcement,
+  ): Promise<void> {
+    try {
+      const applicant = await this.userRepo.findOne({
+        where: { userId: applicantUserId },
+        select: ['nickname', 'activityName'],
+      });
+      const name = applicant?.activityName ?? applicant?.nickname ?? '회원';
+      const titleCut =
+        announcement.title.length > 80
+          ? `${announcement.title.slice(0, 80)}…`
+          : announcement.title;
+      const content = `${name}님이 "${titleCut}" 공고에 지원했습니다.`.slice(
+        0,
+        500,
+      );
+      await this.noticeService.createAndDispatchPush({
+        actorUserId: applicantUserId,
+        targetType: NoticeTargetType.APPLICATION,
+        targetId: announcement.postId,
+        content,
+        recipientUserIds: [announcement.userId],
+      });
+    } catch (e) {
+      this.logger.error('notifyAnnouncementApplication failed', e);
+    }
   }
 
   async findOneById(
@@ -260,53 +300,53 @@ export class ApplicationService {
       includeName:
         dto.includeName !== undefined
           ? dto.includeName
-          : existing.includeName ?? undefined,
+          : (existing.includeName ?? undefined),
       includeBirth:
         dto.includeBirth !== undefined
           ? dto.includeBirth
-          : existing.includeBirth ?? undefined,
+          : (existing.includeBirth ?? undefined),
       includeGender:
         dto.includeGender !== undefined
           ? dto.includeGender
-          : existing.includeGender ?? undefined,
+          : (existing.includeGender ?? undefined),
       includeMajor:
         dto.includeMajor !== undefined
           ? dto.includeMajor
-          : existing.includeMajor ?? undefined,
+          : (existing.includeMajor ?? undefined),
       includeMajorDetail:
         dto.includeMajorDetail !== undefined
           ? dto.includeMajorDetail
-          : existing.includeMajorDetail ?? undefined,
+          : (existing.includeMajorDetail ?? undefined),
       includeEducation:
         dto.includeEducation !== undefined
           ? dto.includeEducation
-          : existing.includeEducation ?? undefined,
+          : (existing.includeEducation ?? undefined),
       includeCategory:
         dto.includeCategory !== undefined
           ? dto.includeCategory
-          : existing.includeCategory ?? undefined,
+          : (existing.includeCategory ?? undefined),
       includeMusic:
         dto.includeMusic !== undefined
           ? dto.includeMusic
-          : existing.includeMusic ?? undefined,
+          : (existing.includeMusic ?? undefined),
       includeAddress:
         dto.includeAddress !== undefined
           ? dto.includeAddress
-          : existing.includeAddress ?? undefined,
+          : (existing.includeAddress ?? undefined),
       includeFile: fileVal,
       includeLink:
         dto.includeLink !== undefined
           ? dto.includeLink
-          : existing.includeLink ?? undefined,
+          : (existing.includeLink ?? undefined),
       includeDepartment:
         dto.includeDepartment !== undefined
           ? dto.includeDepartment
-          : existing.includeDepartment ?? undefined,
+          : (existing.includeDepartment ?? undefined),
       includeCareer: careerVal,
       includeIntroduce:
         dto.includeIntroduce !== undefined
           ? dto.includeIntroduce
-          : existing.includeIntroduce ?? undefined,
+          : (existing.includeIntroduce ?? undefined),
     };
   }
 

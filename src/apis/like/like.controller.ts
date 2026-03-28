@@ -50,6 +50,10 @@ export class LikeController {
     @Query() query: RemoveLikeQueryDto,
     @Request() req: { user: { id: string } },
   ) {
-    return this.likeService.removeByTarget(req.user.id, query.likeType, query.targetId);
+    return this.likeService.removeByTarget(
+      req.user.id,
+      query.likeType,
+      query.targetId,
+    );
   }
 }
