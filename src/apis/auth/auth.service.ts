@@ -7,7 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserService } from '../user/services/user.service';
-import { SocialProvider } from '../user/entities/user.entity';
+import { SocialProvider, UserRole } from '../user/entities/user.entity';
 import type { SocialProfile } from './types/social-profile.type';
 
 interface KakaoUserResponse {
@@ -27,12 +27,14 @@ interface KakaoUserResponse {
   };
 }
 
+/** https://openapi.naver.com/v1/nid/me — `response.{ id, email, name, nickname, profile_image }` */
 interface NaverUserResponse {
   resultcode: string;
   response?: {
     id: string;
-    nickname?: string;
     email?: string;
+    name?: string;
+    nickname?: string;
     profile_image?: string;
   };
 }
@@ -59,9 +61,46 @@ export class AuthService {
     return this.issueTokens(profile, SocialProvider.KAKAO);
   }
 
-  async loginWithNaver(accessToken: string) {
-    const profile = await this.validateNaverToken(accessToken);
-    return this.issueTokens(profile, SocialProvider.NAVER);
+  /**
+   * 네이버 인가 code → 토큰 API 교환 → nid/me → JWT 또는 needsSignup.
+   * .env: OAUTH_NAVER_CLIENT_ID / OAUTH_NAVER_CLIENT_SECRET 등 (getNaverClientCredentials 참고)
+   */
+  async loginWithNaverCode(dto: {
+    code: string;
+    redirectUri: string;
+    redirect_uri?: string;
+    state?: string;
+  }) {
+    const redirectUri = this.resolveNaverRedirectUri(dto);
+    const naverAccessToken = await this.exchangeNaverAuthorizationCode(
+      dto.code.trim(),
+      redirectUri,
+      dto.state,
+    );
+    const profile = await this.validateNaverToken(naverAccessToken);
+    let user = await this.loadSocialUser(profile, SocialProvider.NAVER);
+
+    if (user?.deletedAt) {
+      await this.userService.reactivateUser(user.userId);
+      user = await this.loadSocialUser(profile, SocialProvider.NAVER);
+    }
+
+    if (!user) {
+      return {
+        needsSignup: true,
+        profile: {
+          socialId: profile.socialId,
+          nickname: profile.nickname,
+          email: profile.email,
+          profileImgUrl: profile.profileImgUrl,
+        },
+        /** POST /auth/signup/naver 의 accessToken 으로 그대로 전달 */
+        naverAccessToken,
+        oauthAccessToken: naverAccessToken,
+      };
+    }
+
+    return this.issueAccessAndRefreshTokens(user);
   }
 
   async loginWithGoogle(accessToken: string) {
@@ -117,17 +156,107 @@ export class AuthService {
     }
 
     const data = (await res.json()) as NaverUserResponse;
+    this.logger.log('[Naver raw]', JSON.stringify(data, null, 2));
     if (data.resultcode !== '00' || !data.response) {
       throw new UnauthorizedException('Invalid Naver response');
     }
 
     const r = data.response;
-    return {
+    const socialProfile = {
       socialId: r.id,
-      nickname: r.nickname ?? '',
+      nickname: (r.nickname ?? r.name ?? '').trim(),
       email: r.email ?? '',
       profileImgUrl: r.profile_image ?? '',
     };
+    this.logger.log('[Naver parsed]', socialProfile);
+    return socialProfile;
+  }
+
+  private resolveNaverRedirectUri(dto: {
+    redirectUri: string;
+    redirect_uri?: string;
+  }): string {
+    const primary = dto.redirectUri.trim();
+    const alt = dto.redirect_uri?.trim();
+    if (alt && alt !== primary) {
+      throw new BadRequestException(
+        'redirectUri 와 redirect_uri 는 동일한 문자열이어야 합니다.',
+      );
+    }
+    return primary;
+  }
+
+  private getNaverClientCredentials(): {
+    clientId: string;
+    clientSecret: string;
+  } {
+    const clientId = this.configService
+      .get<string>('OAUTH_NAVER_CLIENT_ID')
+      ?.trim();
+    const clientSecret = this.configService
+      .get<string>('OAUTH_NAVER_CLIENT_SECRET')
+      ?.trim();
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException(
+        '서버 .env 에 네이버 클라이언트 자격 증명을 설정하세요. (예: OAUTH_NAVER_CLIENT_ID, OAUTH_NAVER_CLIENT_SECRET)',
+      );
+    }
+    return { clientId, clientSecret };
+  }
+
+  private async exchangeNaverAuthorizationCode(
+    code: string,
+    redirectUri: string,
+    state?: string,
+  ): Promise<string> {
+    const { clientId, clientSecret } = this.getNaverClientCredentials();
+
+    const params = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+    });
+    if (state != null && state !== '') {
+      params.set('state', state);
+    }
+
+    const tokenRes = await fetch('https://nid.naver.com/oauth2.0/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+
+    const raw = await tokenRes.text();
+    let tokenJson: {
+      access_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+    try {
+      tokenJson = JSON.parse(raw) as typeof tokenJson;
+    } catch {
+      this.logger.warn('[Naver token] non-JSON', raw.slice(0, 200));
+      throw new UnauthorizedException(
+        '네이버 토큰 응답 형식이 올바르지 않습니다.',
+      );
+    }
+
+    if (!tokenRes.ok || !tokenJson.access_token) {
+      this.logger.warn(
+        '[Naver token exchange]',
+        tokenJson.error,
+        tokenJson.error_description ?? raw.slice(0, 300),
+      );
+      throw new UnauthorizedException(
+        tokenJson.error_description ??
+          tokenJson.error ??
+          '네이버 인가 코드로 액세스 토큰을 발급하지 못했습니다. code 재사용·redirect 불일치 여부를 확인하세요.',
+      );
+    }
+
+    return tokenJson.access_token;
   }
 
   private async validateGoogleToken(
@@ -151,8 +280,31 @@ export class AuthService {
     };
   }
 
+  /** 소셜 provider+id 조회 후, 이메일 없을 때 placeholder 이메일 row까지 조회 */
+  private async loadSocialUser(
+    profile: SocialProfile,
+    provider: SocialProvider,
+  ) {
+    let user = await this.userService.findBySocial(provider, profile, {
+      withDeleted: true,
+    });
+    if (!user) {
+      user = await this.userService.findBySocialPlaceholderEmail(
+        provider,
+        profile,
+        { withDeleted: true },
+      );
+    }
+    return user;
+  }
+
   private async issueTokens(profile: SocialProfile, provider: SocialProvider) {
-    const user = await this.userService.findBySocial(provider, profile);
+    let user = await this.loadSocialUser(profile, provider);
+
+    if (user?.deletedAt) {
+      await this.userService.reactivateUser(user.userId);
+      user = await this.loadSocialUser(profile, provider);
+    }
 
     if (!user) {
       return {
@@ -209,11 +361,14 @@ export class AuthService {
       throw new UnauthorizedException('refresh token이 필요합니다.');
     }
     try {
-      const payload = this.jwtService.verify(refreshToken, {
-        secret:
-          this.configService.get<string>('JWT_REFRESH_SECRET') ??
-          this.configService.get<string>('JWT_ACCESS_SECRET'),
-      });
+      const payload = this.jwtService.verify<{ sub: string; type: string }>(
+        refreshToken,
+        {
+          secret:
+            this.configService.get<string>('JWT_REFRESH_SECRET') ??
+            this.configService.get<string>('JWT_ACCESS_SECRET'),
+        },
+      );
       if (payload?.type !== 'refresh' || !payload?.sub) {
         throw new UnauthorizedException('유효하지 않은 refresh token입니다.');
       }
@@ -233,7 +388,7 @@ export class AuthService {
 
   async signupWithKakao(
     accessToken: string,
-    options?: { nickname?: string; activityName?: string },
+    options?: { nickname?: string; activityName?: string; role?: UserRole },
   ) {
     const profile = await this.validateKakaoToken(accessToken);
     return this.signupWithSocial(SocialProvider.KAKAO, profile, options);
@@ -241,7 +396,7 @@ export class AuthService {
 
   async signupWithNaver(
     accessToken: string,
-    options?: { nickname?: string; activityName?: string },
+    options?: { nickname?: string; activityName?: string; role?: UserRole },
   ) {
     const profile = await this.validateNaverToken(accessToken);
     return this.signupWithSocial(SocialProvider.NAVER, profile, options);
@@ -249,7 +404,7 @@ export class AuthService {
 
   async signupWithGoogle(
     accessToken: string,
-    options?: { nickname?: string; activityName?: string },
+    options?: { nickname?: string; activityName?: string; role?: UserRole },
   ) {
     const profile = await this.validateGoogleToken(accessToken);
     return this.signupWithSocial(SocialProvider.GOOGLE, profile, options);
@@ -258,10 +413,21 @@ export class AuthService {
   private async signupWithSocial(
     provider: SocialProvider,
     profile: SocialProfile,
-    options?: { nickname?: string; activityName?: string },
+    options?: {
+      nickname?: string;
+      activityName?: string;
+      role?: UserRole;
+    },
   ) {
-    const existing = await this.userService.findBySocial(provider, profile);
+    let existing = await this.loadSocialUser(profile, provider);
     if (existing) {
+      if (existing.deletedAt) {
+        await this.userService.reactivateUser(existing.userId);
+        existing = await this.loadSocialUser(profile, provider);
+      }
+      if (!existing) {
+        throw new UnauthorizedException('계정 복구에 실패했습니다.');
+      }
       const result = this.issueAccessAndRefreshTokens(existing);
       this.logger.log(
         `[Signup login existing] provider=${provider}, userId=${existing.userId}`,
@@ -276,6 +442,7 @@ export class AuthService {
     const user = await this.userService.createBySocial(provider, profile, {
       nickname: options.nickname,
       activityName: options.activityName,
+      role: options.role,
     });
 
     const result = this.issueAccessAndRefreshTokens(user);

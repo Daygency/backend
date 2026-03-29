@@ -182,6 +182,7 @@ export class CommentService {
         targetId: comment.id,
         content,
         recipientUserIds: [recipientUserId],
+        skipPush: true,
       });
     } catch (e) {
       this.logger.error('notifyCommentCreated failed', e);

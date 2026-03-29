@@ -1,6 +1,13 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { NaverLoginDto } from './dto/naver-login.dto';
 import { SocialLoginDto } from './dto/social-login.dto';
 import { SocialSignupDto } from './dto/social-signup.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -27,11 +34,16 @@ export class AuthController {
   }
 
   @Post('naver')
-  @ApiOperation({ summary: '네이버 로그인' })
-  @ApiBody({ type: SocialLoginDto })
-  @ApiResponse({ status: 200, description: '네이버 로그인 성공' })
-  async loginWithNaver(@Body() body: SocialLoginDto) {
-    return await this.authService.loginWithNaver(body.accessToken);
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiOperation({
+    summary: '네이버 로그인 (인가 code)',
+    description:
+      'code + redirectUri 로 서버가 네이버 토큰 교환 후 처리. 미가입 시 naverAccessToken·oauthAccessToken 포함 → signup/naver 의 accessToken 으로 사용.',
+  })
+  @ApiBody({ type: NaverLoginDto })
+  @ApiResponse({ status: 200, description: 'JWT 발급 또는 needsSignup' })
+  async loginWithNaver(@Body() body: NaverLoginDto) {
+    return await this.authService.loginWithNaverCode(body);
   }
 
   @Post('signup/kakao')
@@ -43,6 +55,7 @@ export class AuthController {
     return await this.authService.signupWithKakao(body.accessToken, {
       nickname: body.nickname,
       activityName: body.activityName,
+      role: body.role,
     });
   }
 
@@ -55,11 +68,16 @@ export class AuthController {
     return await this.authService.signupWithGoogle(body.accessToken, {
       nickname: body.nickname,
       activityName: body.activityName,
+      role: body.role,
     });
   }
 
   @Post('signup/naver')
-  @ApiOperation({ summary: '네이버 회원가입' })
+  @ApiOperation({
+    summary: '네이버 회원가입',
+    description:
+      'accessToken 은 로그인 응답의 naverAccessToken(또는 oauthAccessToken). code 를 넣지 말 것.',
+  })
   @ApiBody({ type: SocialSignupDto })
   @ApiResponse({ status: 200, description: '회원가입 완료 및 토큰 발급' })
   @ApiResponse({ status: 409, description: '이미 사용 중인 닉네임' })
@@ -67,6 +85,7 @@ export class AuthController {
     return await this.authService.signupWithNaver(body.accessToken, {
       nickname: body.nickname,
       activityName: body.activityName,
+      role: body.role,
     });
   }
 

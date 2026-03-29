@@ -33,6 +33,8 @@ export interface CreateNoticePayload {
   /** 인박스 표시 + FCM 알림 본문 */
   content?: string | null;
   recipientUserIds: string[];
+  /** true면 DB 알림만 저장하고 FCM은 보내지 않음 */
+  skipPush?: boolean;
 }
 
 function encodeNotificationCursor(
@@ -215,24 +217,24 @@ export class NoticeService {
         '등록된 FCM 토큰이 없습니다. 앱에서 POST /notifications/devices 로 토큰을 등록하세요.',
       );
     }
-    const { failedTokens } = await this.fcm.sendMulticast({
-      tokens,
-      title: 'Daygency 푸시 테스트',
-      body: '테스트 알림이 도착했습니다.',
-      data: {
-        test: 'true',
-        targetType: 'TEST',
-        targetId: userId,
-      },
-    });
+    const { failedTokens, successCount, failureCount } =
+      await this.fcm.sendMulticast({
+        tokens,
+        title: 'Daygency 푸시 테스트',
+        body: '테스트 알림이 도착했습니다.',
+        data: {
+          test: 'true',
+          targetType: 'TEST',
+          targetId: userId,
+        },
+      });
     if (failedTokens.length > 0) {
       await this.pushDeviceRepo.delete({ fcmToken: In(failedTokens) });
     }
-    const successCount = tokens.length - failedTokens.length;
     return {
       tokenCount: tokens.length,
       successCount,
-      failureCount: failedTokens.length,
+      failureCount,
       failedTokens,
     };
   }
@@ -295,7 +297,7 @@ export class NoticeService {
       return n;
     });
 
-    if (!this.fcm.isEnabled()) {
+    if (payload.skipPush || !this.fcm.isEnabled()) {
       return notice;
     }
 
