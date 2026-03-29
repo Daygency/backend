@@ -102,12 +102,59 @@ export class UserService {
   async findBySocial(
     provider: SocialProvider,
     profile: SocialProfile,
+    options?: { withDeleted?: boolean },
   ): Promise<User | null> {
     const user = await this.userRepository.findOne({
       where: { socialProvider: provider, socialId: profile.socialId },
+      withDeleted: options?.withDeleted ?? false,
     });
     if (!user) return null;
-    if (profile.profileImgUrl && profile.profileImgUrl !== user.profileImgUrl) {
+    if (
+      !user.deletedAt &&
+      profile.profileImgUrl &&
+      profile.profileImgUrl !== user.profileImgUrl
+    ) {
+      user.profileImgUrl = profile.profileImgUrl;
+      await this.userRepository.save(user);
+    }
+    return user;
+  }
+
+  /** soft-delete 된 소셜 계정 row 복구 (이메일 UNIQUE 와 가입 재시도 충돌 방지) */
+  async reactivateUser(userId: string): Promise<void> {
+    await this.userRepository.restore({ userId });
+  }
+
+  /**
+   * 이메일 미동의 시 쓰는 placeholder(`{provider}_{socialId}@social.placeholder`)로 조회.
+   * `social_provider`+`social_id` 조회가 실패해도 UNIQUE 이메일 충돌 나는 레거시/불일치 대응.
+   */
+  async findBySocialPlaceholderEmail(
+    provider: SocialProvider,
+    profile: SocialProfile,
+    options?: { withDeleted?: boolean },
+  ): Promise<User | null> {
+    if (profile.email?.trim()) return null;
+    const socialId = profile.socialId;
+    const email = `${provider}_${socialId}@social.placeholder`;
+    const user = await this.userRepository.findOne({
+      where: { email },
+      withDeleted: options?.withDeleted ?? false,
+    });
+    if (!user) return null;
+    if (user.socialProvider !== provider) return null;
+    if (String(user.socialId).trim() !== String(socialId).trim()) {
+      this.logger.warn(
+        `socialId mismatch on placeholder row userId=${user.userId}, normalizing`,
+      );
+      user.socialId = socialId;
+      await this.userRepository.save(user);
+    }
+    if (
+      !user.deletedAt &&
+      profile.profileImgUrl &&
+      profile.profileImgUrl !== user.profileImgUrl
+    ) {
       user.profileImgUrl = profile.profileImgUrl;
       await this.userRepository.save(user);
     }

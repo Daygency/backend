@@ -142,6 +142,7 @@ export class LikeService {
         likeKind: like.likeType,
         content,
         recipientUserIds: [ownerId],
+        skipPush: true,
       });
     } catch (e) {
       this.logger.error('notifyLikeCreated failed', e);

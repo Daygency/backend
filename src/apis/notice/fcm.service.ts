@@ -62,11 +62,21 @@ export class FcmService implements OnModuleInit {
       return;
     }
     try {
-      const cred = JSON.parse(json) as admin.ServiceAccount;
+      const parsed = JSON.parse(json) as Record<string, unknown>;
+      const cred = parsed as admin.ServiceAccount;
+      const projectId =
+        typeof parsed.project_id === 'string'
+          ? parsed.project_id
+          : typeof parsed.projectId === 'string'
+            ? parsed.projectId
+            : undefined;
       admin.initializeApp({
         credential: admin.credential.cert(cred),
+        ...(projectId ? { projectId } : {}),
       });
-      this.logger.log('Firebase Admin initialized for FCM.');
+      this.logger.log(
+        `Firebase Admin initialized for FCM${projectId ? ` (project: ${projectId})` : ''}.`,
+      );
     } catch (e) {
       this.logger.error('Failed to parse Firebase service account JSON', e);
     }
@@ -84,12 +94,18 @@ export class FcmService implements OnModuleInit {
     title: string;
     body: string;
     data: Record<string, string>;
-  }): Promise<{ failedTokens: string[] }> {
+  }): Promise<{
+    failedTokens: string[];
+    successCount: number;
+    failureCount: number;
+  }> {
     if (!this.isEnabled() || params.tokens.length === 0) {
-      return { failedTokens: [] };
+      return { failedTokens: [], successCount: 0, failureCount: 0 };
     }
     const unique = [...new Set(params.tokens)];
     const failedTokens: string[] = [];
+    let successCount = 0;
+    let failureCount = 0;
     const chunkSize = 500;
     for (let i = 0; i < unique.length; i += chunkSize) {
       const chunk = unique.slice(i, i + chunkSize);
@@ -107,21 +123,24 @@ export class FcmService implements OnModuleInit {
         },
       });
       res.responses.forEach((r, idx) => {
-        if (!r.success) {
-          const code = r.error?.code;
-          if (
-            code === 'messaging/invalid-registration-token' ||
-            code === 'messaging/registration-token-not-registered'
-          ) {
-            failedTokens.push(chunk[idx]);
-          } else {
-            this.logger.warn(
-              `FCM send failed for token index ${idx}: ${r.error?.message}`,
-            );
-          }
+        if (r.success) {
+          successCount += 1;
+          return;
+        }
+        failureCount += 1;
+        const code = r.error?.code;
+        if (
+          code === 'messaging/invalid-registration-token' ||
+          code === 'messaging/registration-token-not-registered'
+        ) {
+          failedTokens.push(chunk[idx]);
+        } else {
+          this.logger.warn(
+            `FCM send failed for token index ${idx}: ${r.error?.message}`,
+          );
         }
       });
     }
-    return { failedTokens };
+    return { failedTokens, successCount, failureCount };
   }
 }

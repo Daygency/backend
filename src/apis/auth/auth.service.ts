@@ -78,10 +78,12 @@ export class AuthService {
       dto.state,
     );
     const profile = await this.validateNaverToken(naverAccessToken);
-    const user = await this.userService.findBySocial(
-      SocialProvider.NAVER,
-      profile,
-    );
+    let user = await this.loadSocialUser(profile, SocialProvider.NAVER);
+
+    if (user?.deletedAt) {
+      await this.userService.reactivateUser(user.userId);
+      user = await this.loadSocialUser(profile, SocialProvider.NAVER);
+    }
 
     if (!user) {
       return {
@@ -278,8 +280,31 @@ export class AuthService {
     };
   }
 
+  /** 소셜 provider+id 조회 후, 이메일 없을 때 placeholder 이메일 row까지 조회 */
+  private async loadSocialUser(
+    profile: SocialProfile,
+    provider: SocialProvider,
+  ) {
+    let user = await this.userService.findBySocial(provider, profile, {
+      withDeleted: true,
+    });
+    if (!user) {
+      user = await this.userService.findBySocialPlaceholderEmail(
+        provider,
+        profile,
+        { withDeleted: true },
+      );
+    }
+    return user;
+  }
+
   private async issueTokens(profile: SocialProfile, provider: SocialProvider) {
-    const user = await this.userService.findBySocial(provider, profile);
+    let user = await this.loadSocialUser(profile, provider);
+
+    if (user?.deletedAt) {
+      await this.userService.reactivateUser(user.userId);
+      user = await this.loadSocialUser(profile, provider);
+    }
 
     if (!user) {
       return {
@@ -394,8 +419,15 @@ export class AuthService {
       role?: UserRole;
     },
   ) {
-    const existing = await this.userService.findBySocial(provider, profile);
+    let existing = await this.loadSocialUser(profile, provider);
     if (existing) {
+      if (existing.deletedAt) {
+        await this.userService.reactivateUser(existing.userId);
+        existing = await this.loadSocialUser(profile, provider);
+      }
+      if (!existing) {
+        throw new UnauthorizedException('계정 복구에 실패했습니다.');
+      }
       const result = this.issueAccessAndRefreshTokens(existing);
       this.logger.log(
         `[Signup login existing] provider=${provider}, userId=${existing.userId}`,
