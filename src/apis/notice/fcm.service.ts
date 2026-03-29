@@ -63,6 +63,16 @@ export class FcmService implements OnModuleInit {
     }
     try {
       const parsed = JSON.parse(json) as Record<string, unknown>;
+      const pkRaw =
+        (typeof parsed.private_key === 'string' && parsed.private_key) ||
+        (typeof parsed.privateKey === 'string' && parsed.privateKey) ||
+        '';
+      if (!pkRaw.includes('BEGIN PRIVATE KEY')) {
+        this.logger.error(
+          'Firebase service account JSON has no valid private_key. On the server, check the key file path (PM2 cwd), or env JSON escaping (\\n in private_key).',
+        );
+        return;
+      }
       const cred = parsed as admin.ServiceAccount;
       const projectId =
         typeof parsed.project_id === 'string'
@@ -135,8 +145,12 @@ export class FcmService implements OnModuleInit {
         ) {
           failedTokens.push(chunk[idx]);
         } else {
+          const msg = r.error?.message ?? '';
           this.logger.warn(
-            `FCM send failed for token index ${idx}: ${r.error?.message}`,
+            `FCM send failed for token index ${idx}: ${msg}` +
+              (msg.includes('authentication credential') || msg.includes('OAuth')
+                ? ' — Google Cloud 콘솔에서 이 프로젝트에 "Firebase Cloud Messaging API" 사용 설정, 서비스 계정 JSON이 해당 프로젝트 키인지·private_key 줄바꿈(\\n)이 깨지지 않았는지 확인.'
+                : ''),
           );
         }
       });

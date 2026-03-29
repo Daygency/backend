@@ -34,7 +34,7 @@ export class NoticeController {
   private assertTestPushAllowed(): void {
     if (this.config.get<string>('NOTIFICATION_TEST_PUSH') !== 'true') {
       throw new ForbiddenException(
-        '테스트 푸시는 비활성화되어 있습니다. .env에 NOTIFICATION_TEST_PUSH=true 를 추가하세요.',
+        '테스트 푸시는 비활성화되어 있습니다. 백엔드 서버 환경 변수 NOTIFICATION_TEST_PUSH=true 를 설정하고 서버를 재시작하세요.',
       );
     }
   }
