@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -68,6 +69,8 @@ function calcDDay(deadlineAt: Date): string {
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -114,7 +117,7 @@ export class UserService {
   async createBySocial(
     provider: SocialProvider,
     profile: SocialProfile,
-    options: { nickname?: string; activityName: string },
+    options: { nickname?: string; activityName: string; role?: UserRole },
   ): Promise<User> {
     const baseNickname = options.nickname ?? profile.nickname;
     const nickname = await this.resolveNickname(
@@ -131,7 +134,7 @@ export class UserService {
       activityName,
       aboutMe: '',
       email,
-      role: UserRole.USER,
+      role: this.coerceUserRole(options.role),
       phoneNumber: '0000000000000',
       isEmailSubscribed: false,
       isPushEnabled: false,
@@ -142,6 +145,20 @@ export class UserService {
     });
 
     return this.userRepository.save(user);
+  }
+
+  /** DB enum 은 user | admin 만 허용. 그 외 값(예: artist)은 user 로 저장 */
+  private coerceUserRole(input?: UserRole | string): UserRole {
+    if (input === UserRole.ADMIN || input === 'admin') {
+      return UserRole.ADMIN;
+    }
+    if (input === UserRole.USER || input === 'user') {
+      return UserRole.USER;
+    }
+    if (input != null && input !== '') {
+      this.logger.debug(`Ignoring unknown role "${String(input)}", using USER`);
+    }
+    return UserRole.USER;
   }
 
   private async resolveNickname(
