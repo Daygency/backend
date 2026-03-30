@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import admin from 'firebase-admin';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -64,7 +65,7 @@ export class FcmService implements OnModuleInit {
       );
       return;
     }
-    if (admin.apps.length > 0) {
+    if (getApps().length > 0) {
       return;
     }
     try {
@@ -98,13 +99,13 @@ export class FcmService implements OnModuleInit {
         return;
       }
 
-      admin.initializeApp({
-        credential: admin.credential.cert(
-          JSON.parse(json) as Parameters<typeof admin.credential.cert>[0],
-        ),
+      initializeApp({
+        credential: cert(JSON.parse(json) as Parameters<typeof cert>[0]),
         projectId,
       });
-      this.logger.log(`FCM Admin SDK initialized (project: ${projectId}).`);
+      this.logger.log(
+        `FCM Admin SDK initialized (project: ${projectId}, service account: ${clientEmail})`,
+      );
     } catch (e) {
       this.logger.error(
         'Failed to parse or apply Firebase service account JSON',
@@ -114,11 +115,12 @@ export class FcmService implements OnModuleInit {
   }
 
   isEnabled(): boolean {
-    return admin.apps.length > 0;
+    return getApps().length > 0;
   }
 
   /**
    * 멀티캐스트: Admin SDK `sendEachForMulticast` (토큰당 최대 500건씩 배치).
+   * FCM HTTP v1 API + 서비스 계정 기반 OAuth 2 토큰을 SDK 기본 전송으로 사용합니다.
    */
   async sendMulticast(params: {
     tokens: string[];
@@ -129,16 +131,24 @@ export class FcmService implements OnModuleInit {
     failedTokens: string[];
     successCount: number;
     failureCount: number;
+    /** 첫 번째 실패 응답 메시지(진단용). 전부 실패일 때 사용자에게 넘기기 좋음 */
+    firstFailureMessage?: string;
   }> {
     if (!this.isEnabled() || params.tokens.length === 0) {
-      return { failedTokens: [], successCount: 0, failureCount: 0 };
+      return {
+        failedTokens: [],
+        successCount: 0,
+        failureCount: 0,
+        firstFailureMessage: undefined,
+      };
     }
     const unique = [...new Set(params.tokens)];
     const failedTokens: string[] = [];
     let successCount = 0;
     let failureCount = 0;
 
-    const messaging = admin.messaging();
+    const messaging = getMessaging();
+    let firstFailureMessage: string | undefined;
 
     try {
       for (let i = 0; i < unique.length; i += FCM_MULTICAST_MAX_TOKENS) {
@@ -166,12 +176,15 @@ export class FcmService implements OnModuleInit {
           if (token === undefined) {
             return;
           }
+          const msg = String(resp.error?.message ?? 'unknown');
+          if (firstFailureMessage === undefined) {
+            firstFailureMessage = msg;
+          }
           const code = resp.error?.code;
           if (code && INVALID_TOKEN_CODES.has(code)) {
             failedTokens.push(token);
             return;
           }
-          const msg = String(resp.error?.message ?? 'unknown');
           const authHint =
             msg.includes('authentication credential') || msg.includes('OAuth')
               ? ' — Cloud Console에서 "Firebase Cloud Messaging API" 사용, 서비스 계정·project_id 일치 확인.'
@@ -188,9 +201,15 @@ export class FcmService implements OnModuleInit {
         failedTokens,
         successCount,
         failureCount: failureCount + (unique.length - processed),
+        firstFailureMessage,
       };
     }
 
-    return { failedTokens, successCount, failureCount };
+    return {
+      failedTokens,
+      successCount,
+      failureCount,
+      firstFailureMessage,
+    };
   }
 }

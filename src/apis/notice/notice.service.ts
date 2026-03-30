@@ -206,18 +206,17 @@ export class NoticeService {
         'FCM is not configured (check service account env / JSON file).',
       );
     }
-    const tokenRows = await this.pushDeviceRepo
-      .createQueryBuilder('d')
-      .select('d.fcm_token', 'fcmToken')
-      .where('d.user_id = :userId', { userId })
-      .getRawMany<{ fcmToken: string }>();
-    const tokens = tokenRows.map((r) => r.fcmToken);
+    const devices = await this.pushDeviceRepo.find({
+      where: { user: { userId } },
+      select: { fcmToken: true },
+    });
+    const tokens = devices.map((d) => d.fcmToken);
     if (tokens.length === 0) {
       throw new BadRequestException(
         '등록된 FCM 토큰이 없습니다. 앱에서 POST /notifications/devices 로 토큰을 등록하세요.',
       );
     }
-    const { failedTokens, successCount, failureCount } =
+    const { failedTokens, successCount, failureCount, firstFailureMessage } =
       await this.fcm.sendMulticast({
         tokens,
         title: 'Daygency 푸시 테스트',
@@ -230,6 +229,12 @@ export class NoticeService {
       });
     if (failedTokens.length > 0) {
       await this.pushDeviceRepo.delete({ fcmToken: In(failedTokens) });
+    }
+    if (successCount === 0) {
+      throw new ServiceUnavailableException(
+        firstFailureMessage ??
+          'FCM 전송에 실패했습니다. Google Cloud에서 Firebase Cloud Messaging API 사용 설정, 서비스 계정 키(Firebase 프로젝트와 동일)를 확인하세요.',
+      );
     }
     return {
       tokenCount: tokens.length,
@@ -311,12 +316,14 @@ export class NoticeService {
       });
       const allowedIds = new Set(pushAllowed.map((u) => u.userId));
       const ids = [...allowedIds];
-      const tokenRows = await this.pushDeviceRepo
-        .createQueryBuilder('d')
-        .select('d.fcm_token', 'fcmToken')
-        .where('d.user_id IN (:...ids)', { ids })
-        .getRawMany<{ fcmToken: string }>();
-      const tokens = tokenRows.map((r) => r.fcmToken);
+      const pushDevices =
+        ids.length > 0
+          ? await this.pushDeviceRepo.find({
+              where: { user: { userId: In(ids) } },
+              select: { fcmToken: true },
+            })
+          : [];
+      const tokens = pushDevices.map((d) => d.fcmToken);
       const body = (payload.content ?? '').trim();
       const data: Record<string, string> = {
         noticeId: notice.id,
