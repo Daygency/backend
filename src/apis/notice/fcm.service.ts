@@ -1,20 +1,20 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GoogleAuth } from 'google-auth-library';
+import admin from 'firebase-admin';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const FCM_MESSAGING_SCOPE =
-  'https://www.googleapis.com/auth/firebase.messaging';
+const FCM_MULTICAST_MAX_TOKENS = 500;
 
-/** FCM HTTP v1: Bearer OAuth2 (Legacy `Authorization: key=...` 미사용) */
+const INVALID_TOKEN_CODES = new Set([
+  'messaging/invalid-registration-token',
+  'messaging/registration-token-not-registered',
+]);
+
 @Injectable()
 export class FcmService implements OnModuleInit {
   private readonly logger = new Logger(FcmService.name);
-  private googleAuth: GoogleAuth | null = null;
-  private fcmProjectId: string | null = null;
-
   constructor(private readonly config: ConfigService) {}
 
   /** `{` 로 시작하면 JSON 문자열, 아니면 서비스 계정 파일 경로로 처리 */
@@ -64,6 +64,9 @@ export class FcmService implements OnModuleInit {
       );
       return;
     }
+    if (admin.apps.length > 0) {
+      return;
+    }
     try {
       const parsed = JSON.parse(json) as Record<string, unknown>;
       const pkRaw =
@@ -95,108 +98,27 @@ export class FcmService implements OnModuleInit {
         return;
       }
 
-      this.fcmProjectId = projectId;
-      this.googleAuth = new GoogleAuth({
-        credentials: {
-          client_email: clientEmail,
-          private_key: pkRaw,
-        },
+      admin.initializeApp({
+        credential: admin.credential.cert(
+          JSON.parse(json) as Parameters<typeof admin.credential.cert>[0],
+        ),
         projectId,
-        scopes: [FCM_MESSAGING_SCOPE],
       });
-      this.logger.log(
-        `FCM HTTP v1 ready (OAuth Bearer, project: ${projectId}).`,
-      );
+      this.logger.log(`FCM Admin SDK initialized (project: ${projectId}).`);
     } catch (e) {
-      this.logger.error('Failed to parse Firebase service account JSON', e);
+      this.logger.error(
+        'Failed to parse or apply Firebase service account JSON',
+        e,
+      );
     }
   }
 
   isEnabled(): boolean {
-    return this.googleAuth != null && this.fcmProjectId != null;
-  }
-
-  private async getAccessToken(): Promise<string> {
-    if (!this.googleAuth) {
-      throw new Error('FCM not configured');
-    }
-    const client = await this.googleAuth.getClient();
-    const res = await client.getAccessToken();
-    const token = res?.token;
-    if (!token) {
-      throw new Error('OAuth access token empty (check service account key)');
-    }
-    return token;
+    return admin.apps.length > 0;
   }
 
   /**
-   * POST `https://fcm.googleapis.com/v1/projects/{project}/messages:send`
-   * Authorization: Bearer &lt;access_token&gt;
-   */
-  private async sendV1Single(params: {
-    bearer: string;
-    token: string;
-    title: string;
-    body: string;
-    data: Record<string, string>;
-  }): Promise<{ ok: true } | { ok: false; code?: string; message: string }> {
-    const projectId = this.fcmProjectId!;
-    const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
-    const message: Record<string, unknown> = {
-      token: params.token,
-      notification: { title: params.title, body: params.body },
-      data: params.data,
-      android: { priority: 'HIGH' },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-          },
-        },
-      },
-    };
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${params.bearer}`,
-        'Content-Type': 'application/json; charset=UTF-8',
-      },
-      body: JSON.stringify({ message }),
-    });
-    if (res.ok) {
-      return { ok: true };
-    }
-    let messageText = res.statusText;
-    let statusField: string | undefined;
-    try {
-      const errBody = (await res.json()) as {
-        error?: { message?: string; status?: string };
-      };
-      if (errBody?.error?.message) {
-        messageText = errBody.error.message;
-      }
-      statusField =
-        typeof errBody?.error?.status === 'string'
-          ? errBody.error.status
-          : undefined;
-    } catch {
-      try {
-        messageText = await res.text();
-      } catch {
-        /* noop */
-      }
-    }
-    const code =
-      statusField === 'NOT_FOUND' || statusField === 'UNREGISTERED'
-        ? 'messaging/registration-token-not-registered'
-        : statusField === 'INVALID_ARGUMENT'
-          ? 'messaging/invalid-registration-token'
-          : undefined;
-    return { ok: false, code, message: messageText };
-  }
-
-  /**
-   * 멀티캐스트: HTTP v1은 토큰당 1회 `messages:send` (Bearer 동일, 병렬 요청).
+   * 멀티캐스트: Admin SDK `sendEachForMulticast` (토큰당 최대 500건씩 배치).
    */
   async sendMulticast(params: {
     tokens: string[];
@@ -216,62 +138,58 @@ export class FcmService implements OnModuleInit {
     let successCount = 0;
     let failureCount = 0;
 
-    let bearer: string;
+    const messaging = admin.messaging();
+
     try {
-      bearer = await this.getAccessToken();
+      for (let i = 0; i < unique.length; i += FCM_MULTICAST_MAX_TOKENS) {
+        const batch = unique.slice(i, i + FCM_MULTICAST_MAX_TOKENS);
+        const response = await messaging.sendEachForMulticast({
+          tokens: batch,
+          notification: { title: params.title, body: params.body },
+          data: params.data,
+          android: { priority: 'high' },
+          apns: {
+            payload: {
+              aps: {
+                sound: 'default',
+              },
+            },
+          },
+        });
+        successCount += response.successCount;
+        failureCount += response.failureCount;
+        response.responses.forEach((resp, idx: number) => {
+          if (resp.success) {
+            return;
+          }
+          const token = batch[idx];
+          if (token === undefined) {
+            return;
+          }
+          const code = resp.error?.code;
+          if (code && INVALID_TOKEN_CODES.has(code)) {
+            failedTokens.push(token);
+            return;
+          }
+          const msg = String(resp.error?.message ?? 'unknown');
+          const authHint =
+            msg.includes('authentication credential') || msg.includes('OAuth')
+              ? ' — Cloud Console에서 "Firebase Cloud Messaging API" 사용, 서비스 계정·project_id 일치 확인.'
+              : '';
+          this.logger.warn(
+            `FCM send failed for token index ${i + idx}: ${msg}${authHint}`,
+          );
+        });
+      }
     } catch (e) {
-      this.logger.error('FCM OAuth token failed', e);
+      this.logger.error('FCM sendEachForMulticast failed', e);
+      const processed = successCount + failureCount;
       return {
-        failedTokens: [],
-        successCount: 0,
-        failureCount: unique.length,
+        failedTokens,
+        successCount,
+        failureCount: failureCount + (unique.length - processed),
       };
     }
-
-    const results = await Promise.allSettled(
-      unique.map((token) =>
-        this.sendV1Single({
-          bearer,
-          token,
-          title: params.title,
-          body: params.body,
-          data: params.data,
-        }),
-      ),
-    );
-
-    results.forEach((result, idx) => {
-      const token = unique[idx];
-      if (result.status === 'rejected') {
-        failureCount += 1;
-        const msg =
-          result.reason instanceof Error
-            ? result.reason.message
-            : String(result.reason);
-        this.logger.warn(`FCM send failed for token index ${idx}: ${msg}`);
-        return;
-      }
-      const r = result.value;
-      if (r.ok) {
-        successCount += 1;
-        return;
-      }
-      failureCount += 1;
-      const msg = r.message;
-      if (
-        r.code === 'messaging/invalid-registration-token' ||
-        r.code === 'messaging/registration-token-not-registered'
-      ) {
-        failedTokens.push(token);
-      } else {
-        this.logger.warn(
-          `FCM send failed for token index ${idx}: ${msg}` +
-            (msg.includes('authentication credential') || msg.includes('OAuth')
-              ? ' — Cloud Console에서 "Firebase Cloud Messaging API" 사용, 서비스 계정·project_id 일치 확인.'
-              : ''),
-        );
-      }
-    });
 
     return { failedTokens, successCount, failureCount };
   }
