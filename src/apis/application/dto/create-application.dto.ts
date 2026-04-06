@@ -1,17 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsBoolean,
+  Allow,
   IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApplicationGender } from '../entities/application.entity';
 
 /**
  * 지원폼 제출 DTO — application_config에서 true인 항목만 서비스에서 필수 검증
+ * file / education / career 는 스냅샷 JSON(객체·배열 등 자유 형식)
  */
 export class CreateApplicationDto {
   @ApiProperty({ description: '모집공고 post_id' })
@@ -22,82 +22,91 @@ export class CreateApplicationDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeName?: string;
+  name?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(32)
-  includeBirth?: string;
+  birth?: string;
 
   @ApiPropertyOptional({ enum: ApplicationGender })
   @IsOptional()
   @IsEnum(ApplicationGender)
-  includeGender?: ApplicationGender;
+  gender?: ApplicationGender;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeMajor?: string;
+  major?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeMajorDetail?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  includeEducation?: string;
+  majorDetail?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeCategory?: string;
+  category?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  includeMusic?: string;
+  music?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  includeAddress?: string;
+  address?: string;
 
-  @ApiPropertyOptional({ description: '사진/영상/파일 첨부 여부' })
+  @ApiPropertyOptional({
+    description: '사진/영상/파일 첨부 스냅샷 (JSON)',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true' || value === 1)
-  @IsBoolean()
-  includeFile?: boolean;
+  @Allow()
+  file?: unknown;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  includeLink?: string;
+  link?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeDepartment?: string;
-
-  @ApiPropertyOptional({ description: '경력 관련 플래그' })
-  @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true' || value === 1)
-  @IsBoolean()
-  includeCareer?: boolean;
+  department?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  includeIntroduce?: string;
+  introduce?: string;
+
+  @ApiPropertyOptional({
+    description: '학력(학교/학년 등) 스냅샷 (JSON)',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @Allow()
+  education?: unknown;
+
+  @ApiPropertyOptional({
+    description: '경력 스냅샷 (JSON)',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @Allow()
+  career?: unknown;
 }

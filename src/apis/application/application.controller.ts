@@ -17,6 +17,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApplicationService } from './application.service';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { UpdateApplicationDto } from './dto/update-application.dto';
+import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
 
 @ApiTags('applications')
 @Controller('applications')
@@ -74,6 +75,25 @@ export class ApplicationController {
     @Request() req: { user: { id: string } },
   ) {
     return this.applicationService.findOneById(id, req.user.id);
+  }
+
+  @Patch(':id/status')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      '지원 심사 상태 변경 (해당 공고 작성자만: 서류 검토·합격·불합격 등)',
+  })
+  updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateApplicationStatusDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.applicationService.updateStatusByRecruiter(
+      req.user.id,
+      id,
+      dto,
+    );
   }
 
   @Patch(':id')

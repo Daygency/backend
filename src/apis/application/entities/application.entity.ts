@@ -1,5 +1,6 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -16,9 +17,30 @@ export enum ApplicationGender {
   NONE = 'NONE',
 }
 
+/** DB JSON 컬럼에 저장되는 스냅샷 (객체·배열·원시 JSON 루트) */
+export type ApplicationJsonSnapshot =
+  | Record<string, unknown>
+  | unknown[]
+  | string
+  | number
+  | boolean
+  | null;
+
+/** 모집자 심사 상태 */
+export enum ApplicationStatus {
+  /** 제출 직후 (기본) */
+  SUBMITTED = 'SUBMITTED',
+  /** 서류 검토 중 */
+  DOCUMENT_REVIEW = 'DOCUMENT_REVIEW',
+  /** 합격 */
+  ACCEPTED = 'ACCEPTED',
+  /** 불합격 */
+  REJECTED = 'REJECTED',
+}
+
 /**
- * 지원폼 (application) — 모집자가 application_config로 받기로 한 항목에 대한 지원자 응답
- * 컬럼명은 양식(application_config)의 include_* 와 대응하되, 여기서는 실제 값이 들어감
+ * 지원폼 (application) — 제출 시점 스냅샷
+ * 학력·경력·첨부 등은 JSON으로 저장 (프로필에서 채운 뒤 수정·삭제 가능)
  */
 @Entity('application')
 @Unique('UQ_application_post_applicant', ['postId', 'userId'])
@@ -26,109 +48,76 @@ export class Application {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({
-    name: 'include_name',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  includeName: string | null;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  name: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  birth: string | null;
 
   @Column({
-    name: 'include_birth',
-    type: 'varchar',
-    length: 32,
-    nullable: true,
-  })
-  includeBirth: string | null;
-
-  @Column({
-    name: 'include_gender',
     type: 'enum',
     enum: ApplicationGender,
     nullable: true,
   })
-  includeGender: ApplicationGender | null;
+  gender: ApplicationGender | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  major: string | null;
 
   @Column({
-    name: 'include_major',
+    name: 'major_detail',
     type: 'varchar',
     length: 255,
     nullable: true,
   })
-  includeMajor: string | null;
+  majorDetail: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  category: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  music: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  address: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  link: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  department: string | null;
+
+  @Column({ type: 'varchar', length: 2000, nullable: true })
+  introduce: string | null;
+
+  /** 사진/영상/파일 등 첨부 메타·URL 목록 스냅샷 */
+  @Column({ type: 'json', nullable: true })
+  file: ApplicationJsonSnapshot;
+
+  /** 학력(학교/학년 등) 스냅샷 */
+  @Column({ type: 'json', nullable: true })
+  education: ApplicationJsonSnapshot;
+
+  /** 경력 스냅샷 */
+  @Column({ type: 'json', nullable: true })
+  career: ApplicationJsonSnapshot;
 
   @Column({
-    name: 'include_major_detail',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
+    type: 'enum',
+    enum: ApplicationStatus,
+    default: ApplicationStatus.SUBMITTED,
   })
-  includeMajorDetail: string | null;
+  status: ApplicationStatus;
 
-  @Column({
-    name: 'include_education',
-    type: 'varchar',
-    length: 500,
-    nullable: true,
+  @CreateDateColumn({
+    name: 'created_at',
+    type: 'datetime',
+    precision: 6,
   })
-  includeEducation: string | null;
+  createdAt: Date;
 
-  @Column({
-    name: 'include_category',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  includeCategory: string | null;
-
-  @Column({
-    name: 'include_music',
-    type: 'varchar',
-    length: 500,
-    nullable: true,
-  })
-  includeMusic: string | null;
-
-  @Column({
-    name: 'include_address',
-    type: 'varchar',
-    length: 500,
-    nullable: true,
-  })
-  includeAddress: string | null;
-
-  /** 사진/영상/파일 첨부 여부 등 (ERD: tinyint) */
-  @Column({ name: 'include_file', type: 'tinyint', width: 1, nullable: true })
-  includeFile: number | null;
-
-  @Column({
-    name: 'include_link',
-    type: 'varchar',
-    length: 500,
-    nullable: true,
-  })
-  includeLink: string | null;
-
-  @Column({
-    name: 'include_department',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  includeDepartment: string | null;
-
-  /** 경력 관련 (ERD: tinyint — 플래그로 사용) */
-  @Column({ name: 'include_career', type: 'tinyint', width: 1, nullable: true })
-  includeCareer: number | null;
-
-  @Column({
-    name: 'include_introduce',
-    type: 'varchar',
-    length: 2000,
-    nullable: true,
-  })
-  includeIntroduce: string | null;
+  @Column({ name: 'canceled_at', type: 'datetime', nullable: true })
+  canceledAt: Date | null;
 
   @Column({ name: 'post_id', type: 'char', length: 36 })
   postId: string;
