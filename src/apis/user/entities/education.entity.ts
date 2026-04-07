@@ -15,10 +15,10 @@ export class Education {
   @Column({ length: 100 })
   description: string;
 
-  @Column()
+  @Column({ type: 'datetime' })
   startedAt: Date;
 
-  @Column({ nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   endedAt: Date | null;
 
   @ManyToOne(() => User, (user) => user.educations, { nullable: true })

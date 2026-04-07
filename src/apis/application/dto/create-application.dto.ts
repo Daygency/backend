@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
+  IsDateString,
   IsEnum,
   IsOptional,
   IsString,
@@ -31,10 +32,12 @@ export class CreateApplicationDto {
   @MaxLength(255)
   name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: '생년월일(또는 출생 시각) — ISO 8601 문자열',
+    example: '1999-03-15',
+  })
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
+  @IsDateString()
   birth?: string;
 
   @ApiPropertyOptional({ enum: ApplicationGender })

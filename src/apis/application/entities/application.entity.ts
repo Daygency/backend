@@ -49,8 +49,8 @@ export class Application {
   @Column({ type: 'varchar', length: 10, nullable: true })
   name: string | null;
 
-  @Column({ type: 'varchar', length: 32, nullable: true })
-  birth: string | null;
+  @Column({ type: 'datetime', precision: 6, nullable: true })
+  birth: Date | null;
 
   @Column({
     type: 'enum',

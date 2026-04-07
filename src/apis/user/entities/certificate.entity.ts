@@ -15,10 +15,10 @@ export class Certificate {
   @Column({ length: 100 })
   description: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'datetime', precision: 6, nullable: true })
   obtainedAt: Date | null;
 
-  @Column({ length: 10, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   organization: string | null;
 
   @ManyToOne(() => User, (user) => user.certificates)

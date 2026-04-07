@@ -98,7 +98,10 @@ export class ApplicationService {
       status: ApplicationStatus.SUBMITTED,
       canceledAt: null,
       name: dto.name?.trim() ?? null,
-      birth: dto.birth?.trim() ?? null,
+      birth:
+        dto.birth === undefined || dto.birth === null || dto.birth === ''
+          ? null
+          : new Date(dto.birth),
       gender: dto.gender ?? null,
       major: dto.major?.trim() ?? null,
       majorDetail: dto.majorDetail?.trim() ?? null,
@@ -236,7 +239,10 @@ export class ApplicationService {
       existing.name = dto.name?.trim() ?? null;
     }
     if (dto.birth !== undefined) {
-      existing.birth = dto.birth?.trim() ?? null;
+      existing.birth =
+        dto.birth === null || dto.birth === ''
+          ? null
+          : new Date(dto.birth);
     }
     if (dto.gender !== undefined) {
       existing.gender = dto.gender ?? null;
@@ -342,7 +348,11 @@ export class ApplicationService {
       postId: existing.postId,
       name: dto.name !== undefined ? dto.name : (existing.name ?? undefined),
       birth:
-        dto.birth !== undefined ? dto.birth : (existing.birth ?? undefined),
+        dto.birth !== undefined
+          ? dto.birth
+          : (existing.birth != null
+              ? existing.birth.toISOString()
+              : undefined),
       gender:
         dto.gender !== undefined
           ? dto.gender
@@ -406,7 +416,10 @@ export class ApplicationService {
       missing('이름', !!dto.name?.trim());
     }
     if (config.includeBirth) {
-      missing('출생연도', !!dto.birth?.trim());
+      missing(
+        '생년월일',
+        dto.birth != null && String(dto.birth).trim() !== '',
+      );
     }
     if (config.includeGender) {
       missing(
