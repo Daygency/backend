@@ -401,17 +401,21 @@ export class UserService {
     const toSave: Education[] = [];
 
     for (const dto of educationDtos) {
+      const endedAt =
+        dto.endedAt != null && dto.endedAt !== ''
+          ? new Date(dto.endedAt)
+          : null;
       if (dto.educationId && existingMap.has(dto.educationId)) {
         const entity = existingMap.get(dto.educationId) as Education;
         entity.description = dto.description;
         entity.startedAt = new Date(dto.startedAt);
-        entity.endedAt = new Date(dto.endedAt);
+        entity.endedAt = endedAt;
         toSave.push(entity);
       } else {
         const entity = this.educationRepository.create({
           description: dto.description,
           startedAt: new Date(dto.startedAt),
-          endedAt: new Date(dto.endedAt),
+          endedAt,
           user,
         });
         toSave.push(entity);
@@ -446,17 +450,22 @@ export class UserService {
     const toSave: Career[] = [];
 
     for (const dto of careerDtos) {
+      const organization = dto.organization?.trim()
+        ? dto.organization.trim().slice(0, 10)
+        : null;
       if (dto.careerId && existingMap.has(dto.careerId)) {
         const entity = existingMap.get(dto.careerId) as Career;
         entity.description = dto.description;
         entity.startedAt = new Date(dto.startedAt);
         entity.endedAt = new Date(dto.endedAt);
+        entity.organization = organization;
         toSave.push(entity);
       } else {
         const entity = this.careerRepository.create({
           description: dto.description,
           startedAt: new Date(dto.startedAt),
           endedAt: new Date(dto.endedAt),
+          organization,
           user,
         });
         toSave.push(entity);
@@ -491,15 +500,24 @@ export class UserService {
     const toSave: Award[] = [];
 
     for (const dto of awardDtos) {
+      const awardedAt =
+        dto.awardedAt != null && dto.awardedAt !== ''
+          ? new Date(dto.awardedAt)
+          : null;
+      const organization = dto.organization?.trim()
+        ? dto.organization.trim().slice(0, 10)
+        : null;
       if (dto.awardId && existingMap.has(dto.awardId)) {
         const entity = existingMap.get(dto.awardId) as Award;
         entity.description = dto.description;
-        entity.awardedAt = new Date(dto.awardedAt);
+        entity.awardedAt = awardedAt;
+        entity.organization = organization;
         toSave.push(entity);
       } else {
         const entity = this.awardRepository.create({
           description: dto.description,
-          awardedAt: new Date(dto.awardedAt),
+          awardedAt,
+          organization,
           user,
         });
         toSave.push(entity);

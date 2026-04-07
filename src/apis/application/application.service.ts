@@ -19,28 +19,19 @@ import { User } from '../user/entities/user.entity';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { UpdateApplicationDto } from './dto/update-application.dto';
 import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
-import {
-  Application,
-  ApplicationJsonSnapshot,
-  ApplicationStatus,
-} from './entities/application.entity';
+import { Application, ApplicationStatus } from './entities/application.entity';
 import { ChatService } from '../chat/chat.service';
+import type {
+  ApplicationAwardSnapshot,
+  ApplicationCareerSnapshot,
+  ApplicationCertificateSnapshot,
+  ApplicationEducationSnapshot,
+  ApplicationFileSnapshot,
+} from './types/application-snapshot.types';
 
-/** JSON 스냅샷 필드에 의미 있는 값이 있는지 (빈 객체·빈 배열은 없음으로 간주) */
-function hasJsonSnapshot(value: unknown): boolean {
-  if (value === null || value === undefined) {
-    return false;
-  }
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
-  if (typeof value === 'object') {
-    return Object.keys(value as object).length > 0;
-  }
-  if (typeof value === 'string') {
-    return value.trim().length > 0;
-  }
-  return true;
+/** JSON 배열 컬럼에 1개 이상 항목이 있는지 */
+function hasJsonArrayContent(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
 }
 
 @Injectable()
@@ -115,18 +106,24 @@ export class ApplicationService {
       music: dto.music?.trim() ?? null,
       address: dto.address?.trim() ?? null,
       file:
-        dto.file === undefined ? null : (dto.file as ApplicationJsonSnapshot),
+        dto.file === undefined ? null : (dto.file as ApplicationFileSnapshot),
       link: dto.link?.trim() ?? null,
       department: dto.department?.trim() ?? null,
       introduce: dto.introduce?.trim() ?? null,
       education:
         dto.education === undefined
           ? null
-          : (dto.education as ApplicationJsonSnapshot),
+          : (dto.education as ApplicationEducationSnapshot),
       career:
         dto.career === undefined
           ? null
-          : (dto.career as ApplicationJsonSnapshot),
+          : (dto.career as ApplicationCareerSnapshot),
+      award:
+        dto.award === undefined ? null : (dto.award as ApplicationAwardSnapshot),
+      certificate:
+        dto.certificate === undefined
+          ? null
+          : (dto.certificate as ApplicationCertificateSnapshot),
     });
 
     const saved = await this.applicationRepo.save(entity);
@@ -260,7 +257,7 @@ export class ApplicationService {
       existing.address = dto.address?.trim() ?? null;
     }
     if (dto.file !== undefined) {
-      existing.file = dto.file as ApplicationJsonSnapshot;
+      existing.file = dto.file as ApplicationFileSnapshot;
     }
     if (dto.link !== undefined) {
       existing.link = dto.link?.trim() ?? null;
@@ -272,10 +269,16 @@ export class ApplicationService {
       existing.introduce = dto.introduce?.trim() ?? null;
     }
     if (dto.education !== undefined) {
-      existing.education = dto.education as ApplicationJsonSnapshot;
+      existing.education = dto.education as ApplicationEducationSnapshot;
     }
     if (dto.career !== undefined) {
-      existing.career = dto.career as ApplicationJsonSnapshot;
+      existing.career = dto.career as ApplicationCareerSnapshot;
+    }
+    if (dto.award !== undefined) {
+      existing.award = dto.award as ApplicationAwardSnapshot;
+    }
+    if (dto.certificate !== undefined) {
+      existing.certificate = dto.certificate as ApplicationCertificateSnapshot;
     }
 
     return this.applicationRepo.save(existing);
@@ -378,6 +381,12 @@ export class ApplicationService {
         dto.career !== undefined
           ? dto.career
           : (existing.career ?? undefined),
+      award:
+        dto.award !== undefined ? dto.award : (existing.award ?? undefined),
+      certificate:
+        dto.certificate !== undefined
+          ? dto.certificate
+          : (existing.certificate ?? undefined),
     };
   }
 
@@ -412,7 +421,7 @@ export class ApplicationService {
       missing('세부전공', !!dto.majorDetail?.trim());
     }
     if (config.includeEducation) {
-      missing('학력', hasJsonSnapshot(dto.education));
+      missing('학력', hasJsonArrayContent(dto.education));
     }
     if (config.includeCategory) {
       missing('참가부문', !!dto.category?.trim());
@@ -424,7 +433,7 @@ export class ApplicationService {
       missing('주소', !!dto.address?.trim());
     }
     if (config.includeFile) {
-      missing('파일', hasJsonSnapshot(dto.file));
+      missing('파일', hasJsonArrayContent(dto.file));
     }
     if (config.includeLink) {
       missing('링크', !!dto.link?.trim());
@@ -433,7 +442,7 @@ export class ApplicationService {
       missing('소속학부', !!dto.department?.trim());
     }
     if (config.includeCareer) {
-      missing('경력', hasJsonSnapshot(dto.career));
+      missing('경력', hasJsonArrayContent(dto.career));
     }
     if (config.includeIntroduce) {
       missing('자기소개/지원동기', !!dto.introduce?.trim());

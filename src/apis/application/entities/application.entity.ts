@@ -9,6 +9,13 @@ import {
 } from 'typeorm';
 import { Announcement } from '../../announcement/entities/announcement.entity';
 import { User } from '../../user/entities/user.entity';
+import type {
+  ApplicationAwardSnapshot,
+  ApplicationCareerSnapshot,
+  ApplicationCertificateSnapshot,
+  ApplicationEducationSnapshot,
+  ApplicationFileSnapshot,
+} from '../types/application-snapshot.types';
 
 /** 지원서 응답 성별 (지원폼 테이블) */
 export enum ApplicationGender {
@@ -16,15 +23,6 @@ export enum ApplicationGender {
   MALE = 'MALE',
   NONE = 'NONE',
 }
-
-/** DB JSON 컬럼에 저장되는 스냅샷 (객체·배열·원시 JSON 루트) */
-export type ApplicationJsonSnapshot =
-  | Record<string, unknown>
-  | unknown[]
-  | string
-  | number
-  | boolean
-  | null;
 
 /** 모집자 심사 상태 */
 export enum ApplicationStatus {
@@ -40,7 +38,7 @@ export enum ApplicationStatus {
 
 /**
  * 지원폼 (application) — 제출 시점 스냅샷
- * 학력·경력·첨부 등은 JSON으로 저장 (프로필에서 채운 뒤 수정·삭제 가능)
+ * 학력·경력 등은 types/application-snapshot.types.ts 형식의 JSON 배열
  */
 @Entity('application')
 @Unique('UQ_application_post_applicant', ['postId', 'userId'])
@@ -48,7 +46,7 @@ export class Application {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   name: string | null;
 
   @Column({ type: 'varchar', length: 32, nullable: true })
@@ -72,35 +70,43 @@ export class Application {
   })
   majorDetail: string | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   category: string | null;
 
-  @Column({ type: 'varchar', length: 500, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   music: string | null;
 
-  @Column({ type: 'varchar', length: 500, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   address: string | null;
 
-  @Column({ type: 'varchar', length: 500, nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   link: string | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   department: string | null;
 
-  @Column({ type: 'varchar', length: 2000, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   introduce: string | null;
 
-  /** 사진/영상/파일 등 첨부 메타·URL 목록 스냅샷 */
+  /** 사진/영상/파일 첨부 스냅샷 (`ApplicationFileSnapshot`) */
   @Column({ type: 'json', nullable: true })
-  file: ApplicationJsonSnapshot;
+  file: ApplicationFileSnapshot;
 
-  /** 학력(학교/학년 등) 스냅샷 */
+  /** 학력 스냅샷 (`ApplicationEducationSnapshot`) */
   @Column({ type: 'json', nullable: true })
-  education: ApplicationJsonSnapshot;
+  education: ApplicationEducationSnapshot;
 
-  /** 경력 스냅샷 */
+  /** 경력 스냅샷 (`ApplicationCareerSnapshot`) */
   @Column({ type: 'json', nullable: true })
-  career: ApplicationJsonSnapshot;
+  career: ApplicationCareerSnapshot;
+
+  /** 수상 스냅샷 (`ApplicationAwardSnapshot`) */
+  @Column({ type: 'json', nullable: true })
+  award: ApplicationAwardSnapshot;
+
+  /** 수료증·자격증 스냅샷 (`ApplicationCertificateSnapshot`) */
+  @Column({ type: 'json', nullable: true })
+  certificate: ApplicationCertificateSnapshot;
 
   @Column({
     type: 'enum',

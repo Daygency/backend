@@ -15,8 +15,11 @@ export class Certificate {
   @Column({ length: 100 })
   description: string;
 
-  @Column()
-  obtainedAt: Date;
+  @Column({ nullable: true })
+  obtainedAt: Date | null;
+
+  @Column({ length: 10, nullable: true })
+  organization: string | null;
 
   @ManyToOne(() => User, (user) => user.certificates)
   @JoinColumn({ name: 'userId' })

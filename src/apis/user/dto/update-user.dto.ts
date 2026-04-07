@@ -25,8 +25,9 @@ export class UpdateEducationDto {
   @IsDateString()
   startedAt: string;
 
+  @IsOptional()
   @IsDateString()
-  endedAt: string;
+  endedAt?: string | null;
 }
 
 export class UpdateCareerDto {
@@ -43,6 +44,11 @@ export class UpdateCareerDto {
 
   @IsDateString()
   endedAt: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 10)
+  organization?: string | null;
 }
 
 export class UpdateAwardDto {
@@ -54,8 +60,14 @@ export class UpdateAwardDto {
   @Length(1, 100)
   description: string;
 
+  @IsOptional()
   @IsDateString()
-  awardedAt: string;
+  awardedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 10)
+  organization?: string | null;
 }
 
 export class UpdateUserDto {

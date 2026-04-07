@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  Allow,
+  IsArray,
   IsEnum,
   IsOptional,
   IsString,
@@ -8,10 +8,17 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApplicationGender } from '../entities/application.entity';
+import type {
+  ApplicationAwardSnapshotItem,
+  ApplicationCareerSnapshotItem,
+  ApplicationCertificateSnapshotItem,
+  ApplicationEducationSnapshotItem,
+  ApplicationFileSnapshotItem,
+} from '../types/application-snapshot.types';
 
 /**
  * 지원폼 제출 DTO — application_config에서 true인 항목만 서비스에서 필수 검증
- * file / education / career 는 스냅샷 JSON(객체·배열 등 자유 형식)
+ * file / education / career / award / certificate 는 스냅샷 JSON 배열 (항목 타입은 types 참고)
  */
 export class CreateApplicationDto {
   @ApiProperty({ description: '모집공고 post_id' })
@@ -66,13 +73,13 @@ export class CreateApplicationDto {
   address?: string;
 
   @ApiPropertyOptional({
-    description: '사진/영상/파일 첨부 스냅샷 (JSON)',
-    type: 'object',
-    additionalProperties: true,
+    description: '첨부 파일 스냅샷 (ApplicationFileSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
   })
   @IsOptional()
-  @Allow()
-  file?: unknown;
+  @IsArray()
+  file?: ApplicationFileSnapshotItem[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -93,20 +100,38 @@ export class CreateApplicationDto {
   introduce?: string;
 
   @ApiPropertyOptional({
-    description: '학력(학교/학년 등) 스냅샷 (JSON)',
-    type: 'object',
-    additionalProperties: true,
+    description: '학력 스냅샷 (ApplicationEducationSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
   })
   @IsOptional()
-  @Allow()
-  education?: unknown;
+  @IsArray()
+  education?: ApplicationEducationSnapshotItem[];
 
   @ApiPropertyOptional({
-    description: '경력 스냅샷 (JSON)',
-    type: 'object',
-    additionalProperties: true,
+    description: '경력 스냅샷 (ApplicationCareerSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
   })
   @IsOptional()
-  @Allow()
-  career?: unknown;
+  @IsArray()
+  career?: ApplicationCareerSnapshotItem[];
+
+  @ApiPropertyOptional({
+    description: '수상 스냅샷 (ApplicationAwardSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
+  @IsOptional()
+  @IsArray()
+  award?: ApplicationAwardSnapshotItem[];
+
+  @ApiPropertyOptional({
+    description: '수료증·자격증 스냅샷 (ApplicationCertificateSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
+  @IsOptional()
+  @IsArray()
+  certificate?: ApplicationCertificateSnapshotItem[];
 }

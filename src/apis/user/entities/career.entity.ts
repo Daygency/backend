@@ -21,6 +21,9 @@ export class Career {
   @Column()
   endedAt: Date;
 
+  @Column({ length: 10, nullable: true })
+  organization: string | null;
+
   @ManyToOne(() => User, (user) => user.careers)
   @JoinColumn({ name: 'userId' })
   user: User;

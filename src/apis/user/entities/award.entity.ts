@@ -15,8 +15,11 @@ export class Award {
   @Column({ length: 100 })
   description: string;
 
-  @Column()
-  awardedAt: Date;
+  @Column({ nullable: true })
+  awardedAt: Date | null;
+
+  @Column({ length: 10, nullable: true })
+  organization: string | null;
 
   @ManyToOne(() => User, (user) => user.awards)
   @JoinColumn({ name: 'userId' })

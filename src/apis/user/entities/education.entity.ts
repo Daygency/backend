@@ -18,11 +18,8 @@ export class Education {
   @Column()
   startedAt: Date;
 
-  @Column()
-  endedAt: Date;
-
-  @Column({ default: false })
-  isVerified: boolean;
+  @Column({ nullable: true })
+  endedAt: Date | null;
 
   @ManyToOne(() => User, (user) => user.educations, { nullable: true })
   @JoinColumn({ name: 'userId' })
