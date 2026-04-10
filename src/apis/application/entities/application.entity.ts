@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -40,8 +41,12 @@ export enum ApplicationStatus {
  * 지원폼 (application) — 제출 시점 스냅샷
  * 학력·경력 등은 types/application-snapshot.types.ts 형식의 JSON 배열
  */
-@Entity('application')
+/**
+ * 공고·유저당 지원 행은 DB에서 1건 (`post_id`+`user_id` 유니크).
+ * 소프트 삭제 후 다시 지원하면 **같은 행**을 복구하고 본문은 요청 body로 갱신한다.
+ */
 @Unique('UQ_application_post_applicant', ['postId', 'userId'])
+@Entity('application')
 export class Application {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -138,4 +143,11 @@ export class Application {
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id', referencedColumnName: 'userId' })
   user: User;
+
+  @DeleteDateColumn({
+    name: 'deleted_at',
+    type: 'datetime',
+    precision: 6,
+  })
+  deletedAt: Date | null;
 }

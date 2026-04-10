@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -28,7 +31,10 @@ export class ApplicationController {
   @Post()
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
-  @ApiOperation({ summary: '공고에 지원서 제출 (공고당·유저당 1건)' })
+  @ApiOperation({
+    summary:
+      '공고에 지원서 제출 (동일 공고에 삭제되지 않은 활성 지원은 1건만)',
+  })
   create(
     @Request() req: { user: { id: string } },
     @Body() dto: CreateApplicationDto,
@@ -109,5 +115,20 @@ export class ApplicationController {
     @Request() req: { user: { id: string } },
   ) {
     return this.applicationService.update(req.user.id, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      '내 지원서 소프트 삭제 (지원자 본인만, 삭제 후 동일 공고 재지원 가능)',
+  })
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: { user: { id: string } },
+  ): Promise<void> {
+    await this.applicationService.removeByApplicant(req.user.id, id);
   }
 }

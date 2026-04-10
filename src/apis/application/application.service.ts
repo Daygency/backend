@@ -85,49 +85,37 @@ export class ApplicationService {
 
     const existing = await this.applicationRepo.findOne({
       where: { postId, userId: applicantUserId },
+      withDeleted: true,
     });
-    if (existing) {
+    if (existing && !existing.deletedAt) {
       throw new ConflictException('이미 이 공고에 지원했습니다.');
     }
 
     this.validateAgainstConfig(config, dto);
 
+    const isRestore = Boolean(existing?.deletedAt);
+
+    if (isRestore && existing) {
+      this.patchApplicationFromSubmitDto(existing, dto, applicantUserId);
+      const saved = await this.applicationRepo.save(existing);
+      try {
+        await this.chatService.ensureAnnouncementRoomAfterApply(
+          applicantUserId,
+          postId,
+          saved.id,
+        );
+      } catch (err) {
+        await this.applicationRepo.softDelete({ id: saved.id });
+        throw err;
+      }
+      return saved;
+    }
+
     const entity = this.applicationRepo.create({
       postId,
       userId: applicantUserId,
-      status: ApplicationStatus.SUBMITTED,
-      canceledAt: null,
-      name: dto.name?.trim() ?? null,
-      birth:
-        dto.birth === undefined || dto.birth === null || dto.birth === ''
-          ? null
-          : new Date(dto.birth),
-      gender: dto.gender ?? null,
-      major: dto.major?.trim() ?? null,
-      majorDetail: dto.majorDetail?.trim() ?? null,
-      category: dto.category?.trim() ?? null,
-      music: dto.music?.trim() ?? null,
-      address: dto.address?.trim() ?? null,
-      file:
-        dto.file === undefined ? null : (dto.file as ApplicationFileSnapshot),
-      link: dto.link?.trim() ?? null,
-      department: dto.department?.trim() ?? null,
-      introduce: dto.introduce?.trim() ?? null,
-      education:
-        dto.education === undefined
-          ? null
-          : (dto.education as ApplicationEducationSnapshot),
-      career:
-        dto.career === undefined
-          ? null
-          : (dto.career as ApplicationCareerSnapshot),
-      award:
-        dto.award === undefined ? null : (dto.award as ApplicationAwardSnapshot),
-      certificate:
-        dto.certificate === undefined
-          ? null
-          : (dto.certificate as ApplicationCertificateSnapshot),
     });
+    this.patchApplicationFromSubmitDto(entity, dto, applicantUserId);
 
     const saved = await this.applicationRepo.save(entity);
     try {
@@ -142,6 +130,49 @@ export class ApplicationService {
     }
     void this.notifyAnnouncementApplication(applicantUserId, announcement);
     return saved;
+  }
+
+  /** 제출/재제출(복구) 시 본문 필드 일괄 반영 */
+  private patchApplicationFromSubmitDto(
+    target: Application,
+    dto: CreateApplicationDto,
+    applicantUserId: string,
+  ): void {
+    target.postId = dto.postId;
+    target.userId = applicantUserId;
+    target.status = ApplicationStatus.SUBMITTED;
+    target.canceledAt = null;
+    target.deletedAt = null;
+    target.name = dto.name?.trim() ?? null;
+    target.birth =
+      dto.birth === undefined || dto.birth === null || dto.birth === ''
+        ? null
+        : new Date(dto.birth);
+    target.gender = dto.gender ?? null;
+    target.major = dto.major?.trim() ?? null;
+    target.majorDetail = dto.majorDetail?.trim() ?? null;
+    target.category = dto.category?.trim() ?? null;
+    target.music = dto.music?.trim() ?? null;
+    target.address = dto.address?.trim() ?? null;
+    target.file =
+      dto.file === undefined ? null : (dto.file as ApplicationFileSnapshot);
+    target.link = dto.link?.trim() ?? null;
+    target.department = dto.department?.trim() ?? null;
+    target.introduce = dto.introduce?.trim() ?? null;
+    target.education =
+      dto.education === undefined
+        ? null
+        : (dto.education as ApplicationEducationSnapshot);
+    target.career =
+      dto.career === undefined
+        ? null
+        : (dto.career as ApplicationCareerSnapshot);
+    target.award =
+      dto.award === undefined ? null : (dto.award as ApplicationAwardSnapshot);
+    target.certificate =
+      dto.certificate === undefined
+        ? null
+        : (dto.certificate as ApplicationCertificateSnapshot);
   }
 
   private async notifyAnnouncementApplication(
@@ -312,6 +343,25 @@ export class ApplicationService {
     }
     existing.status = dto.status;
     return this.applicationRepo.save(existing);
+  }
+
+  /**
+   * 지원자 본인만 소프트 삭제 (`deleted_at`). 이후 동일 공고에 다시 POST 지원 가능.
+   */
+  async removeByApplicant(
+    applicantUserId: string,
+    applicationId: string,
+  ): Promise<void> {
+    const app = await this.applicationRepo.findOne({
+      where: { id: applicationId },
+    });
+    if (!app) {
+      throw new NotFoundException('지원서를 찾을 수 없습니다.');
+    }
+    if (app.userId !== applicantUserId) {
+      throw new ForbiddenException('본인의 지원서만 삭제할 수 있습니다.');
+    }
+    await this.applicationRepo.softDelete({ id: applicationId });
   }
 
   async findMine(postId: string, userId: string): Promise<Application | null> {
