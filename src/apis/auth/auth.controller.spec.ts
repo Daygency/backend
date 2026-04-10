@@ -13,7 +13,7 @@ describe('AuthController', () => {
           provide: AuthService,
           useValue: {
             loginWithKakao: jest.fn(),
-            loginWithNaverCode: jest.fn(),
+            loginWithNaver: jest.fn(),
             loginWithGoogle: jest.fn(),
             signupWithKakao: jest.fn(),
             signupWithNaver: jest.fn(),

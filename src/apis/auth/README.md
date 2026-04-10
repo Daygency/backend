@@ -5,52 +5,56 @@ Base URL 예: `https://api.example.com` (로컬 `http://localhost:3000`)
 
 ---
 
-## 네이버 로그인 (인가 **code** 방식)
+## 네이버 로그인 (`POST /auth/naver`)
 
-### 백엔드 `.env` — 지원하는 변수 이름 (하나씩만 맞추면 됨)
+**둘 중 하나만** 보내면 됩니다. **`accessToken`이 있으면 그쪽이 우선**합니다 (모바일 + 웹 동시에 넣지 말 것).
 
-서버가 **아래 순서**로 읽습니다. **값에 따옴표/공백**만 조심하면 됩니다.
+### A) 모바일 — `@react-native-seoul/naver-login` 등 (권장)
+
+SDK가 넘겨준 **네이버 OAuth `accessToken`**을 카카오와 같이 보냅니다.
+
+```json
+{
+  "accessToken": "<네이버 OAuth access token>"
+}
+```
+
+`access_token`(snake_case)도 동일하게 인정합니다. 서버는 `openapi.naver.com/v1/nid/me`에 `Authorization: Bearer`로 검증 후 자체 JWT를 발급합니다. **이 경로에서는 서버에 Client Secret이 없어도 됩니다** (nid/me 검증만).
+
+### B) 웹 — 인가 **code** 방식
+
+서버가 `nid.naver.com/oauth2.0/token`으로 code를 액세스 토큰으로 교환합니다. 아래 **백엔드 `.env`에 ID·Secret 필요**.
 
 | 용도 | 후보 1 (권장) | 후보 2 | 후보 3 |
 |------|----------------|--------|--------|
 | Client ID | `OAUTH_NAVER_CLIENT_ID` | `NAVER_CLIENT_ID` | `oauth_naver_client_id` |
 | Client Secret | `OAUTH_NAVER_CLIENT_SECRET` | `NAVER_CLIENT_SECRET` | `oauth_naver_client_secret` |
 
-- **시크릿은 절대 앱(Expo/RN) 코드나 번들에 넣지 마세요.** 토큰 교환은 서버만 합니다.
-- `.env` 수정 후 **Nest 프로세스를 재시작**해야 반영됩니다.
-
-### 프론트(Expo 등)
-
-- **`EXPO_PUBLIC_NAVER_CLIENT_ID`** (또는 앱에 쓰는 공개 ID)만 사용 — 네이버 개발자센터의 **애플리케이션 Client ID**와 동일해야 합니다.
-- 서버 `.env`의 ID와 **원칙적으로 같은 앱의 같은 Client ID**여야 authorize / token 교환이 맞습니다. (개발용 앱/운영용 앱이 다르면 각각 맞춰야 함)
-
-### 1) `POST /auth/naver`
+- **시크릿은 앱 번들에 넣지 말 것.** code 교환은 서버만.
+- `.env` 수정 후 Nest **재시작** 필요.
 
 **Body**
 
 ```json
 {
   "code": "<네이버 인가 코드>",
-  "redirectUri": "<앱 OAuth 에 쓴 값과 완전 동일>",
-  "redirect_uri": "<위와 동일 (선택, 권장)>",
+  "redirectUri": "<authorize 시 redirect 와 완전 동일>",
+  "redirect_uri": "<위와 동일 (선택)>",
   "state": "<인가에 state 썼을 때만 동일 값>"
 }
 ```
 
-- `code`: **1회용**. 같은 `code`로 두 번 호출하면 두 번째는 실패합니다.
-- `redirectUri` / `redirect_uri`: 둘 다 있으면 **문자열이 완전히 같아야** 합니다.
-- **내면 안 되는 것:** `code` 대신 아직 교환 안 된 값을 `accessToken` 필드에 넣기.
+`redirectUri` 또는 `redirect_uri` 중 하나만 있어도 됩니다.  
+`code`는 **1회용**이며, `redirectUri` / `redirect_uri`를 둘 다 보내면 **문자열이 완전히 같아야** 합니다.
 
-**응답 — 이미 가입**
+### 공통 응답
 
-`accessToken`, `refreshToken`, `user` (자체 JWT)
+**이미 가입:** `accessToken`, `refreshToken`, `user` (자체 JWT)
 
-**응답 — 미가입**
+**미가입:** `needsSignup`, `profile`, `naverAccessToken`, `oauthAccessToken`(동일 값)  
+→ `POST /auth/signup/naver` 의 **`accessToken`에 위 네이버 액세스 토큰**을 넣습니다.
 
-`needsSignup`, `profile`, `naverAccessToken`, `oauthAccessToken`(동일 값)  
-→ 가입 시 `POST /auth/signup/naver` 의 **`accessToken`에 위 네이버 액세스 토큰**을 넣습니다.
-
-### 2) `POST /auth/signup/naver`
+### `POST /auth/signup/naver`
 
 ```json
 {
@@ -69,7 +73,7 @@ Base URL 예: `https://api.example.com` (로컬 `http://localhost:3000`)
 
 | 증상 | 원인 후보 |
 |------|-----------|
-| HTTP **400** + `NAVER_CLIENT…` / `OAUTH_NAVER…` / `서버 .env 에 네이버 클라이언트…` | 서버에 ID·Secret이 안 읽힘 → 변수 이름·재시작·배포 환경의 env 확인 |
+| HTTP **400** + `NAVER_CLIENT…` / `OAUTH_NAVER…` / `서버 .env 에 네이버 클라이언트…` | **웹 code 로그인** 시 서버에 ID·Secret이 안 읽힘 → 변수 이름·재시작·배포 env 확인 |
 | HTTP **401** + 네이버 토큰/인가 관련 메시지 | `code` 만료·재사용, `redirect_uri` 불일치, 잘못된 `code`, 앱/서버 Client ID 불일치 |
 | CORS / 네트워크 에러 | API Base URL, HTTPS 혼합, 프록시 |
 | 로그인은 되는데 가입만 실패 | `signup`의 `accessToken`이 **네이버 OAuth 액세스 토큰**인지 확인 (`code` 넣지 않음) |

@@ -62,21 +62,43 @@ export class AuthService {
   }
 
   /**
-   * 네이버 인가 code → 토큰 API 교환 → nid/me → JWT 또는 needsSignup.
-   * .env: OAUTH_NAVER_CLIENT_ID / OAUTH_NAVER_CLIENT_SECRET 등 (getNaverClientCredentials 참고)
+   * `POST /auth/naver` — 네이티브는 accessToken, 웹은 code+redirectUri 중 하나.
    */
-  async loginWithNaverCode(dto: {
-    code: string;
-    redirectUri: string;
+  async loginWithNaver(dto: {
+    accessToken?: string;
+    access_token?: string;
+    code?: string;
+    redirectUri?: string;
     redirect_uri?: string;
     state?: string;
   }) {
-    const redirectUri = this.resolveNaverRedirectUri(dto);
-    const naverAccessToken = await this.exchangeNaverAuthorizationCode(
-      dto.code.trim(),
-      redirectUri,
-      dto.state,
+    const token =
+      dto.accessToken?.trim() || dto.access_token?.trim() || undefined;
+    if (token) {
+      return this.loginWithNaverAccessToken(token);
+    }
+
+    const code = dto.code?.trim();
+    const redirectForCode =
+      dto.redirectUri?.trim() || dto.redirect_uri?.trim() || undefined;
+    if (code && redirectForCode) {
+      return this.loginWithNaverCode({
+        code,
+        redirectUri: redirectForCode,
+        redirect_uri: dto.redirect_uri,
+        state: dto.state,
+      });
+    }
+
+    throw new BadRequestException(
+      '네이버 로그인: accessToken(또는 access_token) 또는 code+redirectUri(또는 redirect_uri)가 필요합니다.',
     );
+  }
+
+  /**
+   * 네이버 OAuth accessToken → nid/me → JWT 또는 needsSignup (카카오/구글과 동일 계약).
+   */
+  async loginWithNaverAccessToken(naverAccessToken: string) {
     const profile = await this.validateNaverToken(naverAccessToken);
     let user = await this.loadSocialUser(profile, SocialProvider.NAVER);
 
@@ -101,6 +123,25 @@ export class AuthService {
     }
 
     return this.issueAccessAndRefreshTokens(user);
+  }
+
+  /**
+   * 네이버 인가 code → 토큰 API 교환 → nid/me.
+   * .env: OAUTH_NAVER_CLIENT_ID / OAUTH_NAVER_CLIENT_SECRET (getNaverClientCredentials)
+   */
+  async loginWithNaverCode(dto: {
+    code: string;
+    redirectUri: string;
+    redirect_uri?: string;
+    state?: string;
+  }) {
+    const redirectUri = this.resolveNaverRedirectUri(dto);
+    const naverAccessToken = await this.exchangeNaverAuthorizationCode(
+      dto.code.trim(),
+      redirectUri,
+      dto.state,
+    );
+    return this.loginWithNaverAccessToken(naverAccessToken);
   }
 
   async loginWithGoogle(accessToken: string) {
