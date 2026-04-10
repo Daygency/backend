@@ -43,11 +43,13 @@ export interface ApplicationCertificateSnapshotItem {
 export type ApplicationFileSnapshot = ApplicationFileSnapshotItem[] | null;
 
 export type ApplicationEducationSnapshot =
-  ApplicationEducationSnapshotItem[] | null;
+  | ApplicationEducationSnapshotItem[]
+  | null;
 
 export type ApplicationCareerSnapshot = ApplicationCareerSnapshotItem[] | null;
 
 export type ApplicationAwardSnapshot = ApplicationAwardSnapshotItem[] | null;
 
 export type ApplicationCertificateSnapshot =
-  ApplicationCertificateSnapshotItem[] | null;
+  | ApplicationCertificateSnapshotItem[]
+  | null;
