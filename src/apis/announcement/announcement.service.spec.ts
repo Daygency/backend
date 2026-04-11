@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest matchers */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- test mocks */
 
+import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,6 +12,7 @@ import { Major } from '../major/entities/major.entity';
 import { AnnouncementStatus } from './entities/announcement.entity';
 import { AnnouncementCategory } from './entities/announcement-category.entity';
 import { AnnouncementFileService } from './announcement-file.service';
+import { Application } from '../application/entities/application.entity';
 
 describe('AnnouncementService', () => {
   let service: AnnouncementService;
@@ -54,6 +56,10 @@ describe('AnnouncementService', () => {
     fileId: mockFileId,
     category: mockCategory,
     majors: [],
+  };
+
+  const mockApplicationRepo = {
+    count: jest.fn().mockResolvedValue(0),
   };
 
   beforeEach(async () => {
@@ -103,6 +109,10 @@ describe('AnnouncementService', () => {
           useValue: mockApplicationConfigRepo,
         },
         {
+          provide: getRepositoryToken(Application),
+          useValue: mockApplicationRepo,
+        },
+        {
           provide: getRepositoryToken(Major),
           useValue: mockMajorRepo,
         },
@@ -124,6 +134,7 @@ describe('AnnouncementService', () => {
     applicationConfigRepository = module.get(
       getRepositoryToken(ApplicationConfig),
     );
+    mockApplicationRepo.count.mockResolvedValue(0);
   });
 
   it('should be defined', () => {
@@ -328,6 +339,26 @@ describe('AnnouncementService', () => {
           cursor: 'some-post-id',
         },
       );
+    });
+  });
+
+  describe('update', () => {
+    it('지원자가 있으면 ForbiddenException을 던진다', async () => {
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        category: mockCategory,
+        majors: [],
+      });
+      mockApplicationRepo.count.mockResolvedValue(1);
+
+      await expect(
+        service.update(mockUserId, mockSavedAnnouncement.postId!, {
+          title: '변경',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(announcementRepository.save).not.toHaveBeenCalled();
     });
   });
 });

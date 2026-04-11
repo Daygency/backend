@@ -121,7 +121,10 @@ export class AnnouncementController {
   @ApiOperation({ summary: '모집공고 수정' })
   @ApiResponse({ status: 200, description: '공고 수정 완료' })
   @ApiResponse({ status: 401, description: '인증 필요' })
-  @ApiResponse({ status: 403, description: '수정 권한 없음' })
+  @ApiResponse({
+    status: 403,
+    description: '수정 권한 없음 또는 지원자가 있는 공고',
+  })
   @ApiResponse({ status: 404, description: '공고를 찾을 수 없음' })
   update(
     @Param('id') id: string,

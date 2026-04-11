@@ -20,6 +20,7 @@ import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
 import { File } from '../file/entities/file.entity';
 import { AnnouncementFileService } from './announcement-file.service';
+import { Application } from '../application/entities/application.entity';
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -69,6 +70,8 @@ export class AnnouncementService {
     private readonly majorRepository: Repository<Major>,
     @InjectRepository(AnnouncementCategory)
     private readonly categoryRepository: Repository<AnnouncementCategory>,
+    @InjectRepository(Application)
+    private readonly applicationRepository: Repository<Application>,
     private readonly announcementFileService: AnnouncementFileService,
   ) {}
 
@@ -359,6 +362,15 @@ export class AnnouncementService {
     }
     if (announcement.userId !== userId) {
       throw new ForbiddenException('수정 권한이 없습니다.');
+    }
+
+    const applicationCount = await this.applicationRepository.count({
+      where: { postId: id },
+    });
+    if (applicationCount > 0) {
+      throw new ForbiddenException(
+        '지원자가 있는 공고는 수정할 수 없습니다.',
+      );
     }
 
     if (dto.title !== undefined) announcement.title = dto.title;
