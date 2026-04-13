@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { User, SocialProvider, UserRole } from '../entities/user.entity';
 import type { SocialProfile } from '../../auth/types/social-profile.type';
@@ -36,6 +36,9 @@ import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { Follow } from '../../follow/entities/follow.entity';
 import { FileService } from '../../file/file.service';
+import { UserPushDevice } from '../../notice/entities/user-push-device.entity';
+import { hardDeleteUserCascade } from '../utils/user-hard-delete-cascade';
+import type { PurgeExpiredSoftDeletedUsersResult } from '../types/purge-soft-deleted.types';
 
 function encodeUserListCursor(createdAt: Date, userId: string): string {
   return Buffer.from(
@@ -97,6 +100,7 @@ export class UserService {
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
     private readonly fileService: FileService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async findBySocial(
@@ -235,6 +239,67 @@ export class UserService {
 
   findOne(userId: string) {
     return this.userRepository.findOne({ where: { userId } });
+  }
+
+  /**
+   * 본인 계정 소프트 삭제 — FCM 기기 행 삭제 후 `user.deleted_at` 설정.
+   * Access JWT는 이후 검증에서 거부, Refresh는 `findOne`에서 탈퇴 사용자 제외로 거부된다.
+   */
+  async deleteMyAccount(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { userId } });
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+    await this.userRepository.manager.transaction(async (em) => {
+      await em
+        .createQueryBuilder()
+        .delete()
+        .from(UserPushDevice)
+        .where('user_id = :userId', { userId })
+        .execute();
+      await em.softDelete(User, { userId });
+    });
+  }
+
+  /**
+   * `deletedAt` 이 retentionDays 일보다 오래된 소프트 삭제 사용자를 물리 삭제한다.
+   * 스케줄러에서 호출한다.
+   */
+  async purgeSoftDeletedUsersOlderThanDays(
+    retentionDays: number,
+  ): Promise<PurgeExpiredSoftDeletedUsersResult> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+
+    const candidates = await this.userRepository
+      .createQueryBuilder('u')
+      .withDeleted()
+      .where('u.deletedAt IS NOT NULL')
+      .andWhere('u.deletedAt < :cutoff', { cutoff })
+      .select(['u.userId'])
+      .getMany();
+
+    const purgedUserIds: string[] = [];
+    for (const { userId } of candidates) {
+      try {
+        await this.dataSource.transaction(async (manager) => {
+          await hardDeleteUserCascade(manager, userId);
+        });
+        purgedUserIds.push(userId);
+      } catch (err) {
+        this.logger.error(
+          `탈퇴 사용자 물리 삭제 실패 userId=${userId}`,
+          err instanceof Error ? err.stack : err,
+        );
+      }
+    }
+
+    return {
+      retentionDays,
+      cutoffAt: cutoff.toISOString(),
+      purgedCount: purgedUserIds.length,
+      purgedUserIds,
+    };
   }
 
   async getMyProfile(userId: string): Promise<ProfileResponseDto> {

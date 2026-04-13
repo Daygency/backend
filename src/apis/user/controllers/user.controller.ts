@@ -16,11 +16,20 @@ import {
   ValidationPipe,
   UploadedFile,
   UseInterceptors,
+  Delete,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ProfileResponseDto } from '../dto/profile-response.dto';
 import { PublicProfileResponseDto } from '../dto/public-profile-response.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
@@ -191,6 +200,24 @@ export class UserController {
   @ApiResponse({ status: 404, description: '유저 없음' })
   getUserProfile(@Param('id', ParseUUIDPipe) id: string) {
     return this.userService.getPublicProfile(id);
+  }
+
+  @Delete('me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '내 계정 탈퇴 (소프트 삭제)',
+    description:
+      'FCM 기기 등록을 삭제한 뒤 사용자 행을 소프트 삭제합니다. 이후 동일 소셜로 로그인하면 계정이 복구될 수 있습니다.',
+  })
+  @ApiResponse({ status: 204, description: '탈퇴 처리 완료' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  @ApiResponse({ status: 404, description: '사용자 없음' })
+  async deleteMyAccount(
+    @Request() req: { user: { id: string } },
+  ): Promise<void> {
+    await this.userService.deleteMyAccount(req.user.id);
   }
 
   @Get(':id')

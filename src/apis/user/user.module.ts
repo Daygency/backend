@@ -18,7 +18,7 @@ import { Comment } from '../comment/entities/comment.entity';
 import { Scrap } from '../scrap/entities/scrap.entity';
 import { Follow } from '../follow/entities/follow.entity';
 import { FileModule } from '../file/file.module';
-
+import { UserSoftDeletePurgeScheduler } from './user-soft-delete-purge.scheduler';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -40,7 +40,7 @@ import { FileModule } from '../file/file.module';
     forwardRef(() => AuthModule),
   ],
   controllers: [UserController],
-  providers: [UserService, PortfolioService],
+  providers: [UserService, PortfolioService, UserSoftDeletePurgeScheduler],
   exports: [UserService],
 })
 export class UserModule {}
