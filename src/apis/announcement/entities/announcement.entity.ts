@@ -61,11 +61,12 @@ export class Announcement {
   @Column()
   address: string;
 
+  /** 기본값: 협의(`PENDING`) */
   @Column({
     name: 'price_type',
     type: 'enum',
     enum: AnnouncementPriceType,
-    default: AnnouncementPriceType.FREE,
+    default: AnnouncementPriceType.PENDING,
   })
   priceType: AnnouncementPriceType;
 

@@ -127,7 +127,7 @@ export class AnnouncementService {
       scheduledAt: new Date(dto.scheduledAt),
       status: dto.status ?? AnnouncementStatus.OPEN,
       address: dto.address,
-      priceType: dto.priceType ?? AnnouncementPriceType.FREE,
+      priceType: dto.priceType ?? AnnouncementPriceType.PENDING,
       price: dto.price ?? 0,
       fileId: dto.fileId ?? null,
       category,

@@ -56,9 +56,9 @@ export class CreateAnnouncementDto {
 
   @ApiPropertyOptional({
     description:
-      '금액 구분. 생략 시 FREE. EXPENSE=지출, INCOME=수입, FREE=무료, PENDING=협의 가능',
+      '금액 구분. 생략 시 PENDING(협의). EXPENSE=지출, INCOME=수입, FREE=무료, PENDING=협의 가능',
     enum: AnnouncementPriceType,
-    default: AnnouncementPriceType.FREE,
+    default: AnnouncementPriceType.PENDING,
   })
   @IsOptional()
   @IsEnum(AnnouncementPriceType)
