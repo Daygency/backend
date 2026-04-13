@@ -8,7 +8,7 @@
 | **사용자 행** | `user.deleted_at` (`User` `@DeleteDateColumn`) |
 | **탈퇴 후 Access JWT** | `JwtAccessStrategy`에서 활성 사용자만 통과 — 탈퇴 직후 남은 액세스 토큰도 **401** |
 | **탈퇴 후 Refresh JWT** | `AuthService.refreshTokens` → `findOne`이 탈퇴 사용자 제외 → **401** |
-| **동일 소셜 재로그인** | `reactivateUser` 후 토큰 발급 ([인증 API](../auth/README.md)) |
+| **동일 소셜 재로그인** | 유예 기간 내: 1차 `needsReactivation` → 2차 `confirmReactivation: true` 시 `reactivateUser` + JWT ([인증 API](../auth/README.md)) |
 | **유예 후 자동 영구 삭제** | 탈퇴일(`deleted_at`)로부터 **7일**이 지난 사용자 — 매일 00:00(서버 로컬) 스케줄에서 **물리 삭제** |
 
 ---
@@ -53,8 +53,8 @@ type DeleteMyAccountResponseBody = void;
 
 ## 3. 유예 기간 후 자동 물리 삭제 (스케줄)
 
-탈퇴 후 **같은 소셜 계정으로 다시 로그인**하면 기존 행이 **복구**된다(`reactivateUser`).  
-다만 **`deleted_at` 이 설정된 시각으로부터 7일이 지나면**, 서버가 해당 사용자와 연관 데이터를 **물리 삭제**한다. 이후에는 동일 소셜로 가입 시 **새 계정**이 된다.
+유예 기간 안에 **같은 소셜로 로그인**하면, 먼저 **`needsReactivation: true`** 만 내려가고 JWT는 주지 않는다. 사용자가 복구에 동의한 뒤 **같은 엔드포인트에 `confirmReactivation: true`** 를 넣어 다시 호출하면 `reactivateUser` 후 JWT가 발급된다.  
+**`deleted_at` 이 설정된 시각으로부터 7일이 지나면** 스케줄이 해당 사용자를 **물리 삭제**한다. 그 이후에는 동일 소셜로는 **신규 가입**만 가능하다.
 
 - **유예 일수:** `SOFT_DELETE_RETENTION_DAYS` = **7** (`src/apis/user/types/purge-soft-deleted.types.ts`)
 - **실행 시각:** 매일 **00:00** — 서버 프로세스의 **로컬 타임존** 기준 (`CronExpression.EVERY_DAY_AT_MIDNIGHT`)
@@ -96,9 +96,9 @@ export interface PurgeExpiredSoftDeletedUsersResult {
 
 ## 5. 소셜 재로그인 시 “복구”
 
-탈퇴(소프트 삭제)된 계정이 **같은 소셜 provider + socialId**로 다시 들어오면 `deletedAt`이 있으면 복구 후 JWT를 준다. 요청/응답 형식은 [인증 API](../auth/README.md)의 `POST /auth/kakao`, `google`, `naver`, `signup/*` 와 동일하다.
+탈퇴(소프트 삭제)된 계정이 **같은 소셜 provider + socialId**로 들어올 때, **유예 기간 안**이면 1차 응답은 **`needsReactivation: true`** (JWT 없음)이고, **`confirmReactivation: true`** 가 포함된 2차 요청에서만 `reactivateUser` 후 JWT를 준다. 상세·타입은 [인증 API](../auth/README.md)를 본다.
 
-**단,** 위 3절의 자동 물리 삭제가 이미 실행되어 `user` 행이 없어진 경우에는 복구할 수 없고, 회원가입 플로우는 **신규 사용자**로 이어진다.
+**유예 기간 밖**(또는 이미 물리 삭제된 경우)에는 **403** 또는 **미가입(`needsSignup`)** 등으로 이어지며, 자동 복구 JWT는 발급하지 않는다.
 
 ---
 
@@ -114,5 +114,5 @@ export interface PurgeExpiredSoftDeletedUsersResult {
 | 유예 일수·결과 타입 | `src/apis/user/types/purge-soft-deleted.types.ts` |
 | 액세스 토큰 시 활성 사용자 검증 | `src/apis/auth/strategies/jwt-access.strategy.ts` |
 | 계정 복구 | `src/apis/user/services/user.service.ts` — `reactivateUser` |
-| 로그인 시 복구 | `src/apis/auth/auth.service.ts` — `issueTokens` 등 |
+| 로그인 시 복구(2단계) | `src/apis/auth/auth.service.ts` — `issueTokens`, `buildNeedsReactivationResponse` |
 | 스케줄 모듈 등록 | `src/app.module.ts` — `ScheduleModule.forRoot()` |

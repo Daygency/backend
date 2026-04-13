@@ -5,6 +5,63 @@ Base URL 예: `https://api.example.com` (로컬 `http://localhost:3000`)
 
 ---
 
+## 탈퇴(소프트 삭제) 직후 로그인 — 2단계 복구
+
+유예 기간(`SOFT_DELETE_RETENTION_DAYS`, **7일**) **안**에 소프트 삭제된 계정이면, **자동 로그인(JWT)** 을 하지 않는다.
+
+### 1차 — 로그인(확인 전)
+
+`POST /auth/kakao`, `POST /auth/naver` (또는 `POST /auth/google`)에 평소와 같이 **`accessToken` 또는 `access_token`** 만 보낸다.
+
+**응답 200** + `needsReactivation: true` — **자체 `accessToken` / `refreshToken` / 로그인 완료 `user` 는 없다.**
+
+```typescript
+interface NeedsReactivationLoginResponse {
+  needsReactivation: true;
+  deletedAt: string; // ISO 8601
+  reactivationDeadline: string; // ISO 8601 (대략 deletedAt + 7일)
+  profile: {
+    socialId: string;
+    nickname: string;
+    email: string;
+    profileImgUrl: string;
+  };
+  user: {
+    userId: string;
+    nickname: string;
+    activityName: string;
+    profileImgUrl: string;
+  };
+}
+```
+
+### 2차 — 복구 확정
+
+**같은 엔드포인트**에 동일 소셜 토큰 + **`confirmReactivation: true`**:
+
+```json
+{
+  "accessToken": "<소셜 OAuth access token>",
+  "confirmReactivation": true
+}
+```
+
+`access_token`(snake_case)도 동일하게 인정한다.
+
+**응답 200** — 기존과 동일한 로그인 성공 형태 (`accessToken`, `refreshToken`, `user`).
+
+### 유예 기간 밖
+
+소프트 삭제 행이 남아 있으나 **유예가 지난** 경우 **HTTP 403** (`계정 복구 유예 기간이 지났습니다...`).  
+이미 물리 삭제된 경우에는 미가입과 동일하게 **`needsSignup: true`** 가 내려갈 수 있다.
+
+### 회원가입 (`POST /auth/signup/*`)
+
+탈퇴 유예 중인 기존 계정이 **같은 소셜로** 가입 API를 호출하는 경우에도 **1차는 `needsReactivation`** 만 반환할 수 있다. 복구 시 **`confirmReactivation: true`** + 소셜 토큰을 보내면 된다.  
+`activityName`은 **신규 가입** 시에만 필수(서버 검증).
+
+---
+
 ## 네이버 로그인 (`POST /auth/naver`)
 
 **둘 중 하나만** 보내면 됩니다. **`accessToken`이 있으면 그쪽이 우선**합니다 (모바일 + 웹 동시에 넣지 말 것).
@@ -49,10 +106,15 @@ SDK가 넘겨준 **네이버 OAuth `accessToken`**을 카카오와 같이 보냅
 
 ### 공통 응답
 
-**이미 가입:** `accessToken`, `refreshToken`, `user` (자체 JWT)
+**이미 가입(정상):** `accessToken`, `refreshToken`, `user` (자체 JWT)
+
+**탈퇴 유예 중(복구 확인 전):** `needsReactivation: true`, `deletedAt`, `reactivationDeadline`, `profile`, `user` — **JWT 없음**  
+→ 복구 시 같은 엔드포인트에 `confirmReactivation: true` 추가.
 
 **미가입:** `needsSignup`, `profile`, `naverAccessToken`, `oauthAccessToken`(동일 값)  
 → `POST /auth/signup/naver` 의 **`accessToken`에 위 네이버 액세스 토큰**을 넣습니다.
+
+**code 플로우**에도 `confirmReactivation` 을 본문에 넣을 수 있다.
 
 ### `POST /auth/signup/naver`
 
@@ -96,7 +158,7 @@ SDK가 넘겨준 **네이버 OAuth `accessToken`**을 카카오와 같이 보냅
 
 | 단계 | 경로 |
 |------|------|
-| 로그인 | `POST /auth/kakao` — `{ "accessToken" }` |
+| 로그인 | `POST /auth/kakao` — `{ "accessToken" \| "access_token", "confirmReactivation"?: true }` |
 | 가입 | `POST /auth/signup/kakao` |
 
 ---

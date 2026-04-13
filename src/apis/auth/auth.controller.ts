@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Post,
@@ -18,19 +19,21 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('kakao')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiOperation({ summary: '카카오 로그인' })
   @ApiBody({ type: SocialLoginDto })
   @ApiResponse({ status: 200, description: '카카오 로그인 성공' })
   async loginWithKakao(@Body() body: SocialLoginDto) {
-    return await this.authService.loginWithKakao(body.accessToken);
+    return await this.authService.loginWithKakao(body);
   }
 
   @Post('google')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiOperation({ summary: '구글 로그인' })
   @ApiBody({ type: SocialLoginDto })
   @ApiResponse({ status: 200, description: '구글 로그인 성공' })
   async loginWithGoogle(@Body() body: SocialLoginDto) {
-    return await this.authService.loginWithGoogle(body.accessToken);
+    return await this.authService.loginWithGoogle(body);
   }
 
   @Post('naver')
@@ -47,32 +50,49 @@ export class AuthController {
   }
 
   @Post('signup/kakao')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiOperation({ summary: '카카오 회원가입' })
   @ApiBody({ type: SocialSignupDto })
   @ApiResponse({ status: 200, description: '회원가입 완료 및 토큰 발급' })
   @ApiResponse({ status: 409, description: '이미 사용 중인 닉네임' })
   async signupWithKakao(@Body() body: SocialSignupDto) {
-    return await this.authService.signupWithKakao(body.accessToken, {
+    const token = body.accessToken?.trim() || body.access_token?.trim();
+    if (!token) {
+      throw new BadRequestException(
+        'accessToken 또는 access_token이 필요합니다.',
+      );
+    }
+    return await this.authService.signupWithKakao(token, {
       nickname: body.nickname,
       activityName: body.activityName,
       role: body.role,
+      confirmReactivation: body.confirmReactivation === true,
     });
   }
 
   @Post('signup/google')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiOperation({ summary: '구글 회원가입' })
   @ApiBody({ type: SocialSignupDto })
   @ApiResponse({ status: 200, description: '회원가입 완료 및 토큰 발급' })
   @ApiResponse({ status: 409, description: '이미 사용 중인 닉네임' })
   async signupWithGoogle(@Body() body: SocialSignupDto) {
-    return await this.authService.signupWithGoogle(body.accessToken, {
+    const token = body.accessToken?.trim() || body.access_token?.trim();
+    if (!token) {
+      throw new BadRequestException(
+        'accessToken 또는 access_token이 필요합니다.',
+      );
+    }
+    return await this.authService.signupWithGoogle(token, {
       nickname: body.nickname,
       activityName: body.activityName,
       role: body.role,
+      confirmReactivation: body.confirmReactivation === true,
     });
   }
 
   @Post('signup/naver')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   @ApiOperation({
     summary: '네이버 회원가입',
     description:
@@ -82,10 +102,17 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '회원가입 완료 및 토큰 발급' })
   @ApiResponse({ status: 409, description: '이미 사용 중인 닉네임' })
   async signupWithNaver(@Body() body: SocialSignupDto) {
-    return await this.authService.signupWithNaver(body.accessToken, {
+    const token = body.accessToken?.trim() || body.access_token?.trim();
+    if (!token) {
+      throw new BadRequestException(
+        'accessToken 또는 access_token이 필요합니다.',
+      );
+    }
+    return await this.authService.signupWithNaver(token, {
       nickname: body.nickname,
       activityName: body.activityName,
       role: body.role,
+      confirmReactivation: body.confirmReactivation === true,
     });
   }
 

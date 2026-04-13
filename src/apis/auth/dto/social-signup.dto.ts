@@ -1,4 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 import { SocialLoginDto } from './social-login.dto';
 import { UserRole } from 'src/apis/user/entities/user.entity';
 
@@ -9,11 +10,14 @@ export class SocialSignupDto extends SocialLoginDto {
   })
   nickname?: string;
 
-  @ApiProperty({
-    description: '사용자 활동 아이디 (activityName)',
+  @ApiPropertyOptional({
+    description:
+      '신규 가입 시 필수. 기존 계정(탈퇴 유예 중) 복구만 할 때는 생략 가능.',
     example: 'my_activity_id',
   })
-  activityName: string;
+  @IsOptional()
+  @IsString()
+  activityName?: string;
 
   @ApiPropertyOptional({
     description: '사용자 역할',

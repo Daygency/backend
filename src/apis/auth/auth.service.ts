@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -7,8 +8,13 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserService } from '../user/services/user.service';
-import { SocialProvider, UserRole } from '../user/entities/user.entity';
+import { SocialProvider, User, UserRole } from '../user/entities/user.entity';
 import type { SocialProfile } from './types/social-profile.type';
+import type { NeedsReactivationLoginResponse } from './types/needs-reactivation-login.type';
+import {
+  computeReactivationDeadline,
+  isWithinReactivationGrace,
+} from './utils/reactivation-grace';
 
 interface KakaoUserResponse {
   id: number;
@@ -56,9 +62,21 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  async loginWithKakao(accessToken: string) {
-    const profile = await this.validateKakaoToken(accessToken);
-    return this.issueTokens(profile, SocialProvider.KAKAO);
+  async loginWithKakao(dto: {
+    accessToken?: string;
+    access_token?: string;
+    confirmReactivation?: boolean;
+  }) {
+    const token = dto.accessToken?.trim() || dto.access_token?.trim();
+    if (!token) {
+      throw new BadRequestException(
+        'accessToken 또는 access_token이 필요합니다.',
+      );
+    }
+    const profile = await this.validateKakaoToken(token);
+    return this.issueTokens(profile, SocialProvider.KAKAO, {
+      confirmReactivation: dto.confirmReactivation === true,
+    });
   }
 
   /**
@@ -71,11 +89,13 @@ export class AuthService {
     redirectUri?: string;
     redirect_uri?: string;
     state?: string;
+    confirmReactivation?: boolean;
   }) {
+    const confirmReactivation = dto.confirmReactivation === true;
     const token =
       dto.accessToken?.trim() || dto.access_token?.trim() || undefined;
     if (token) {
-      return this.loginWithNaverAccessToken(token);
+      return this.loginWithNaverAccessToken(token, { confirmReactivation });
     }
 
     const code = dto.code?.trim();
@@ -87,6 +107,7 @@ export class AuthService {
         redirectUri: redirectForCode,
         redirect_uri: dto.redirect_uri,
         state: dto.state,
+        confirmReactivation,
       });
     }
 
@@ -98,31 +119,31 @@ export class AuthService {
   /**
    * 네이버 OAuth accessToken → nid/me → JWT 또는 needsSignup (카카오/구글과 동일 계약).
    */
-  async loginWithNaverAccessToken(naverAccessToken: string) {
+  async loginWithNaverAccessToken(
+    naverAccessToken: string,
+    options?: { confirmReactivation?: boolean },
+  ) {
     const profile = await this.validateNaverToken(naverAccessToken);
-    let user = await this.loadSocialUser(profile, SocialProvider.NAVER);
+    const result = await this.issueTokens(
+      profile,
+      SocialProvider.NAVER,
+      options,
+    );
 
-    if (user?.deletedAt) {
-      await this.userService.reactivateUser(user.userId);
-      user = await this.loadSocialUser(profile, SocialProvider.NAVER);
-    }
-
-    if (!user) {
+    if (
+      result &&
+      typeof result === 'object' &&
+      'needsSignup' in result &&
+      result.needsSignup
+    ) {
       return {
-        needsSignup: true,
-        profile: {
-          socialId: profile.socialId,
-          nickname: profile.nickname,
-          email: profile.email,
-          profileImgUrl: profile.profileImgUrl,
-        },
-        /** POST /auth/signup/naver 의 accessToken 으로 그대로 전달 */
+        ...result,
         naverAccessToken,
         oauthAccessToken: naverAccessToken,
       };
     }
 
-    return this.issueAccessAndRefreshTokens(user);
+    return result;
   }
 
   /**
@@ -134,6 +155,7 @@ export class AuthService {
     redirectUri: string;
     redirect_uri?: string;
     state?: string;
+    confirmReactivation?: boolean;
   }) {
     const redirectUri = this.resolveNaverRedirectUri(dto);
     const naverAccessToken = await this.exchangeNaverAuthorizationCode(
@@ -141,12 +163,26 @@ export class AuthService {
       redirectUri,
       dto.state,
     );
-    return this.loginWithNaverAccessToken(naverAccessToken);
+    return this.loginWithNaverAccessToken(naverAccessToken, {
+      confirmReactivation: dto.confirmReactivation === true,
+    });
   }
 
-  async loginWithGoogle(accessToken: string) {
-    const profile = await this.validateGoogleToken(accessToken);
-    return this.issueTokens(profile, SocialProvider.GOOGLE);
+  async loginWithGoogle(dto: {
+    accessToken?: string;
+    access_token?: string;
+    confirmReactivation?: boolean;
+  }) {
+    const token = dto.accessToken?.trim() || dto.access_token?.trim();
+    if (!token) {
+      throw new BadRequestException(
+        'accessToken 또는 access_token이 필요합니다.',
+      );
+    }
+    const profile = await this.validateGoogleToken(token);
+    return this.issueTokens(profile, SocialProvider.GOOGLE, {
+      confirmReactivation: dto.confirmReactivation === true,
+    });
   }
 
   private async validateKakaoToken(
@@ -339,10 +375,50 @@ export class AuthService {
     return user;
   }
 
-  private async issueTokens(profile: SocialProfile, provider: SocialProvider) {
+  private buildNeedsReactivationResponse(
+    user: User,
+    profile: SocialProfile,
+  ): NeedsReactivationLoginResponse {
+    const deletedAt = user.deletedAt;
+    if (!deletedAt) {
+      throw new UnauthorizedException('탈퇴 처리된 계정 정보가 없습니다.');
+    }
+    return {
+      needsReactivation: true,
+      deletedAt: deletedAt.toISOString(),
+      reactivationDeadline:
+        computeReactivationDeadline(deletedAt).toISOString(),
+      profile: {
+        socialId: profile.socialId,
+        nickname: profile.nickname,
+        email: profile.email,
+        profileImgUrl: profile.profileImgUrl,
+      },
+      user: {
+        userId: user.userId,
+        nickname: user.nickname,
+        activityName: user.activityName,
+        profileImgUrl: user.profileImgUrl,
+      },
+    };
+  }
+
+  private async issueTokens(
+    profile: SocialProfile,
+    provider: SocialProvider,
+    options?: { confirmReactivation?: boolean },
+  ) {
     let user = await this.loadSocialUser(profile, provider);
 
     if (user?.deletedAt) {
+      if (!isWithinReactivationGrace(user.deletedAt)) {
+        throw new ForbiddenException(
+          '계정 복구 유예 기간이 지났습니다. 다시 가입해 주세요.',
+        );
+      }
+      if (!options?.confirmReactivation) {
+        return this.buildNeedsReactivationResponse(user, profile);
+      }
       await this.userService.reactivateUser(user.userId);
       user = await this.loadSocialUser(profile, provider);
     }
@@ -429,7 +505,12 @@ export class AuthService {
 
   async signupWithKakao(
     accessToken: string,
-    options?: { nickname?: string; activityName?: string; role?: UserRole },
+    options?: {
+      nickname?: string;
+      activityName?: string;
+      role?: UserRole;
+      confirmReactivation?: boolean;
+    },
   ) {
     const profile = await this.validateKakaoToken(accessToken);
     return this.signupWithSocial(SocialProvider.KAKAO, profile, options);
@@ -437,7 +518,12 @@ export class AuthService {
 
   async signupWithNaver(
     accessToken: string,
-    options?: { nickname?: string; activityName?: string; role?: UserRole },
+    options?: {
+      nickname?: string;
+      activityName?: string;
+      role?: UserRole;
+      confirmReactivation?: boolean;
+    },
   ) {
     const profile = await this.validateNaverToken(accessToken);
     return this.signupWithSocial(SocialProvider.NAVER, profile, options);
@@ -445,7 +531,12 @@ export class AuthService {
 
   async signupWithGoogle(
     accessToken: string,
-    options?: { nickname?: string; activityName?: string; role?: UserRole },
+    options?: {
+      nickname?: string;
+      activityName?: string;
+      role?: UserRole;
+      confirmReactivation?: boolean;
+    },
   ) {
     const profile = await this.validateGoogleToken(accessToken);
     return this.signupWithSocial(SocialProvider.GOOGLE, profile, options);
@@ -458,11 +549,20 @@ export class AuthService {
       nickname?: string;
       activityName?: string;
       role?: UserRole;
+      confirmReactivation?: boolean;
     },
   ) {
     let existing = await this.loadSocialUser(profile, provider);
     if (existing) {
       if (existing.deletedAt) {
+        if (!isWithinReactivationGrace(existing.deletedAt)) {
+          throw new ForbiddenException(
+            '계정 복구 유예 기간이 지났습니다. 다시 가입해 주세요.',
+          );
+        }
+        if (!options?.confirmReactivation) {
+          return this.buildNeedsReactivationResponse(existing, profile);
+        }
         await this.userService.reactivateUser(existing.userId);
         existing = await this.loadSocialUser(profile, provider);
       }

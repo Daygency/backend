@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
 /**
  * 두 가지 중 하나:
@@ -50,4 +50,12 @@ export class NaverLoginDto {
   @IsOptional()
   @IsString()
   state?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '탈퇴 계정 복구 확정 시 true. 유예 기간 내 소프트 삭제 계정의 2차 로그인.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  confirmReactivation?: boolean;
 }
