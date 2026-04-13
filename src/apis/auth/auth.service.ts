@@ -8,7 +8,12 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserService } from '../user/services/user.service';
-import { SocialProvider, User, UserRole } from '../user/entities/user.entity';
+import {
+  SocialProvider,
+  User,
+  UserActivity,
+  UserRole,
+} from '../user/entities/user.entity';
 import type { SocialProfile } from './types/social-profile.type';
 import type { NeedsReactivationLoginResponse } from './types/needs-reactivation-login.type';
 import {
@@ -492,6 +497,9 @@ export class AuthService {
       const user = await this.userService.findOne(payload.sub);
       if (!user) {
         throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
+      }
+      if (user.activity === UserActivity.BAN) {
+        throw new UnauthorizedException('이용이 제한된 계정입니다.');
       }
       const { accessToken, user: userInfo } =
         this.issueAccessAndRefreshTokens(user);

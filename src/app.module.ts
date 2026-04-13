@@ -22,6 +22,7 @@ import { BlockModule } from './apis/block/block.module';
 import { HealthModule } from './health/health.module';
 import { HomeModule } from './apis/home/home.module';
 import { NoticeModule } from './apis/notice/notice.module';
+import { ReportModule } from './apis/report/report.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { NoticeModule } from './apis/notice/notice.module';
     HealthModule,
     HomeModule,
     NoticeModule,
+    ReportModule,
   ],
   providers: [DatabaseSeedService],
 })

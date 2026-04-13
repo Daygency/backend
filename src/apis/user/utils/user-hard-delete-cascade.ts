@@ -97,6 +97,10 @@ export async function hardDeleteUserCascade(
     `DELETE FROM block WHERE blocker_id = ? OR blocked_id = ?`,
     [userId, userId],
   );
+  await manager.query(
+    `DELETE FROM \`report\` WHERE reporter_id = ? OR reported_user_id = ?`,
+    [userId, userId],
+  );
   await manager.query(`DELETE FROM education WHERE userId = ?`, [userId]);
   await manager.query(`DELETE FROM career WHERE userId = ?`, [userId]);
   await manager.query(`DELETE FROM award WHERE userId = ?`, [userId]);

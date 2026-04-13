@@ -1,3 +1,6 @@
+import { Award } from 'src/apis/user/entities/award.entity';
+import { Career } from 'src/apis/user/entities/career.entity';
+import { Certificate } from 'src/apis/user/entities/certificate.entity';
 import { Education } from 'src/apis/user/entities/education.entity';
 import {
   Column,
@@ -9,9 +12,6 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
-import { Career } from './career.entity';
-import { Award } from './award.entity';
-import { Certificate } from './certificate.entity';
 import { Major } from '../../major/entities/major.entity';
 
 export enum UserRole {
@@ -23,6 +23,13 @@ export enum SocialProvider {
   KAKAO = 'kakao',
   GOOGLE = 'google',
   NAVER = 'naver',
+}
+
+/** 계정 조치 상태 (신고 누적 등) */
+export enum UserActivity {
+  NORMAL = 'NORMAL',
+  FLAGGED = 'FLAGGED',
+  BAN = 'BAN',
 }
 
 @Entity()
@@ -45,6 +52,13 @@ export class User {
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
   role: UserRole;
+
+  @Column({
+    type: 'enum',
+    enum: UserActivity,
+    default: UserActivity.NORMAL,
+  })
+  activity: UserActivity;
 
   @Column({ unique: true, length: 320 })
   email: string;
