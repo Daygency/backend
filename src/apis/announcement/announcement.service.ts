@@ -13,6 +13,7 @@ import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { ListAnnouncementQueryDto } from './dto/list-announcement-query.dto';
 import {
   Announcement,
+  AnnouncementPriceType,
   AnnouncementStatus,
 } from './entities/announcement.entity';
 import { AnnouncementCategory } from './entities/announcement-category.entity';
@@ -41,6 +42,9 @@ export interface AnnouncementListResponse {
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    priceType: AnnouncementPriceType;
+    /** 금액(원), 0 이상 */
+    price: number;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
@@ -54,6 +58,8 @@ function toListItem(a: Announcement) {
     type: a.category?.name ?? '기타',
     isRecruiting: a.status === AnnouncementStatus.OPEN,
     dDay: calcDDay(a.deadlineAt),
+    priceType: a.priceType,
+    price: a.price,
   };
 }
 
@@ -89,6 +95,8 @@ export class AnnouncementService {
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    priceType: AnnouncementPriceType;
+    price: number;
     attachments: Array<{
       fileId: string;
       imgUrl: string;
@@ -119,6 +127,8 @@ export class AnnouncementService {
       scheduledAt: new Date(dto.scheduledAt),
       status: dto.status ?? AnnouncementStatus.OPEN,
       address: dto.address,
+      priceType: dto.priceType ?? AnnouncementPriceType.FREE,
+      price: dto.price ?? 0,
       fileId: dto.fileId ?? null,
       category,
       majors,
@@ -240,6 +250,8 @@ export class AnnouncementService {
       type: a.category?.name ?? '기타',
       isRecruiting: a.status === AnnouncementStatus.OPEN,
       dDay: calcDDay(a.deadlineAt),
+      priceType: a.priceType,
+      price: a.price,
     }));
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
@@ -302,6 +314,8 @@ export class AnnouncementService {
       type: a.category?.name ?? '기타',
       isRecruiting: a.status === AnnouncementStatus.OPEN,
       dDay: calcDDay(a.deadlineAt),
+      priceType: a.priceType,
+      price: a.price,
     }));
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
@@ -352,6 +366,8 @@ export class AnnouncementService {
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    priceType: AnnouncementPriceType;
+    price: number;
   }> {
     const announcement = await this.announcementRepository.findOne({
       where: { postId: id },
@@ -381,6 +397,8 @@ export class AnnouncementService {
       announcement.scheduledAt = new Date(dto.scheduledAt);
     if (dto.status !== undefined) announcement.status = dto.status;
     if (dto.address !== undefined) announcement.address = dto.address;
+    if (dto.priceType !== undefined) announcement.priceType = dto.priceType;
+    if (dto.price !== undefined) announcement.price = dto.price;
     if (dto.fileId !== undefined) announcement.fileId = dto.fileId ?? null;
 
     if (dto.categoryId !== undefined) {

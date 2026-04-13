@@ -8,9 +8,14 @@ import {
   IsDefined,
   IsArray,
   ValidateNested,
+  IsInt,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AnnouncementStatus } from '../entities/announcement.entity';
+import {
+  AnnouncementPriceType,
+  AnnouncementStatus,
+} from '../entities/announcement.entity';
 import { ApplicationConfigDto } from './application-config.dto';
 
 export class CreateAnnouncementDto {
@@ -48,6 +53,25 @@ export class CreateAnnouncementDto {
   @ApiProperty({ description: '공연위치' })
   @IsString()
   address: string;
+
+  @ApiPropertyOptional({
+    description:
+      '금액 구분. 생략 시 FREE. EXPENSE=지출, INCOME=수입, FREE=무료, PENDING=협의 가능',
+    enum: AnnouncementPriceType,
+    default: AnnouncementPriceType.FREE,
+  })
+  @IsOptional()
+  @IsEnum(AnnouncementPriceType)
+  priceType?: AnnouncementPriceType;
+
+  @ApiPropertyOptional({
+    description: '금액(원). 0 이상. FREE·PENDING 등은 보통 0',
+    default: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  price?: number;
 
   @ApiPropertyOptional({ description: '대표 파일 ID (썸네일)', nullable: true })
   @IsOptional()

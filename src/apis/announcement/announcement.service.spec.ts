@@ -9,7 +9,10 @@ import { AnnouncementService } from './announcement.service';
 import { Announcement } from './entities/announcement.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
-import { AnnouncementStatus } from './entities/announcement.entity';
+import {
+  AnnouncementPriceType,
+  AnnouncementStatus,
+} from './entities/announcement.entity';
 import { AnnouncementCategory } from './entities/announcement-category.entity';
 import { AnnouncementFileService } from './announcement-file.service';
 import { Application } from '../application/entities/application.entity';
@@ -53,6 +56,8 @@ describe('AnnouncementService', () => {
     scheduledAt: new Date(validCreateDto.scheduledAt),
     status: AnnouncementStatus.OPEN,
     address: validCreateDto.address,
+    priceType: AnnouncementPriceType.FREE,
+    price: 0,
     fileId: mockFileId,
     category: mockCategory,
     majors: [],
@@ -154,6 +159,8 @@ describe('AnnouncementService', () => {
           title: validCreateDto.title,
           content: validCreateDto.content,
           address: validCreateDto.address,
+          priceType: AnnouncementPriceType.FREE,
+          price: 0,
           fileId: mockFileId,
           category: mockCategory,
           majors: expect.arrayContaining([
@@ -184,6 +191,8 @@ describe('AnnouncementService', () => {
         title: validCreateDto.title,
         type: '행사',
         isRecruiting: true,
+        priceType: AnnouncementPriceType.FREE,
+        price: 0,
         attachments: [],
       });
       expect(result).toHaveProperty('dDay');
@@ -241,6 +250,8 @@ describe('AnnouncementService', () => {
           status: AnnouncementStatus.OPEN,
           category: { categoryId: 'cat-1', name: '마스터클래스' },
           address: 'addr1',
+          priceType: AnnouncementPriceType.FREE,
+          price: 0,
           content: 'c',
           userId: 'u',
           fileId: 'f',
@@ -265,6 +276,8 @@ describe('AnnouncementService', () => {
         title: '공고1',
         type: '마스터클래스',
         isRecruiting: true,
+        priceType: AnnouncementPriceType.FREE,
+        price: 0,
       });
       expect(result.items[0]).toHaveProperty('dDay');
     });
@@ -280,6 +293,8 @@ describe('AnnouncementService', () => {
           status: AnnouncementStatus.OPEN,
           category: { categoryId: 'cat-1', name: '행사' },
           address: 'addr',
+          priceType: AnnouncementPriceType.FREE,
+          price: 0,
           content: 'c',
           userId: 'u',
           fileId: 'f',

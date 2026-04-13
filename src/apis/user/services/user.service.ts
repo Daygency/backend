@@ -727,6 +727,8 @@ export class UserService {
         category: item.category?.name ?? null,
         scheduledAt: item.scheduledAt,
         deadlineAt: item.deadlineAt,
+        priceType: item.priceType,
+        price: item.price,
         likeCount: announcementLikeCountMap.get(item.postId) ?? 0,
         viewCount: 0,
         commentCount: 0,
@@ -781,6 +783,8 @@ export class UserService {
       scheduledAt: item.scheduledAt,
       deadlineAt: item.deadlineAt,
       status: item.status,
+      priceType: item.priceType,
+      price: item.price,
       likeCount: announcementLikeCountMap.get(item.postId) ?? 0,
       viewCount: 0,
       commentCount: 0,
@@ -808,6 +812,8 @@ export class UserService {
         'announcement.title AS title',
         'announcement.status AS status',
         'announcement.deadlineAt AS deadlineAt',
+        'announcement.price_type AS priceType',
+        'announcement.price AS price',
         'category.name AS categoryName',
       ])
       .where('scrap.user_id = :userId', { userId })
@@ -832,6 +838,8 @@ export class UserService {
       title: string;
       status: string;
       deadlineAt: Date;
+      priceType: string;
+      price: number;
       categoryName: string | null;
     }>();
 
@@ -846,6 +854,8 @@ export class UserService {
       type: row.categoryName ?? '기타',
       isRecruiting: row.status === 'OPEN',
       dDay: calcDDay(new Date(row.deadlineAt)),
+      priceType: row.priceType,
+      price: row.price,
     }));
 
     const nextCursor = hasMore
@@ -1202,6 +1212,8 @@ export class UserService {
             category: latestAnnouncement.category?.name ?? null,
             scheduledAt: latestAnnouncement.scheduledAt,
             deadlineAt: latestAnnouncement.deadlineAt,
+            priceType: latestAnnouncement.priceType,
+            price: latestAnnouncement.price,
             likeCount:
               latestAnnouncementLikeCountMap.get(latestAnnouncement.postId) ??
               0,

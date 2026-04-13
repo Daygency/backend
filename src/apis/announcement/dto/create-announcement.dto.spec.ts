@@ -1,7 +1,10 @@
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateAnnouncementDto } from './create-announcement.dto';
-import { AnnouncementStatus } from '../entities/announcement.entity';
+import {
+  AnnouncementPriceType,
+  AnnouncementStatus,
+} from '../entities/announcement.entity';
 
 describe('CreateAnnouncementDto', () => {
   const validDto = {
@@ -76,5 +79,42 @@ describe('CreateAnnouncementDto', () => {
     const dto = plainToInstance(CreateAnnouncementDto, invalid);
     const errors = await validate(dto);
     expect(errors.find((e) => e.property === 'categoryId')).toBeDefined();
+  });
+
+  it('price가 0 미만이면 실패한다', async () => {
+    const invalid = { ...validDto, price: -1 };
+    const dto = plainToInstance(CreateAnnouncementDto, invalid);
+    const errors = await validate(dto);
+    expect(errors.find((e) => e.property === 'price')).toBeDefined();
+  });
+
+  it('price가 0 이상 정수면 통과한다', async () => {
+    for (const price of [0, 100]) {
+      const dto = plainToInstance(CreateAnnouncementDto, {
+        ...validDto,
+        price,
+      });
+      const errors = await validate(dto);
+      expect(errors).toHaveLength(0);
+    }
+  });
+
+  it('priceType이 유효한 enum이면 통과한다', async () => {
+    const dto = plainToInstance(CreateAnnouncementDto, {
+      ...validDto,
+      priceType: AnnouncementPriceType.PENDING,
+      price: 0,
+    });
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('priceType이 잘못된 값이면 실패한다', async () => {
+    const dto = plainToInstance(CreateAnnouncementDto, {
+      ...validDto,
+      priceType: 'INVALID',
+    });
+    const errors = await validate(dto);
+    expect(errors.find((e) => e.property === 'priceType')).toBeDefined();
   });
 });

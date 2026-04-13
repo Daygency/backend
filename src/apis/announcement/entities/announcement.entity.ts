@@ -19,6 +19,18 @@ export enum AnnouncementStatus {
   CLOSED = 'CLOSED',
 }
 
+/** 금액 구분 — `price`(원)와 함께 사용 */
+export enum AnnouncementPriceType {
+  /** 지출 */
+  EXPENSE = 'EXPENSE',
+  /** 수입 */
+  INCOME = 'INCOME',
+  /** 무료 */
+  FREE = 'FREE',
+  /** 협의 가능 */
+  PENDING = 'PENDING',
+}
+
 @Entity('announcement')
 export class Announcement {
   @PrimaryGeneratedColumn('uuid', { name: 'post_id' })
@@ -48,6 +60,18 @@ export class Announcement {
 
   @Column()
   address: string;
+
+  @Column({
+    name: 'price_type',
+    type: 'enum',
+    enum: AnnouncementPriceType,
+    default: AnnouncementPriceType.FREE,
+  })
+  priceType: AnnouncementPriceType;
+
+  /** 금액(원). `0` 이상. 의미는 `priceType`에 따름(무료·협의 등은 보통 0). */
+  @Column({ type: 'int', default: 0 })
+  price: number;
 
   @Column({ name: 'file_id', type: 'char', length: 36, nullable: true })
   fileId: string | null;
