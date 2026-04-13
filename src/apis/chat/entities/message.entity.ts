@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -14,7 +15,7 @@ export class Message {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => ChatRoom, (room) => room.messages, { onDelete: 'CASCADE' })
+  @ManyToOne(() => ChatRoom, (room) => room.messages)
   @JoinColumn({ name: 'chat_room_id' })
   chatRoom: ChatRoom;
 
@@ -31,4 +32,7 @@ export class Message {
     precision: 6,
   })
   createdAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'datetime', nullable: true })
+  deletedAt: Date | null;
 }

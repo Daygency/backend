@@ -9,18 +9,19 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import { Application } from '../../application/entities/application.entity';
 import { Announcement } from '../../announcement/entities/announcement.entity';
+import { ChatRoomMember } from './chat-room-member.entity';
 import { Message } from './message.entity';
 
-/** 커피챗 등 일반 1:1 / 모집공고 지원자–작성자 1:1 */
+/** 커피챗 / 모집공고 스레드 등 — 참가자는 `chat_room_member` */
 export enum ChatRoomKind {
   COFFEE = 'COFFEE',
   ANNOUNCEMENT = 'ANNOUNCEMENT',
 }
 
 @Entity('chat_room')
-@Unique('UQ_chat_room_coffee_pair', ['participantLowId', 'participantHighId'])
-@Unique('UQ_chat_room_announcement_applicant', ['postId', 'applicantUserId'])
+@Unique('UQ_chat_room_application', ['application'])
 export class ChatRoom {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -32,41 +33,21 @@ export class ChatRoom {
   })
   kind: ChatRoomKind;
 
-  /** COFFEE: 두 사용자 ID (정렬됨: low ≤ high 문자열 기준) */
-  @Column({
-    name: 'participant_low_id',
-    type: 'char',
-    length: 36,
-    nullable: true,
-  })
-  participantLowId: string | null;
+  /**
+   * ANNOUNCEMENT: 지원서(application) 1건당 스레드 1개 — FK `form_id`
+   * COFFEE: null
+   */
+  @ManyToOne(() => Application, { nullable: true })
+  @JoinColumn({ name: 'form_id', referencedColumnName: 'id' })
+  application: Application | null;
 
-  @Column({
-    name: 'participant_high_id',
-    type: 'char',
-    length: 36,
-    nullable: true,
-  })
-  participantHighId: string | null;
-
-  /** ANNOUNCEMENT: 공고 + 지원자 1명당 방 하나 */
-  @Column({ name: 'post_id', type: 'char', length: 36, nullable: true })
-  postId: string | null;
-
-  @Column({
-    name: 'applicant_user_id',
-    type: 'char',
-    length: 36,
-    nullable: true,
-  })
-  applicantUserId: string | null;
-
-  @Column({ name: 'form_id', type: 'char', length: 36, nullable: true })
-  formId: string | null;
-
-  @ManyToOne(() => Announcement, { nullable: true, onDelete: 'CASCADE' })
+  /** ANNOUNCEMENT: 공고 — `post_id` FK (COFFEE: null) */
+  @ManyToOne(() => Announcement, { nullable: true })
   @JoinColumn({ name: 'post_id', referencedColumnName: 'postId' })
   announcement: Announcement | null;
+
+  @OneToMany(() => ChatRoomMember, (m) => m.chatRoom)
+  members: ChatRoomMember[];
 
   @CreateDateColumn({
     name: 'created_at',
