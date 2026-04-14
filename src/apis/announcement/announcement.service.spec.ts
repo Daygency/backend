@@ -59,6 +59,7 @@ describe('AnnouncementService', () => {
     address: validCreateDto.address,
     priceType: AnnouncementPriceType.PENDING,
     price: 0,
+    viewCount: 0,
     fileId: mockFileId,
     category: mockCategory,
     majors: [],
@@ -84,6 +85,7 @@ describe('AnnouncementService', () => {
       create: jest.fn().mockReturnValue({ ...mockSavedAnnouncement }),
       save: jest.fn().mockResolvedValue({ ...mockSavedAnnouncement }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
+      increment: jest.fn().mockResolvedValue(undefined),
       findOne: jest.fn().mockResolvedValue({
         ...mockSavedAnnouncement,
         category: mockCategory,
@@ -296,6 +298,7 @@ describe('AnnouncementService', () => {
         isRecruiting: true,
         priceType: AnnouncementPriceType.PENDING,
         price: 0,
+        viewCount: 0,
       });
       expect(result.items[0]).toHaveProperty('dDay');
     });
@@ -350,6 +353,26 @@ describe('AnnouncementService', () => {
         'announcement.status = :status',
         {
           status: AnnouncementStatus.OPEN,
+        },
+      );
+    });
+
+    it('priceType 필터가 전달되면 andWhere가 호출되어야 한다', async () => {
+      const andWhereMock = jest.fn().mockReturnThis();
+      (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        andWhere: andWhereMock,
+        getMany: jest.fn().mockResolvedValue([]),
+      });
+
+      await service.findList({ priceType: AnnouncementPriceType.FREE });
+
+      expect(andWhereMock).toHaveBeenCalledWith(
+        'announcement.priceType = :priceType',
+        {
+          priceType: AnnouncementPriceType.FREE,
         },
       );
     });

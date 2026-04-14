@@ -46,6 +46,8 @@ export interface AnnouncementListResponse {
     priceType: AnnouncementPriceType;
     /** 금액(원), 0 이상 */
     price: number;
+    /** 누적 조회수 (목록 조회 시 DB 값, 상세 진입 시 증가분은 반영되지 않음) */
+    viewCount: number;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
@@ -61,6 +63,7 @@ function toListItem(a: Announcement) {
     dDay: calcDDay(a.deadlineAt),
     priceType: a.priceType,
     price: a.price,
+    viewCount: Number(a.viewCount ?? 0),
   };
 }
 
@@ -120,6 +123,7 @@ export class AnnouncementService {
     dDay: string;
     priceType: AnnouncementPriceType;
     price: number;
+    viewCount: number;
     /** 저장된 모집 전공 (없으면 빈 배열) */
     majors: Array<{ majorId: string; name: string }>;
     attachments: Array<{
@@ -219,7 +223,7 @@ export class AnnouncementService {
    * 공고 목록 조회 (무한스크롤 + 필터)
    * - cursor: 마지막 postId (없으면 첫 페이지)
    * - limit: 페이지 크기 (기본 20, 최대 50)
-   * - status, categoryId, majorIds: 필터 파라미터
+   * - status, categoryId, majorIds, priceType: 필터 파라미터
    */
   async findList(
     query: ListAnnouncementQueryDto,
@@ -230,6 +234,7 @@ export class AnnouncementService {
       status,
       categoryId,
       majorIds: majorIdsStr,
+      priceType,
     } = query;
 
     const qb = this.announcementRepository
@@ -249,6 +254,9 @@ export class AnnouncementService {
         categoryId: categoryId,
       });
     }
+    if (priceType) {
+      qb.andWhere('announcement.priceType = :priceType', { priceType });
+    }
     if (majorIdsStr) {
       const str = majorIdsStr;
       const majorIds: string[] = str
@@ -265,15 +273,7 @@ export class AnnouncementService {
     const rows = await qb.getMany();
 
     const hasMore = rows.length > limit;
-    const items = (hasMore ? rows.slice(0, limit) : rows).map((a) => ({
-      postId: a.postId,
-      title: a.title,
-      type: a.category?.name ?? '기타',
-      isRecruiting: a.status === AnnouncementStatus.OPEN,
-      dDay: calcDDay(a.deadlineAt),
-      priceType: a.priceType,
-      price: a.price,
-    }));
+    const items = (hasMore ? rows.slice(0, limit) : rows).map(toListItem);
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
 
@@ -293,6 +293,7 @@ export class AnnouncementService {
       status,
       categoryId,
       majorIds: majorIdsStr,
+      priceType,
     } = query;
 
     const qb = this.announcementRepository
@@ -313,6 +314,9 @@ export class AnnouncementService {
         categoryId: categoryId,
       });
     }
+    if (priceType) {
+      qb.andWhere('announcement.priceType = :priceType', { priceType });
+    }
     if (majorIdsStr) {
       const str = majorIdsStr;
       const majorIds: string[] = str
@@ -329,15 +333,7 @@ export class AnnouncementService {
     const rows = await qb.getMany();
 
     const hasMore = rows.length > limit;
-    const items = (hasMore ? rows.slice(0, limit) : rows).map((a) => ({
-      postId: a.postId,
-      title: a.title,
-      type: a.category?.name ?? '기타',
-      isRecruiting: a.status === AnnouncementStatus.OPEN,
-      dDay: calcDDay(a.deadlineAt),
-      priceType: a.priceType,
-      price: a.price,
-    }));
+    const items = (hasMore ? rows.slice(0, limit) : rows).map(toListItem);
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
 
@@ -367,6 +363,10 @@ export class AnnouncementService {
     this.logger.log(
       `[공고 상세] postId=${id}, currentUserId=${currentUserId ?? 'undefined'}, authorId=${authorId}, isMine=${isMine}`,
     );
+
+    await this.announcementRepository.increment({ postId: id }, 'viewCount', 1);
+    announcement.viewCount = Number(announcement.viewCount ?? 0) + 1;
+
     return {
       ...announcement,
       isMine,
@@ -389,6 +389,7 @@ export class AnnouncementService {
     dDay: string;
     priceType: AnnouncementPriceType;
     price: number;
+    viewCount: number;
     majors: Array<{ majorId: string; name: string }>;
   }> {
     const announcement = await this.announcementRepository.findOne({

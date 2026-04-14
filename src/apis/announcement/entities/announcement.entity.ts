@@ -74,6 +74,9 @@ export class Announcement {
   @Column({ type: 'int', default: 0 })
   price: number;
 
+  @Column({ name: 'view_count', type: 'int', default: 0 })
+  viewCount: number;
+
   @Column({ name: 'file_id', type: 'char', length: 36, nullable: true })
   fileId: string | null;
 
