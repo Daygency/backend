@@ -13,6 +13,7 @@ import { Comment } from '../comment/entities/comment.entity';
 import { Community } from '../community/entities/community.entity';
 import { News } from '../news/entities/news.entity';
 import { User, UserActivity } from '../user/entities/user.entity';
+import { getReportCategoryOptions } from './constants/report-categories';
 import { REPORT_LIMIT } from './constants/report.constants';
 import { CreateReportDto } from './dto/create-report.dto';
 import { Report, ReportTargetType } from './entities/report.entity';
@@ -35,6 +36,10 @@ export class ReportService {
     @InjectRepository(Announcement)
     private readonly announcementRepository: Repository<Announcement>,
   ) {}
+
+  getReportCategories() {
+    return { categories: getReportCategoryOptions() };
+  }
 
   async create(reporterId: string, dto: CreateReportDto) {
     const { reportedUserId, category, targetType, targetId } = dto;

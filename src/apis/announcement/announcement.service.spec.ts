@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest matchers */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- test mocks */
 
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -21,6 +21,7 @@ describe('AnnouncementService', () => {
   let service: AnnouncementService;
   let announcementRepository: jest.Mocked<Repository<Announcement>>;
   let applicationConfigRepository: jest.Mocked<Repository<ApplicationConfig>>;
+  let majorFindMock: jest.Mock;
 
   const mockUserId = 'user-uuid-1234';
   const mockFileId = 'file-uuid-5678';
@@ -68,8 +69,11 @@ describe('AnnouncementService', () => {
   };
 
   beforeEach(async () => {
+    majorFindMock = jest.fn().mockResolvedValue([
+      { majorId: mockMajorId, name: '테스트전공' },
+    ]);
     const mockMajorRepo = {
-      find: jest.fn().mockResolvedValue([{ majorId: mockMajorId }]),
+      find: majorFindMock,
     };
 
     const mockCategoryRepo = {
@@ -193,6 +197,7 @@ describe('AnnouncementService', () => {
         isRecruiting: true,
         priceType: AnnouncementPriceType.PENDING,
         price: 0,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
         attachments: [],
       });
       expect(result).toHaveProperty('dDay');
@@ -223,6 +228,19 @@ describe('AnnouncementService', () => {
       } as Parameters<AnnouncementService['create']>[1]);
 
       expect(result.isRecruiting).toBe(false);
+    });
+
+    it('majorIds에 존재하지 않는 ID가 있으면 BadRequestException을 던진다', async () => {
+      majorFindMock.mockResolvedValueOnce([]);
+
+      await expect(
+        service.create(mockUserId, {
+          ...validCreateDto,
+          majorIds: ['00000000-0000-4000-8000-000000000099'],
+        } as Parameters<AnnouncementService['create']>[1]),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(announcementRepository.create).not.toHaveBeenCalled();
     });
   });
 

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
@@ -12,10 +13,12 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { ReportCategoriesResponseDto } from './dto/report-categories-response.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { ReportService } from './report.service';
 
@@ -24,6 +27,17 @@ import { ReportService } from './report.service';
 @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
 export class ReportController {
   constructor(private readonly reportService: ReportService) {}
+
+  @Get('categories')
+  @ApiOperation({
+    summary: '신고 카테고리 목록',
+    description:
+      '신고 제출 시 `category` 필드에 넣을 enum 값과 한글 라벨. 인증 불필요.',
+  })
+  @ApiOkResponse({ type: ReportCategoriesResponseDto })
+  getCategories(): ReportCategoriesResponseDto {
+    return this.reportService.getReportCategories();
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)

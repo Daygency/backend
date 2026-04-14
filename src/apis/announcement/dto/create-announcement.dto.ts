@@ -84,7 +84,8 @@ export class CreateAnnouncementDto {
   @IsUUID()
   categoryId: string;
   @ApiPropertyOptional({
-    description: '모집 전공 ID 배열',
+    description:
+      '모집 전공 ID 배열(UUID v4). 생략·빈 배열이면 전공 미지정. `GET /major`로 조회한 `majorId`만 사용. 중복 ID는 한 번으로 처리되며, 존재하지 않는 ID가 있으면 400.',
     example: [
       '550e8400-e29b-41d4-a716-446655440000',
       '550e8400-e29b-41d4-a716-446655440001',

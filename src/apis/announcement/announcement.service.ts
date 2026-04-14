@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -67,6 +68,28 @@ function toListItem(a: Announcement) {
 export class AnnouncementService {
   private readonly logger = new Logger(AnnouncementService.name);
 
+  /**
+   * 모집 전공 ID 목록을 엔티티로 조회. 빈 배열이면 연결 없음.
+   * ID가 하나라도 DB에 없으면 400.
+   */
+  private async resolveMajorsByIds(
+    majorIds: string[] | undefined,
+  ): Promise<Major[]> {
+    if (!majorIds?.length) {
+      return [];
+    }
+    const unique = [...new Set(majorIds)];
+    const majors = await this.majorRepository.find({
+      where: { majorId: In(unique) },
+    });
+    if (majors.length !== unique.length) {
+      throw new BadRequestException(
+        '존재하지 않는 전공 ID가 포함되어 있습니다.',
+      );
+    }
+    return majors;
+  }
+
   constructor(
     @InjectRepository(Announcement)
     private readonly announcementRepository: Repository<Announcement>,
@@ -97,6 +120,8 @@ export class AnnouncementService {
     dDay: string;
     priceType: AnnouncementPriceType;
     price: number;
+    /** 저장된 모집 전공 (없으면 빈 배열) */
+    majors: Array<{ majorId: string; name: string }>;
     attachments: Array<{
       fileId: string;
       imgUrl: string;
@@ -112,12 +137,7 @@ export class AnnouncementService {
       throw new NotFoundException('공고 유형을 찾을 수 없습니다.');
     }
 
-    let majors: Major[] = [];
-    if (dto.majorIds?.length) {
-      majors = await this.majorRepository.find({
-        where: { majorId: In(dto.majorIds) },
-      });
-    }
+    const majors = await this.resolveMajorsByIds(dto.majorIds);
 
     const announcement = this.announcementRepository.create({
       userId,
@@ -170,6 +190,7 @@ export class AnnouncementService {
     const list = toListItem(withCategory ?? saved);
     return {
       ...list,
+      majors: majors.map((m) => ({ majorId: m.majorId, name: m.name })),
       attachments: uploaded.map((f) => ({
         fileId: f.fileId,
         imgUrl: f.imgUrl,
@@ -368,6 +389,7 @@ export class AnnouncementService {
     dDay: string;
     priceType: AnnouncementPriceType;
     price: number;
+    majors: Array<{ majorId: string; name: string }>;
   }> {
     const announcement = await this.announcementRepository.findOne({
       where: { postId: id },
@@ -412,12 +434,7 @@ export class AnnouncementService {
     }
 
     if (dto.majorIds !== undefined) {
-      announcement.majors =
-        dto.majorIds.length > 0
-          ? await this.majorRepository.find({
-              where: { majorId: In(dto.majorIds) },
-            })
-          : [];
+      announcement.majors = await this.resolveMajorsByIds(dto.majorIds);
     }
 
     await this.announcementRepository.save(announcement);
@@ -444,9 +461,14 @@ export class AnnouncementService {
 
     const updated = await this.announcementRepository.findOne({
       where: { postId: id },
-      relations: ['category'],
+      relations: ['category', 'majors'],
     });
-    return toListItem(updated!);
+    const list = toListItem(updated!);
+    const majorRows = updated!.majors ?? [];
+    return {
+      ...list,
+      majors: majorRows.map((m) => ({ majorId: m.majorId, name: m.name })),
+    };
   }
 
   /**

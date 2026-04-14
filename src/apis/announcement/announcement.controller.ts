@@ -38,6 +38,10 @@ export class AnnouncementController {
   @UseGuards(AuthGuard('access'))
   @ApiOperation({ summary: '모집공고 작성 (JSON Body만, 이미지 없음)' })
   @ApiResponse({ status: 201, description: '공고 작성 완료' })
+  @ApiResponse({
+    status: 400,
+    description: '유효성 오류 또는 존재하지 않는 전공 ID(majorIds)',
+  })
   @ApiResponse({ status: 401, description: '인증 필요' })
   createJson(
     @Body() createAnnouncementDto: CreateAnnouncementDto,
@@ -59,7 +63,11 @@ export class AnnouncementController {
       '모집공고 작성 — FormData: payload(JSON 문자열, applicationConfig 포함) + files',
   })
   @ApiResponse({ status: 201, description: '공고 작성 완료' })
-  @ApiResponse({ status: 400, description: 'payload JSON/유효성 오류' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'payload JSON/유효성 오류, 또는 존재하지 않는 전공 ID(majorIds)',
+  })
   @ApiResponse({ status: 401, description: '인증 필요' })
   async create(
     @Body('payload') payload: string,
@@ -126,6 +134,10 @@ export class AnnouncementController {
     description: '수정 권한 없음 또는 지원자가 있는 공고',
   })
   @ApiResponse({ status: 404, description: '공고를 찾을 수 없음' })
+  @ApiResponse({
+    status: 400,
+    description: '유효성 오류 또는 존재하지 않는 전공 ID(majorIds)',
+  })
   update(
     @Param('id') id: string,
     @Body() updateAnnouncementDto: UpdateAnnouncementDto,

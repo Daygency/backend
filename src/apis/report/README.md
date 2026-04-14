@@ -2,6 +2,27 @@
 
 ## API 명세
 
+### `GET /reports/categories`
+
+**설명:** 신고 시 `category`에 넣을 enum 값과 한글 표시 라벨 목록을 반환한다.
+
+**인증:** 없음
+
+**Response 200 OK**
+
+```typescript
+interface ReportCategoriesResponse {
+  categories: Array<{
+    value: ReportCategory;
+    labelKo: string;
+  }>;
+}
+```
+
+`value`는 `POST /reports`의 `category`와 동일하며, `labelKo`는 UI 표기용이다. 순서는 아래 **ReportCategory** 표와 같다.
+
+---
+
 ### `POST /reports`
 
 **설명:** 로그인한 사용자가 다른 사용자를 신고한다. (커뮤니티 글 / 공연 소식 / 댓글 / 모집 공고 중 하나를 근거로 제출)
@@ -109,6 +130,7 @@ interface CreateReportResponse {
 | 한도 상수 | `constants/report.constants.ts` (`REPORT_LIMIT`, `process.env.REPORT_LIMIT`) |
 | 서비스 | `report.service.ts` |
 | 컨트롤러 | `report.controller.ts` |
+| 카테고리 라벨·순서 | `constants/report-categories.ts` |
 | 사용자 `activity` | `../user/entities/user.entity.ts` — `UserActivity` |
 | 액세스 토큰 `BAN` 거부 | `../auth/strategies/jwt-access.strategy.ts` |
 | 탈퇴 시 `report` 행 삭제 | `../user/utils/user-hard-delete-cascade.ts` |
