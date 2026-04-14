@@ -40,6 +40,7 @@ export interface AnnouncementListResponse {
   items: Array<{
     postId: string;
     title: string;
+    address: string;
     type: string;
     isRecruiting: boolean;
     dDay: string;
@@ -58,6 +59,7 @@ function toListItem(a: Announcement) {
   return {
     postId: a.postId,
     title: a.title,
+    address: a.address,
     type: a.category?.name ?? '기타',
     isRecruiting: a.status === AnnouncementStatus.OPEN,
     dDay: calcDDay(a.deadlineAt),
@@ -118,6 +120,7 @@ export class AnnouncementService {
   ): Promise<{
     postId: string;
     title: string;
+    address: string;
     type: string;
     isRecruiting: boolean;
     dDay: string;
@@ -384,6 +387,7 @@ export class AnnouncementService {
   ): Promise<{
     postId: string;
     title: string;
+    address: string;
     type: string;
     isRecruiting: boolean;
     dDay: string;
@@ -407,9 +411,7 @@ export class AnnouncementService {
       where: { postId: id },
     });
     if (applicationCount > 0) {
-      throw new ForbiddenException(
-        '지원자가 있는 공고는 수정할 수 없습니다.',
-      );
+      throw new ForbiddenException('지원자가 있는 공고는 수정할 수 없습니다.');
     }
 
     if (dto.title !== undefined) announcement.title = dto.title;

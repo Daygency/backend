@@ -294,6 +294,7 @@ describe('AnnouncementService', () => {
       expect(result.items[0]).toMatchObject({
         postId: 'post-1',
         title: '공고1',
+        address: 'addr1',
         type: '마스터클래스',
         isRecruiting: true,
         priceType: AnnouncementPriceType.PENDING,
