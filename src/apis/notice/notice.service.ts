@@ -22,6 +22,7 @@ const PUSH_TITLE_BY_TARGET: Record<NoticeTargetType, string> = {
   [NoticeTargetType.FOLLOW]: '팔로우',
   [NoticeTargetType.APPLICATION]: '지원',
   [NoticeTargetType.LIKE]: '좋아요',
+  [NoticeTargetType.REVIEW]: '활동 후기',
 };
 
 export interface CreateNoticePayload {
