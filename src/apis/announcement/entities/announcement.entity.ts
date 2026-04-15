@@ -77,6 +77,13 @@ export class Announcement {
   @Column({ name: 'view_count', type: 'int', default: 0 })
   viewCount: number;
 
+  /**
+   * 작성자가 「공연·계약 종료」로 수동 표시한 값.
+   * API의 `completed`는 이 값과 `scheduledAt` 경과 여부를 함께 본다.
+   */
+  @Column({ name: 'completed_manually', type: 'boolean', default: false })
+  completedManually: boolean;
+
   @Column({ name: 'file_id', type: 'char', length: 36, nullable: true })
   fileId: string | null;
 

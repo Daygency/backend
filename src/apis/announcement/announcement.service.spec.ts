@@ -37,7 +37,8 @@ describe('AnnouncementService', () => {
     title: '2025 봄 정기연주회',
     content: '모집 내용입니다.',
     deadlineAt: '2025-04-15T23:59:59.000Z',
-    scheduledAt: '2025-04-20T14:00:00.000Z',
+    /** 테스트 시점(2026+)에서도 미래 공연일로 두어 completed 자동값이 false가 되게 함 */
+    scheduledAt: '2099-04-20T14:00:00.000Z',
     address: '서울시 강남구',
     fileId: mockFileId,
     categoryId: mockCategoryId,
@@ -60,6 +61,7 @@ describe('AnnouncementService', () => {
     priceType: AnnouncementPriceType.PENDING,
     price: 0,
     viewCount: 0,
+    completedManually: false,
     fileId: mockFileId,
     category: mockCategory,
     majors: [],
@@ -198,6 +200,7 @@ describe('AnnouncementService', () => {
         type: '행사',
         isRecruiting: true,
         deadlineAt: new Date(validCreateDto.deadlineAt),
+        completed: false,
         priceType: AnnouncementPriceType.PENDING,
         price: 0,
         majors: [{ majorId: mockMajorId, name: '테스트전공' }],
@@ -267,7 +270,8 @@ describe('AnnouncementService', () => {
           postId: 'post-1',
           title: '공고1',
           deadlineAt: new Date('2025-04-20'),
-          scheduledAt: new Date('2025-04-25'),
+          scheduledAt: new Date('2099-04-25'),
+          completedManually: false,
           status: AnnouncementStatus.OPEN,
           category: { categoryId: 'cat-1', name: '마스터클래스' },
           address: 'addr1',
@@ -299,6 +303,7 @@ describe('AnnouncementService', () => {
         type: '마스터클래스',
         isRecruiting: true,
         deadlineAt: new Date('2025-04-20'),
+        completed: false,
         priceType: AnnouncementPriceType.PENDING,
         price: 0,
         viewCount: 0,
@@ -313,7 +318,8 @@ describe('AnnouncementService', () => {
           postId: `post-${i}`,
           title: `공고${i}`,
           deadlineAt: new Date('2025-04-20'),
-          scheduledAt: new Date('2025-04-25'),
+          scheduledAt: new Date('2099-04-25'),
+          completedManually: false,
           status: AnnouncementStatus.OPEN,
           category: { categoryId: 'cat-1', name: '행사' },
           address: 'addr',
@@ -440,6 +446,26 @@ describe('AnnouncementService', () => {
       expect(result.majors).toEqual([
         { majorId: mockMajorId, name: '테스트전공' },
       ]);
+    });
+
+    it('지원자가 있어도 completed만 보내면 수동 완료 처리된다', async () => {
+      const base = {
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        category: mockCategory,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
+      };
+      (announcementRepository.findOne as jest.Mock)
+        .mockResolvedValueOnce(base)
+        .mockResolvedValueOnce({ ...base, completedManually: true });
+      mockApplicationRepo.count.mockResolvedValue(1);
+
+      const result = await service.update(mockUserId, mockSavedAnnouncement.postId!, {
+        completed: true,
+      });
+
+      expect(announcementRepository.save).toHaveBeenCalled();
+      expect(result.completed).toBe(true);
     });
   });
 });

@@ -36,6 +36,16 @@ function calcDDay(deadlineAt: Date): string {
   return '마감';
 }
 
+/** 공연(예정)일시가 현재보다 이전이면 자동 완료로 간주 */
+function isScheduledPast(scheduledAt: Date): boolean {
+  return new Date(scheduledAt).getTime() < Date.now();
+}
+
+/** 수동 완료이거나 공연일이 지난 경우 */
+function effectiveCompleted(a: Announcement): boolean {
+  return Boolean(a.completedManually) || isScheduledPast(a.scheduledAt);
+}
+
 export interface AnnouncementListResponse {
   items: Array<{
     postId: string;
@@ -45,6 +55,8 @@ export interface AnnouncementListResponse {
     isRecruiting: boolean;
     dDay: string;
     deadlineAt: Date;
+    /** 공연·계약 종료 여부(수동 완료 또는 `scheduledAt` 경과) */
+    completed: boolean;
     priceType: AnnouncementPriceType;
     /** 금액(원), 0 이상 */
     price: number;
@@ -65,6 +77,7 @@ function toListItem(a: Announcement) {
     isRecruiting: a.status === AnnouncementStatus.OPEN,
     dDay: calcDDay(a.deadlineAt),
     deadlineAt: a.deadlineAt,
+    completed: effectiveCompleted(a),
     priceType: a.priceType,
     price: a.price,
     viewCount: Number(a.viewCount ?? 0),
@@ -77,6 +90,28 @@ function isEarlyCloseOnlyUpdate(dto: UpdateAnnouncementDto): boolean {
     return false;
   }
   return (
+    dto.completed === undefined &&
+    dto.title === undefined &&
+    dto.content === undefined &&
+    dto.deadlineAt === undefined &&
+    dto.scheduledAt === undefined &&
+    dto.address === undefined &&
+    dto.priceType === undefined &&
+    dto.price === undefined &&
+    dto.fileId === undefined &&
+    dto.categoryId === undefined &&
+    dto.majorIds === undefined &&
+    dto.applicationConfig === undefined
+  );
+}
+
+/** 지원자가 있어도 `completed`만 바꾸는 수정 허용 */
+function isCompletedOnlyUpdate(dto: UpdateAnnouncementDto): boolean {
+  if (dto.completed === undefined) {
+    return false;
+  }
+  return (
+    dto.status === undefined &&
     dto.title === undefined &&
     dto.content === undefined &&
     dto.deadlineAt === undefined &&
@@ -147,6 +182,7 @@ export class AnnouncementService {
     isRecruiting: boolean;
     dDay: string;
     deadlineAt: Date;
+    completed: boolean;
     priceType: AnnouncementPriceType;
     price: number;
     viewCount: number;
@@ -395,13 +431,14 @@ export class AnnouncementService {
 
     return {
       ...announcement,
+      completed: effectiveCompleted(announcement),
       isMine,
     };
   }
 
   /**
    * 모집공고 수정. 작성자만 수정 가능.
-   * 지원자가 있으면 조기마감(`status: CLOSED`만 단독 전송)만 허용한다.
+   * 지원자가 있으면 조기마감(`status: CLOSED`만) 또는 `completed`만 변경 허용.
    * 반환: 목록 아이템 형태 (create와 동일)
    */
   async update(
@@ -416,6 +453,7 @@ export class AnnouncementService {
     isRecruiting: boolean;
     dDay: string;
     deadlineAt: Date;
+    completed: boolean;
     priceType: AnnouncementPriceType;
     price: number;
     viewCount: number;
@@ -436,23 +474,37 @@ export class AnnouncementService {
       where: { postId: id },
     });
     if (applicationCount > 0) {
-      if (!isEarlyCloseOnlyUpdate(dto)) {
-        throw new ForbiddenException(
-          '지원자가 있는 공고는 조기마감(상태만 마감으로 변경)만 가능합니다.',
-        );
+      if (isEarlyCloseOnlyUpdate(dto)) {
+        announcement.status = AnnouncementStatus.CLOSED;
+        await this.announcementRepository.save(announcement);
+        const updated = await this.announcementRepository.findOne({
+          where: { postId: id },
+          relations: ['category', 'majors'],
+        });
+        const list = toListItem(updated!);
+        const majorRows = updated!.majors ?? [];
+        return {
+          ...list,
+          majors: majorRows.map((m) => ({ majorId: m.majorId, name: m.name })),
+        };
       }
-      announcement.status = AnnouncementStatus.CLOSED;
-      await this.announcementRepository.save(announcement);
-      const updated = await this.announcementRepository.findOne({
-        where: { postId: id },
-        relations: ['category', 'majors'],
-      });
-      const list = toListItem(updated!);
-      const majorRows = updated!.majors ?? [];
-      return {
-        ...list,
-        majors: majorRows.map((m) => ({ majorId: m.majorId, name: m.name })),
-      };
+      if (isCompletedOnlyUpdate(dto)) {
+        announcement.completedManually = Boolean(dto.completed);
+        await this.announcementRepository.save(announcement);
+        const updated = await this.announcementRepository.findOne({
+          where: { postId: id },
+          relations: ['category', 'majors'],
+        });
+        const list = toListItem(updated!);
+        const majorRows = updated!.majors ?? [];
+        return {
+          ...list,
+          majors: majorRows.map((m) => ({ majorId: m.majorId, name: m.name })),
+        };
+      }
+      throw new ForbiddenException(
+        '지원자가 있는 공고는 조기마감(상태만 마감) 또는 완료 표시(completed)만 변경할 수 있습니다.',
+      );
     }
 
     if (dto.title !== undefined) announcement.title = dto.title;
@@ -466,6 +518,9 @@ export class AnnouncementService {
     if (dto.priceType !== undefined) announcement.priceType = dto.priceType;
     if (dto.price !== undefined) announcement.price = dto.price;
     if (dto.fileId !== undefined) announcement.fileId = dto.fileId ?? null;
+    if (dto.completed !== undefined) {
+      announcement.completedManually = Boolean(dto.completed);
+    }
 
     if (dto.categoryId !== undefined) {
       const category = await this.categoryRepository.findOne({
