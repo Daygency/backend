@@ -104,7 +104,7 @@ Content-Type: application/json
 ```
 
 - `readAt`: 아직 안 읽었으면 `null`.
-- `targetType`: `COMMENT` \| `FOLLOW` \| `APPLICATION` \| `LIKE`.
+- `targetType`: `COMMENT` \| `FOLLOW` \| `APPLICATION` \| `LIKE` \| `REVIEW`.
 - `likeKind`: **`targetType === "LIKE"`일 때만** `NEWS` \| `COMMUNITY` \| `ANNOUNCEMENT` \| `COMMENT`, 그 외 `null`.
 - `actor`: 행위자 유저가 없으면 `null` (일반적으로는 객체).
 - 날짜 필드는 JSON에서 ISO 8601 문자열로 직렬화됩니다.
@@ -202,10 +202,110 @@ Content-Type: application/json
 
 ---
 
+## 활동 후기 API (`/announcement/.../reviews`)
+
+공연·계약이 **완료된** 공고에 대해, **모집자** 또는 **`ACCEPTED` 지원자**만 후기를 작성할 수 있습니다. (수동 완료 표시이거나 `scheduledAt`이 지난 경우 완료로 간주.)
+
+성공 시 **상대(`revieweeUserId`)**에게 인박스 알림 + FCM 푸시(`targetType`: `REVIEW`, `targetId`: 후기 row `id`)가 갑니다. `privateNoteToOps`는 **알림·푸시 본문에 포함되지 않습니다.**
+
+공통 헤더:
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| `POST` | `/announcement/:postId/reviews` | 활동 후기 제출 |
+| `GET` | `/announcement/:postId/reviews/me` | 해당 공고에 내가 쓴 후기 (없으면 `null`) |
+
+**역할·상대 검증**
+
+| 작성자 | `revieweeUserId`는 |
+|--------|---------------------|
+| 공고 작성자(모집자) | 해당 공고에서 **`ACCEPTED`** 인 지원자여야 함 |
+| 합격 지원자 | **공고 작성자**여야 함 |
+
+공고당 작성자 기준 **후기 1건** (`409` if duplicate).
+
+---
+
+### `POST /announcement/:postId/reviews`
+
+**경로**
+
+| 파라미터 | 설명 |
+|----------|------|
+| `postId` | 공고 UUID |
+
+**요청 body**
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `revieweeUserId` | `string`(UUID) | ✅ | 후기 대상(상대) 유저 ID |
+| `rating` | `DISAPPOINTING` \| `GOOD` \| `IMPRESSED` | ✅ | 만족도 |
+| `disappointmentReasonCodes` | `string[]` | ❌ | **`DISAPPOINTING`일 때만** 아쉬움 사유 코드 목록 |
+| `privateNoteToOps` | `string` | ❌ | **`DISAPPOINTING`일 때만**, 운영팀 전용(최대 2000자) |
+
+`GOOD` / `IMPRESSED`이면 `disappointmentReasonCodes`·`privateNoteToOps`를 보내면 **400**.
+
+**`disappointmentReasonCodes`에 쓸 수 있는 값** (그 외 코드는 400)
+
+`TIME_NOT_KEPT`, `COMMUNICATION`, `RESPONSE_LATE_OR_UNCLEAR`, `INSUFFICIENT_PREP`, `UNCOMFORTABLE_PROCESS`, `REQUESTS_NOT_REFLECTED`, `PROBLEM_RESPONSE_WEAK`
+
+**요청 예시**
+
+```json
+{
+  "revieweeUserId": "uuid",
+  "rating": "DISAPPOINTING",
+  "disappointmentReasonCodes": ["TIME_NOT_KEPT", "COMMUNICATION"],
+  "privateNoteToOps": "운영팀에만 전달되는 메모(선택)"
+}
+```
+
+**응답 body** — 저장된 `review` 엔티티 (HTTP 200)
+
+```json
+{
+  "id": "uuid",
+  "postId": "uuid",
+  "reviewerUserId": "uuid",
+  "revieweeUserId": "uuid",
+  "rating": "GOOD",
+  "disappointmentReasonCodes": null,
+  "privateNoteToOps": null,
+  "createdAt": "2026-04-15T12:00:00.000Z"
+}
+```
+
+**오류**
+
+| HTTP | 조건 |
+|------|------|
+| `400` | 미완료 공고, 본인을 reviewee로 지정, 역할·상대 불일치, 평점과 필드 조합 오류, 잘못된 사유 코드 |
+| `403` | 모집자도 합격 지원자도 아님 |
+| `404` | 공고 없음 |
+| `409` | 이미 해당 공고에 후기 제출함 |
+
+---
+
+### `GET /announcement/:postId/reviews/me`
+
+**요청** — body 없음.
+
+**응답** — 후기가 있으면 `POST`와 동일 형태의 객체, 없으면 **`null`**.
+
+---
+
 ## 상세 문서
 
 FCM 환경 변수, 이벤트별 인박스/푸시 동작, cURL 예시, 프론트 연동 노트:
 
 - [`src/apis/notice/README.md`](src/apis/notice/README.md)
 
-구현: `src/apis/notice/` (`NoticeController` → `@Controller('notifications')`).
+구현:
+
+- 알림: `src/apis/notice/` (`NoticeController` → `@Controller('notifications')`)
+- 활동 후기: `src/apis/review/` (`ReviewController` → `@Controller('announcement')`)
