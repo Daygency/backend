@@ -442,10 +442,11 @@ describe('AnnouncementService', () => {
       );
 
       expect(announcementRepository.save).toHaveBeenCalled();
-      expect(result.isRecruiting).toBe(false);
-      expect(result.majors).toEqual([
-        { majorId: mockMajorId, name: '테스트전공' },
-      ]);
+      expect(result).toEqual({
+        postId: mockSavedAnnouncement.postId,
+        status: AnnouncementStatus.CLOSED,
+        isRecruiting: false,
+      });
     });
 
     it('지원자가 있어도 completed만 보내면 수동 완료 처리된다', async () => {
@@ -455,9 +456,7 @@ describe('AnnouncementService', () => {
         category: mockCategory,
         majors: [{ majorId: mockMajorId, name: '테스트전공' }],
       };
-      (announcementRepository.findOne as jest.Mock)
-        .mockResolvedValueOnce(base)
-        .mockResolvedValueOnce({ ...base, completedManually: true });
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue(base);
       mockApplicationRepo.count.mockResolvedValue(1);
 
       const result = await service.update(mockUserId, mockSavedAnnouncement.postId!, {
@@ -465,7 +464,10 @@ describe('AnnouncementService', () => {
       });
 
       expect(announcementRepository.save).toHaveBeenCalled();
-      expect(result.completed).toBe(true);
+      expect(result).toEqual({
+        postId: mockSavedAnnouncement.postId,
+        completed: true,
+      });
     });
   });
 });

@@ -46,6 +46,29 @@ function effectiveCompleted(a: Announcement): boolean {
   return Boolean(a.completedManually) || isScheduledPast(a.scheduledAt);
 }
 
+/** PATCH로 본문·메타를 바꾼 경우 (목록 아이템 + 전공) */
+export type AnnouncementUpdateFullResponse = ReturnType<typeof toListItem> & {
+  majors: Array<{ majorId: string; name: string }>;
+};
+
+/** PATCH로 조기마감만 한 경우 */
+export type AnnouncementUpdateEarlyCloseResponse = {
+  postId: string;
+  status: AnnouncementStatus;
+  isRecruiting: boolean;
+};
+
+/** PATCH로 completed만 바꾼 경우 */
+export type AnnouncementUpdateCompletedOnlyResponse = {
+  postId: string;
+  completed: boolean;
+};
+
+export type AnnouncementUpdateResponse =
+  | AnnouncementUpdateFullResponse
+  | AnnouncementUpdateEarlyCloseResponse
+  | AnnouncementUpdateCompletedOnlyResponse;
+
 export interface AnnouncementListResponse {
   items: Array<{
     postId: string;
@@ -438,27 +461,14 @@ export class AnnouncementService {
 
   /**
    * 모집공고 수정. 작성자만 수정 가능.
+   * 조기마감·completed만 바꾸는 요청은 최소 필드만 반환하고, 그 외는 목록 아이템+전공.
    * 지원자가 있으면 조기마감(`status: CLOSED`만) 또는 `completed`만 변경 허용.
-   * 반환: 목록 아이템 형태 (create와 동일)
    */
   async update(
     userId: string,
     id: string,
     dto: UpdateAnnouncementDto,
-  ): Promise<{
-    postId: string;
-    title: string;
-    address: string;
-    type: string;
-    isRecruiting: boolean;
-    dDay: string;
-    deadlineAt: Date;
-    completed: boolean;
-    priceType: AnnouncementPriceType;
-    price: number;
-    viewCount: number;
-    majors: Array<{ majorId: string; name: string }>;
-  }> {
+  ): Promise<AnnouncementUpdateResponse> {
     const announcement = await this.announcementRepository.findOne({
       where: { postId: id },
       relations: ['category', 'majors'],
@@ -473,35 +483,27 @@ export class AnnouncementService {
     const applicationCount = await this.applicationRepository.count({
       where: { postId: id },
     });
+
+    if (isEarlyCloseOnlyUpdate(dto)) {
+      announcement.status = AnnouncementStatus.CLOSED;
+      await this.announcementRepository.save(announcement);
+      return {
+        postId: id,
+        status: AnnouncementStatus.CLOSED,
+        isRecruiting: false,
+      };
+    }
+
+    if (isCompletedOnlyUpdate(dto)) {
+      announcement.completedManually = Boolean(dto.completed);
+      await this.announcementRepository.save(announcement);
+      return {
+        postId: id,
+        completed: effectiveCompleted(announcement),
+      };
+    }
+
     if (applicationCount > 0) {
-      if (isEarlyCloseOnlyUpdate(dto)) {
-        announcement.status = AnnouncementStatus.CLOSED;
-        await this.announcementRepository.save(announcement);
-        const updated = await this.announcementRepository.findOne({
-          where: { postId: id },
-          relations: ['category', 'majors'],
-        });
-        const list = toListItem(updated!);
-        const majorRows = updated!.majors ?? [];
-        return {
-          ...list,
-          majors: majorRows.map((m) => ({ majorId: m.majorId, name: m.name })),
-        };
-      }
-      if (isCompletedOnlyUpdate(dto)) {
-        announcement.completedManually = Boolean(dto.completed);
-        await this.announcementRepository.save(announcement);
-        const updated = await this.announcementRepository.findOne({
-          where: { postId: id },
-          relations: ['category', 'majors'],
-        });
-        const list = toListItem(updated!);
-        const majorRows = updated!.majors ?? [];
-        return {
-          ...list,
-          majors: majorRows.map((m) => ({ majorId: m.majorId, name: m.name })),
-        };
-      }
       throw new ForbiddenException(
         '지원자가 있는 공고는 조기마감(상태만 마감) 또는 완료 표시(completed)만 변경할 수 있습니다.',
       );

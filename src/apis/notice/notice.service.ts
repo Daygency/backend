@@ -123,7 +123,7 @@ export class NoticeService {
       .innerJoinAndSelect('nr.notice', 'n')
       .leftJoinAndSelect('n.actorUser', 'actor')
       .where('nr.user_id = :userId', { userId })
-      .orderBy('n.created_at', 'DESC')
+      .orderBy('n.createdAt', 'DESC')
       .addOrderBy('nr.id', 'DESC')
       .take(limit + 1);
 

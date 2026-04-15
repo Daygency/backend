@@ -126,7 +126,11 @@ export class AnnouncementController {
 
   @Patch(':id')
   @UseGuards(AuthGuard('access'))
-  @ApiOperation({ summary: '모집공고 수정' })
+  @ApiOperation({
+    summary: '모집공고 수정',
+    description:
+      '조기마감(`status:CLOSED`만) 또는 `completed`만 보낸 경우 최소 필드만 반환. 그 외는 목록 아이템+majors.',
+  })
   @ApiResponse({ status: 200, description: '공고 수정 완료' })
   @ApiResponse({ status: 401, description: '인증 필요' })
   @ApiResponse({
