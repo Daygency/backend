@@ -14,6 +14,8 @@ import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
 import { REVIEW_DISAPPOINTMENT_REASON_VALUES } from './review.constants';
 import { CreateReviewDto } from './dto/create-review.dto';
+import { ListReviewsQueryDto } from './dto/list-reviews-query.dto';
+import { UpdateReviewDto } from './dto/update-review.dto';
 import { Review, ReviewRating } from './entities/review.entity';
 
 function isScheduledPast(scheduledAt: Date): boolean {
@@ -22,6 +24,29 @@ function isScheduledPast(scheduledAt: Date): boolean {
 
 function isAnnouncementCompleted(a: Announcement): boolean {
   return Boolean(a.completedManually) || isScheduledPast(a.scheduledAt);
+}
+
+function encodeReviewCursor(createdAt: Date, reviewId: string): string {
+  return Buffer.from(
+    JSON.stringify({ t: createdAt.toISOString(), i: reviewId }),
+  ).toString('base64url');
+}
+
+function decodeReviewCursor(cursor: string): { t: string; i: string } {
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, 'base64url').toString('utf8'),
+    ) as { t?: unknown; i?: unknown };
+    if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    if (Number.isNaN(new Date(parsed.t).getTime())) {
+      throw new Error('invalid cursor datetime');
+    }
+    return { t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
 }
 
 @Injectable()
@@ -59,7 +84,12 @@ export class ReviewService {
       throw new BadRequestException('본인에게는 후기를 남길 수 없습니다.');
     }
 
-    this.assertRatingSideFields(dto);
+    const payload = {
+      rating: dto.rating,
+      disappointmentReasonCodes: dto.disappointmentReasonCodes,
+      privateNoteToOps: dto.privateNoteToOps,
+    };
+    this.assertRatingSideFields(payload);
 
     const reasons = this.normalizeDisappointmentReasonCodes(
       dto.rating,
@@ -96,8 +126,7 @@ export class ReviewService {
       rating: dto.rating,
       disappointmentReasonCodes: reasons,
       privateNoteToOps:
-        dto.rating === ReviewRating.DISAPPOINTING &&
-        dto.privateNoteToOps?.trim()
+        dto.rating === ReviewRating.DISAPPOINTING && dto.privateNoteToOps?.trim()
           ? dto.privateNoteToOps.trim()
           : null,
     });
@@ -122,7 +151,145 @@ export class ReviewService {
     });
   }
 
-  private assertRatingSideFields(dto: CreateReviewDto): void {
+  async listWrittenByUser(userId: string, query: ListReviewsQueryDto) {
+    return this.listByRole('writer', userId, query);
+  }
+
+  async listReceivedByUser(userId: string, query: ListReviewsQueryDto) {
+    return this.listByRole('receiver', userId, query);
+  }
+
+  async update(
+    reviewerUserId: string,
+    reviewId: string,
+    dto: UpdateReviewDto,
+  ): Promise<Review> {
+    const row = await this.reviewRepo.findOne({
+      where: { id: reviewId },
+    });
+    if (!row) {
+      throw new NotFoundException('후기를 찾을 수 없습니다.');
+    }
+    if (row.reviewerUserId !== reviewerUserId) {
+      throw new ForbiddenException('본인이 작성한 후기만 수정할 수 있습니다.');
+    }
+
+    const nextRating = dto.rating ?? row.rating;
+    const nextReasons =
+      dto.disappointmentReasonCodes ?? row.disappointmentReasonCodes ?? undefined;
+    const nextOpsNote =
+      dto.privateNoteToOps !== undefined ? dto.privateNoteToOps : row.privateNoteToOps;
+
+    this.assertRatingSideFields({
+      rating: nextRating,
+      disappointmentReasonCodes: nextReasons,
+      privateNoteToOps: nextOpsNote,
+    });
+
+    row.rating = nextRating;
+    row.disappointmentReasonCodes = this.normalizeDisappointmentReasonCodes(
+      nextRating,
+      nextReasons ?? undefined,
+    );
+    row.privateNoteToOps =
+      nextRating === ReviewRating.DISAPPOINTING && nextOpsNote?.trim()
+        ? nextOpsNote.trim()
+        : null;
+
+    return this.reviewRepo.save(row);
+  }
+
+  async remove(reviewerUserId: string, reviewId: string): Promise<{ deleted: boolean }> {
+    const row = await this.reviewRepo.findOne({ where: { id: reviewId } });
+    if (!row) {
+      throw new NotFoundException('후기를 찾을 수 없습니다.');
+    }
+    if (row.reviewerUserId !== reviewerUserId) {
+      throw new ForbiddenException('본인이 작성한 후기만 삭제할 수 있습니다.');
+    }
+    await this.reviewRepo.delete({ id: reviewId });
+    return { deleted: true };
+  }
+
+  private async listByRole(
+    role: 'writer' | 'receiver',
+    userId: string,
+    query: ListReviewsQueryDto,
+  ) {
+    const limit = query.limit ?? 20;
+    const qb = this.reviewRepo
+      .createQueryBuilder('r')
+      .innerJoinAndSelect('r.announcement', 'a')
+      .leftJoinAndSelect('r.reviewer', 'reviewer')
+      .leftJoinAndSelect('r.reviewee', 'reviewee')
+      .orderBy('r.createdAt', 'DESC')
+      .addOrderBy('r.id', 'DESC')
+      .take(limit + 1);
+
+    if (role === 'writer') {
+      qb.where('r.reviewer_user_id = :userId', { userId });
+    } else {
+      qb.where('r.reviewee_user_id = :userId', { userId });
+    }
+
+    if (query.cursor) {
+      const { t, i } = decodeReviewCursor(query.cursor);
+      const ca = new Date(t);
+      qb.andWhere('(r.created_at < :ca OR (r.created_at = :ca AND r.id < :rid))', {
+        ca,
+        rid: i,
+      });
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeReviewCursor(last.createdAt, last.id) : null;
+
+    return {
+      items: slice.map((r) => ({
+        id: r.id,
+        postId: r.postId,
+        rating: r.rating,
+        disappointmentReasonCodes: r.disappointmentReasonCodes,
+        privateNoteToOps: r.privateNoteToOps,
+        createdAt: r.createdAt,
+        announcement: r.announcement
+          ? {
+              postId: r.announcement.postId,
+              title: r.announcement.title,
+              scheduledAt: r.announcement.scheduledAt,
+            }
+          : null,
+        reviewer: r.reviewer
+          ? {
+              userId: r.reviewer.userId,
+              nickname: r.reviewer.nickname,
+              activityName: r.reviewer.activityName,
+              profileImgUrl: r.reviewer.profileImgUrl,
+            }
+          : null,
+        reviewee: r.reviewee
+          ? {
+              userId: r.reviewee.userId,
+              nickname: r.reviewee.nickname,
+              activityName: r.reviewee.activityName,
+              profileImgUrl: r.reviewee.profileImgUrl,
+            }
+          : null,
+      })),
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  private assertRatingSideFields(dto: {
+    rating: ReviewRating;
+    disappointmentReasonCodes?: string[] | null;
+    privateNoteToOps?: string | null;
+  }): void {
     if (dto.rating !== ReviewRating.DISAPPOINTING) {
       if (dto.disappointmentReasonCodes?.length) {
         throw new BadRequestException(

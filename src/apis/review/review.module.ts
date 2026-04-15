@@ -7,6 +7,7 @@ import { NoticeModule } from '../notice/notice.module';
 import { User } from '../user/entities/user.entity';
 import { Review } from './entities/review.entity';
 import { ReviewController } from './review.controller';
+import { ReviewUserController } from './review-user.controller';
 import { ReviewService } from './review.service';
 
 @Module({
@@ -15,7 +16,7 @@ import { ReviewService } from './review.service';
     AuthModule,
     NoticeModule,
   ],
-  controllers: [ReviewController],
+  controllers: [ReviewController, ReviewUserController],
   providers: [ReviewService],
   exports: [ReviewService],
 })
