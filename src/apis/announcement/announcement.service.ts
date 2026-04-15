@@ -44,6 +44,7 @@ export interface AnnouncementListResponse {
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    deadlineAt: Date;
     priceType: AnnouncementPriceType;
     /** 금액(원), 0 이상 */
     price: number;
@@ -63,10 +64,31 @@ function toListItem(a: Announcement) {
     type: a.category?.name ?? '기타',
     isRecruiting: a.status === AnnouncementStatus.OPEN,
     dDay: calcDDay(a.deadlineAt),
+    deadlineAt: a.deadlineAt,
     priceType: a.priceType,
     price: a.price,
     viewCount: Number(a.viewCount ?? 0),
   };
+}
+
+/** 지원자가 있더라도 허용되는 수정: `status`만 `CLOSED`(조기마감) */
+function isEarlyCloseOnlyUpdate(dto: UpdateAnnouncementDto): boolean {
+  if (dto.status !== AnnouncementStatus.CLOSED) {
+    return false;
+  }
+  return (
+    dto.title === undefined &&
+    dto.content === undefined &&
+    dto.deadlineAt === undefined &&
+    dto.scheduledAt === undefined &&
+    dto.address === undefined &&
+    dto.priceType === undefined &&
+    dto.price === undefined &&
+    dto.fileId === undefined &&
+    dto.categoryId === undefined &&
+    dto.majorIds === undefined &&
+    dto.applicationConfig === undefined
+  );
 }
 
 @Injectable()
@@ -124,6 +146,7 @@ export class AnnouncementService {
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    deadlineAt: Date;
     priceType: AnnouncementPriceType;
     price: number;
     viewCount: number;
@@ -378,6 +401,7 @@ export class AnnouncementService {
 
   /**
    * 모집공고 수정. 작성자만 수정 가능.
+   * 지원자가 있으면 조기마감(`status: CLOSED`만 단독 전송)만 허용한다.
    * 반환: 목록 아이템 형태 (create와 동일)
    */
   async update(
@@ -391,6 +415,7 @@ export class AnnouncementService {
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    deadlineAt: Date;
     priceType: AnnouncementPriceType;
     price: number;
     viewCount: number;
@@ -411,7 +436,23 @@ export class AnnouncementService {
       where: { postId: id },
     });
     if (applicationCount > 0) {
-      throw new ForbiddenException('지원자가 있는 공고는 수정할 수 없습니다.');
+      if (!isEarlyCloseOnlyUpdate(dto)) {
+        throw new ForbiddenException(
+          '지원자가 있는 공고는 조기마감(상태만 마감으로 변경)만 가능합니다.',
+        );
+      }
+      announcement.status = AnnouncementStatus.CLOSED;
+      await this.announcementRepository.save(announcement);
+      const updated = await this.announcementRepository.findOne({
+        where: { postId: id },
+        relations: ['category', 'majors'],
+      });
+      const list = toListItem(updated!);
+      const majorRows = updated!.majors ?? [];
+      return {
+        ...list,
+        majors: majorRows.map((m) => ({ majorId: m.majorId, name: m.name })),
+      };
     }
 
     if (dto.title !== undefined) announcement.title = dto.title;

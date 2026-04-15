@@ -186,7 +186,7 @@ describe('AnnouncementService', () => {
       expect(applicationConfigRepository.save).toHaveBeenCalled();
     });
 
-    it('반환값이 목록 아이템 형태(postId, title, type, isRecruiting, dDay)여야 한다', async () => {
+    it('반환값이 목록 아이템 형태(postId, title, type, isRecruiting, dDay, deadlineAt)여야 한다', async () => {
       const result = await service.create(
         mockUserId,
         validCreateDto as Parameters<AnnouncementService['create']>[1],
@@ -197,6 +197,7 @@ describe('AnnouncementService', () => {
         title: validCreateDto.title,
         type: '행사',
         isRecruiting: true,
+        deadlineAt: new Date(validCreateDto.deadlineAt),
         priceType: AnnouncementPriceType.PENDING,
         price: 0,
         majors: [{ majorId: mockMajorId, name: '테스트전공' }],
@@ -297,6 +298,7 @@ describe('AnnouncementService', () => {
         address: 'addr1',
         type: '마스터클래스',
         isRecruiting: true,
+        deadlineAt: new Date('2025-04-20'),
         priceType: AnnouncementPriceType.PENDING,
         price: 0,
         viewCount: 0,
@@ -400,7 +402,7 @@ describe('AnnouncementService', () => {
   });
 
   describe('update', () => {
-    it('지원자가 있으면 ForbiddenException을 던진다', async () => {
+    it('지원자가 있고 조기마감이 아닌 수정이면 ForbiddenException을 던진다', async () => {
       (announcementRepository.findOne as jest.Mock).mockResolvedValue({
         ...mockSavedAnnouncement,
         userId: mockUserId,
@@ -416,6 +418,28 @@ describe('AnnouncementService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(announcementRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('지원자가 있어도 status만 CLOSED로 보내면 조기마감된다', async () => {
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        category: mockCategory,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
+      });
+      mockApplicationRepo.count.mockResolvedValue(1);
+
+      const result = await service.update(
+        mockUserId,
+        mockSavedAnnouncement.postId!,
+        { status: AnnouncementStatus.CLOSED },
+      );
+
+      expect(announcementRepository.save).toHaveBeenCalled();
+      expect(result.isRecruiting).toBe(false);
+      expect(result.majors).toEqual([
+        { majorId: mockMajorId, name: '테스트전공' },
+      ]);
     });
   });
 });

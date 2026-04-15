@@ -131,7 +131,8 @@ export class AnnouncementController {
   @ApiResponse({ status: 401, description: '인증 필요' })
   @ApiResponse({
     status: 403,
-    description: '수정 권한 없음 또는 지원자가 있는 공고',
+    description:
+      '수정 권한 없음, 또는 지원자가 있는데 조기마감(status=CLOSED만)이 아닌 수정',
   })
   @ApiResponse({ status: 404, description: '공고를 찾을 수 없음' })
   @ApiResponse({
