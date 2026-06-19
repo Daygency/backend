@@ -92,6 +92,15 @@ export class UserController {
     return this.userService.getMyNewsPosts(req.user.id);
   }
 
+  @Get('posts/my/comments')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '내가 작성한 댓글 목록 조회' })
+  @ApiResponse({ status: 200, description: '내 댓글 목록 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyCommentPosts(@Request() req: { user: { id: string } }) {
+    return this.userService.getMyCommentPosts(req.user.id);
+  }
+
   @Get('posts/my/announcements')
   @UseGuards(AuthGuard('access'))
   @ApiOperation({ summary: '내가 쓴 모집공고 목록 조회' })

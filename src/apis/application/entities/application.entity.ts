@@ -29,8 +29,8 @@ export enum ApplicationGender {
 export enum ApplicationStatus {
   /** 제출 직후 (기본) */
   SUBMITTED = 'SUBMITTED',
-  // /** 서류 검토 중 */
-  // DOCUMENT_REVIEW = 'DOCUMENT_REVIEW',
+  /** 서류 검토 중 */
+  DOCUMENT_REVIEW = 'DOCUMENT_REVIEW',
   /** 합격 */
   ACCEPTED = 'ACCEPTED',
   /** 불합격 */

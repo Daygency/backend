@@ -12,7 +12,10 @@ import { Announcement } from '../announcement/entities/announcement.entity';
 import { NoticeTargetType } from '../notice/entities/notice.entity';
 import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
-import { REVIEW_DISAPPOINTMENT_REASON_VALUES } from './review.constants';
+import {
+  REVIEW_DISAPPOINTMENT_REASON_VALUES,
+  REVIEW_POSITIVE_REASON_VALUES,
+} from './review.constants';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ListReviewsQueryDto } from './dto/list-reviews-query.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
@@ -88,12 +91,18 @@ export class ReviewService {
       rating: dto.rating,
       disappointmentReasonCodes: dto.disappointmentReasonCodes,
       privateNoteToOps: dto.privateNoteToOps,
+      positiveReasonCodes: dto.positiveReasonCodes,
+      publicNote: dto.publicNote,
     };
     this.assertRatingSideFields(payload);
 
     const reasons = this.normalizeDisappointmentReasonCodes(
       dto.rating,
       dto.disappointmentReasonCodes,
+    );
+    const positiveReasons = this.normalizePositiveReasonCodes(
+      dto.rating,
+      dto.positiveReasonCodes,
     );
 
     const { role, counterpartOk } = await this.validateParticipants(
@@ -125,6 +134,11 @@ export class ReviewService {
       revieweeUserId: dto.revieweeUserId,
       rating: dto.rating,
       disappointmentReasonCodes: reasons,
+      positiveReasonCodes: positiveReasons,
+      publicNote:
+        dto.rating !== ReviewRating.DISAPPOINTING && dto.publicNote?.trim()
+          ? dto.publicNote.trim()
+          : null,
       privateNoteToOps:
         dto.rating === ReviewRating.DISAPPOINTING && dto.privateNoteToOps?.trim()
           ? dto.privateNoteToOps.trim()
@@ -177,13 +191,19 @@ export class ReviewService {
     const nextRating = dto.rating ?? row.rating;
     const nextReasons =
       dto.disappointmentReasonCodes ?? row.disappointmentReasonCodes ?? undefined;
+    const nextPositiveReasons =
+      dto.positiveReasonCodes ?? row.positiveReasonCodes ?? undefined;
     const nextOpsNote =
       dto.privateNoteToOps !== undefined ? dto.privateNoteToOps : row.privateNoteToOps;
+    const nextPublicNote =
+      dto.publicNote !== undefined ? dto.publicNote : row.publicNote;
 
     this.assertRatingSideFields({
       rating: nextRating,
       disappointmentReasonCodes: nextReasons,
       privateNoteToOps: nextOpsNote,
+      positiveReasonCodes: nextPositiveReasons,
+      publicNote: nextPublicNote,
     });
 
     row.rating = nextRating;
@@ -191,9 +211,17 @@ export class ReviewService {
       nextRating,
       nextReasons ?? undefined,
     );
+    row.positiveReasonCodes = this.normalizePositiveReasonCodes(
+      nextRating,
+      nextPositiveReasons ?? undefined,
+    );
     row.privateNoteToOps =
       nextRating === ReviewRating.DISAPPOINTING && nextOpsNote?.trim()
         ? nextOpsNote.trim()
+        : null;
+    row.publicNote =
+      nextRating !== ReviewRating.DISAPPOINTING && nextPublicNote?.trim()
+        ? nextPublicNote.trim()
         : null;
 
     return this.reviewRepo.save(row);
@@ -254,6 +282,8 @@ export class ReviewService {
         postId: r.postId,
         rating: r.rating,
         disappointmentReasonCodes: r.disappointmentReasonCodes,
+        positiveReasonCodes: r.positiveReasonCodes,
+        publicNote: r.publicNote,
         privateNoteToOps: r.privateNoteToOps,
         createdAt: r.createdAt,
         announcement: r.announcement
@@ -289,6 +319,8 @@ export class ReviewService {
     rating: ReviewRating;
     disappointmentReasonCodes?: string[] | null;
     privateNoteToOps?: string | null;
+    positiveReasonCodes?: string[] | null;
+    publicNote?: string | null;
   }): void {
     if (dto.rating !== ReviewRating.DISAPPOINTING) {
       if (dto.disappointmentReasonCodes?.length) {
@@ -301,12 +333,23 @@ export class ReviewService {
           '운영팀 메모는 아쉬움 평가일 때만 입력할 수 있습니다.',
         );
       }
+      return;
+    }
+    if (dto.positiveReasonCodes?.length) {
+      throw new BadRequestException(
+        '좋았어요/감동했어요 평가일 때만 긍정 항목을 선택할 수 있습니다.',
+      );
+    }
+    if (dto.publicNote?.trim()) {
+      throw new BadRequestException(
+        '공개 후기 본문은 좋았어요/감동했어요 평가일 때만 입력할 수 있습니다.',
+      );
     }
   }
 
   private normalizeDisappointmentReasonCodes(
     rating: ReviewRating,
-    raw: string[] | undefined,
+    raw: string[] | null | undefined,
   ): string[] | null {
     if (rating !== ReviewRating.DISAPPOINTING) {
       return null;
@@ -318,6 +361,25 @@ export class ReviewService {
     for (const c of raw) {
       if (!allowed.has(c)) {
         throw new BadRequestException(`알 수 없는 사유 코드입니다: ${c}`);
+      }
+    }
+    return [...new Set(raw)];
+  }
+
+  private normalizePositiveReasonCodes(
+    rating: ReviewRating,
+    raw: string[] | null | undefined,
+  ): string[] | null {
+    if (rating === ReviewRating.DISAPPOINTING) {
+      return null;
+    }
+    if (!raw?.length) {
+      return [];
+    }
+    const allowed = new Set(REVIEW_POSITIVE_REASON_VALUES);
+    for (const c of raw) {
+      if (!allowed.has(c)) {
+        throw new BadRequestException(`알 수 없는 긍정 사유 코드입니다: ${c}`);
       }
     }
     return [...new Set(raw)];

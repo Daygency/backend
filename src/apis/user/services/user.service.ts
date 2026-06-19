@@ -764,6 +764,60 @@ export class UserService {
     }));
   }
 
+  async getMyCommentPosts(userId: string) {
+    const comments = await this.commentRepository.find({
+      where: { user: { userId } },
+      order: { createdAt: 'DESC' },
+    });
+
+    const newsIds = [
+      ...new Set(
+        comments
+          .filter((c) => c.targetType === CommentTargetType.NEWS)
+          .map((c) => c.targetId),
+      ),
+    ];
+    const communityIds = [
+      ...new Set(
+        comments
+          .filter((c) => c.targetType === CommentTargetType.COMMUNITY)
+          .map((c) => c.targetId),
+      ),
+    ];
+
+    const [newsRows, communityRows] = await Promise.all([
+      newsIds.length
+        ? this.newsRepository.find({
+            where: { newsId: In(newsIds) },
+            select: ['newsId', 'title'],
+          })
+        : Promise.resolve([]),
+      communityIds.length
+        ? this.communityRepository.find({
+            where: { communityId: In(communityIds) },
+            select: ['communityId', 'title'],
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const newsTitleMap = new Map(newsRows.map((row) => [row.newsId, row.title]));
+    const communityTitleMap = new Map(
+      communityRows.map((row) => [row.communityId, row.title]),
+    );
+
+    return comments.map((comment) => ({
+      commentId: comment.id,
+      content: comment.content,
+      createdAt: comment.createdAt,
+      targetType: comment.targetType,
+      targetId: comment.targetId,
+      postTitle:
+        comment.targetType === CommentTargetType.NEWS
+          ? (newsTitleMap.get(comment.targetId) ?? null)
+          : (communityTitleMap.get(comment.targetId) ?? null),
+    }));
+  }
+
   async getMyAnnouncementPosts(userId: string) {
     const announcements = await this.announcementRepository.find({
       where: { userId },

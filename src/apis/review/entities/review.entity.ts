@@ -63,6 +63,18 @@ export class Review {
   @Column({ name: 'private_note_to_ops', type: 'text', nullable: true })
   privateNoteToOps: string | null;
 
+  /**
+   * `GOOD`/`IMPRESSED`일 때 선택한 긍정 사유 코드 배열.
+   */
+  @Column({ name: 'positive_reason_codes', type: 'json', nullable: true })
+  positiveReasonCodes: string[] | null;
+
+  /**
+   * 후기 공개 텍스트(익명 공개 가능). 목록 조회에서 내려주는 본문.
+   */
+  @Column({ name: 'public_note', type: 'text', nullable: true })
+  publicNote: string | null;
+
   @CreateDateColumn({
     name: 'created_at',
     type: 'datetime',

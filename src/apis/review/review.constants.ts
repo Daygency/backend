@@ -12,3 +12,19 @@ export enum ReviewDisappointmentReason {
 export const REVIEW_DISAPPOINTMENT_REASON_VALUES = Object.values(
   ReviewDisappointmentReason,
 ) as string[];
+
+/** UI 체크리스트와 대응하는 고정 코드 (좋았어요/감동했어요) */
+export enum ReviewPositiveReason {
+  TIME_WELL_KEPT = 'TIME_WELL_KEPT',
+  FLEXIBLE_ON_SCHEDULE_CHANGE = 'FLEXIBLE_ON_SCHEDULE_CHANGE',
+  SMOOTH_COMMUNICATION = 'SMOOTH_COMMUNICATION',
+  FAST_AND_CLEAR_RESPONSE = 'FAST_AND_CLEAR_RESPONSE',
+  WELL_PREPARED = 'WELL_PREPARED',
+  COMFORTABLE_COLLABORATION = 'COMFORTABLE_COLLABORATION',
+  POLITE_AND_CONSIDERATE = 'POLITE_AND_CONSIDERATE',
+  CALM_PROBLEM_SOLVING = 'CALM_PROBLEM_SOLVING',
+}
+
+export const REVIEW_POSITIVE_REASON_VALUES = Object.values(
+  ReviewPositiveReason,
+) as string[];

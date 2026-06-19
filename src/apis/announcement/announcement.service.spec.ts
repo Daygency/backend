@@ -16,6 +16,7 @@ import {
 import { AnnouncementCategory } from './entities/announcement-category.entity';
 import { AnnouncementFileService } from './announcement-file.service';
 import { Application } from '../application/entities/application.entity';
+import { NoticeService } from '../notice/notice.service';
 
 describe('AnnouncementService', () => {
   let service: AnnouncementService;
@@ -69,6 +70,10 @@ describe('AnnouncementService', () => {
 
   const mockApplicationRepo = {
     count: jest.fn().mockResolvedValue(0),
+    find: jest.fn().mockResolvedValue([]),
+  };
+  const mockNoticeService = {
+    createAndDispatchPush: jest.fn().mockResolvedValue(null),
   };
 
   beforeEach(async () => {
@@ -139,6 +144,10 @@ describe('AnnouncementService', () => {
             attachFilesToPost: jest.fn().mockResolvedValue([]),
           },
         },
+        {
+          provide: NoticeService,
+          useValue: mockNoticeService,
+        },
       ],
     }).compile();
 
@@ -148,6 +157,8 @@ describe('AnnouncementService', () => {
       getRepositoryToken(ApplicationConfig),
     );
     mockApplicationRepo.count.mockResolvedValue(0);
+    mockApplicationRepo.find.mockResolvedValue([]);
+    mockNoticeService.createAndDispatchPush.mockClear();
   });
 
   it('should be defined', () => {
@@ -468,6 +479,34 @@ describe('AnnouncementService', () => {
         postId: mockSavedAnnouncement.postId,
         completed: true,
       });
+    });
+
+    it('completed=true 전환 시 합격 지원자 전원에게 notice를 생성한다', async () => {
+      const base = {
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        title: '완료 알림 테스트 공고',
+        category: mockCategory,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
+      };
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue(base);
+      mockApplicationRepo.count.mockResolvedValue(2);
+      mockApplicationRepo.find.mockResolvedValue([
+        { userId: 'accepted-1' },
+        { userId: 'accepted-2' },
+      ]);
+
+      await service.update(mockUserId, mockSavedAnnouncement.postId!, {
+        completed: true,
+      });
+
+      expect(mockNoticeService.createAndDispatchPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorUserId: mockUserId,
+          targetId: mockSavedAnnouncement.postId,
+          recipientUserIds: ['accepted-1', 'accepted-2'],
+        } as object),
+      );
     });
   });
 });

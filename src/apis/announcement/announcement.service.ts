@@ -22,7 +22,16 @@ import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
 import { File } from '../file/entities/file.entity';
 import { AnnouncementFileService } from './announcement-file.service';
-import { Application } from '../application/entities/application.entity';
+import {
+  Application,
+  ApplicationStatus,
+} from '../application/entities/application.entity';
+import { NoticeTargetType } from '../notice/entities/notice.entity';
+import { NoticeService } from '../notice/notice.service';
+import {
+  ChatRoom,
+  ChatRoomKind,
+} from '../chat/entities/chat-room.entity';
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -186,8 +195,69 @@ export class AnnouncementService {
     private readonly categoryRepository: Repository<AnnouncementCategory>,
     @InjectRepository(Application)
     private readonly applicationRepository: Repository<Application>,
+    @InjectRepository(ChatRoom)
+    private readonly chatRoomRepository: Repository<ChatRoom>,
     private readonly announcementFileService: AnnouncementFileService,
+    private readonly noticeService: NoticeService,
   ) {}
+
+  private async loadChatRoomCountsByPostIds(
+    postIds: string[],
+  ): Promise<Map<string, number>> {
+    if (postIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.chatRoomRepository
+      .createQueryBuilder('room')
+      .innerJoin('room.announcement', 'announcement')
+      .select('announcement.postId', 'postId')
+      .addSelect('COUNT(room.id)', 'count')
+      .where('announcement.postId IN (:...postIds)', { postIds })
+      .andWhere('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
+      .andWhere('room.deletedAt IS NULL')
+      .groupBy('announcement.postId')
+      .getRawMany<{ postId: string; count: string }>();
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      map.set(row.postId, Number(row.count) || 0);
+    }
+    return map;
+  }
+
+  private async notifyAcceptedPerformersCompleted(
+    actorUserId: string,
+    announcement: Announcement,
+  ): Promise<void> {
+    const accepted = await this.applicationRepository.find({
+      where: {
+        postId: announcement.postId,
+        status: ApplicationStatus.ACCEPTED,
+      },
+      select: ['userId'],
+    });
+    const recipientUserIds = [...new Set(accepted.map((a) => a.userId))].filter(
+      (id) => id !== actorUserId,
+    );
+    if (recipientUserIds.length === 0) {
+      return;
+    }
+    const titleCut =
+      announcement.title.length > 80
+        ? `${announcement.title.slice(0, 80)}…`
+        : announcement.title;
+    const content =
+      `"${titleCut}" 공고가 완료되어 활동 후기를 작성할 수 있어요.`.slice(
+        0,
+        500,
+      );
+    await this.noticeService.createAndDispatchPush({
+      actorUserId,
+      targetType: NoticeTargetType.APPLICATION,
+      targetId: announcement.postId,
+      content,
+      recipientUserIds,
+    });
+  }
 
   /**
    * 모집공고 작성 (announcement + application_config 함께 저장)
@@ -418,7 +488,14 @@ export class AnnouncementService {
     const rows = await qb.getMany();
 
     const hasMore = rows.length > limit;
-    const items = (hasMore ? rows.slice(0, limit) : rows).map(toListItem);
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const roomCounts = await this.loadChatRoomCountsByPostIds(
+      slice.map((row) => row.postId),
+    );
+    const items = slice.map((row) => ({
+      ...toListItem(row),
+      chatRoomCount: roomCounts.get(row.postId) ?? 0,
+    }));
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
 
@@ -495,11 +572,16 @@ export class AnnouncementService {
     }
 
     if (isCompletedOnlyUpdate(dto)) {
+      const wasCompleted = effectiveCompleted(announcement);
       announcement.completedManually = Boolean(dto.completed);
       await this.announcementRepository.save(announcement);
+      const isCompleted = effectiveCompleted(announcement);
+      if (!wasCompleted && isCompleted && dto.completed === true) {
+        await this.notifyAcceptedPerformersCompleted(userId, announcement);
+      }
       return {
         postId: id,
-        completed: effectiveCompleted(announcement),
+        completed: isCompleted,
       };
     }
 
@@ -520,6 +602,7 @@ export class AnnouncementService {
     if (dto.priceType !== undefined) announcement.priceType = dto.priceType;
     if (dto.price !== undefined) announcement.price = dto.price;
     if (dto.fileId !== undefined) announcement.fileId = dto.fileId ?? null;
+    const wasCompleted = effectiveCompleted(announcement);
     if (dto.completed !== undefined) {
       announcement.completedManually = Boolean(dto.completed);
     }
@@ -539,6 +622,10 @@ export class AnnouncementService {
     }
 
     await this.announcementRepository.save(announcement);
+    const isCompleted = effectiveCompleted(announcement);
+    if (!wasCompleted && isCompleted && dto.completed === true) {
+      await this.notifyAcceptedPerformersCompleted(userId, announcement);
+    }
 
     if (dto.applicationConfig !== undefined) {
       let config = await this.applicationConfigRepository.findOne({
