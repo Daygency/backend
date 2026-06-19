@@ -26,6 +26,7 @@ import { ReportModule } from './apis/report/report.module';
 import { MajorModule } from './apis/major/major.module';
 import { HomeBannerModule } from './apis/home-banner/home-banner.module';
 import { ReviewModule } from './apis/review/review.module';
+import { InquiryModule } from './apis/inquiry/inquiry.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { ReviewModule } from './apis/review/review.module';
     ReportModule,
     MajorModule,
     ReviewModule,
+    InquiryModule,
   ],
   providers: [DatabaseSeedService],
 })

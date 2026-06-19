@@ -464,7 +464,17 @@ export class AuthService {
       };
     }
 
-    return this.issueAccessAndRefreshTokens(user);
+    const activeUser = await this.userService.findOneForAuth(user.userId);
+    if (!activeUser) {
+      throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
+    }
+    if (activeUser.activity === UserActivity.BAN) {
+      throw new ForbiddenException(
+        '신고 누적으로 이용이 제한된 계정입니다. 정지 기간이 끝난 뒤 다시 로그인해 주세요.',
+      );
+    }
+
+    return this.issueAccessAndRefreshTokens(activeUser);
   }
 
   /** access(1h) + refresh(30d) 토큰 쌍 발급 */
@@ -518,7 +528,7 @@ export class AuthService {
       if (payload?.type !== 'refresh' || !payload?.sub) {
         throw new UnauthorizedException('유효하지 않은 refresh token입니다.');
       }
-      const user = await this.userService.findOne(payload.sub);
+      const user = await this.userService.findOneForAuth(payload.sub);
       if (!user) {
         throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
       }

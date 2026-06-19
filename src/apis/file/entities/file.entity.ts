@@ -16,6 +16,8 @@ export enum FileTargetType {
   /** 내 자료 보관함 직접 업로드 — `target_id` = userId */
   USER_ARCHIVE = 'user_archive',
   HOME_BANNER = 'home_banner',
+  /** 고객센터 1:1 문의 첨부 — `target_id` = inquiry id */
+  INQUIRY = 'inquiry',
 }
 
 @Entity('file')

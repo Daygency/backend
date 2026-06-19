@@ -10,7 +10,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { CreateUserDto } from '../dto/create-user.dto';
-import { User, SocialProvider, UserRole } from '../entities/user.entity';
+import { User, SocialProvider, UserRole, UserActivity } from '../entities/user.entity';
+import { liftExpiredReportBanIfNeeded } from '../../report/utils/report-ban.util';
 import type { SocialProfile } from '../../auth/types/social-profile.type';
 import { ProfileResponseDto } from '../dto/profile-response.dto';
 import { PublicProfileResponseDto } from '../dto/public-profile-response.dto';
@@ -247,6 +248,63 @@ export class UserService {
 
   findOne(userId: string) {
     return this.userRepository.findOne({ where: { userId } });
+  }
+
+  /** JWT·리프레시 검증용 — 신고 자동 정지 만료 시 복구 후 반환 */
+  async findOneForAuth(userId: string) {
+    const user = await this.userRepository.findOne({ where: { userId } });
+    if (!user) return null;
+    return liftExpiredReportBanIfNeeded(user, (u) => this.userRepository.save(u));
+  }
+
+  async listBannedForAdmin() {
+    const rows = await this.userRepository.find({
+      where: { activity: UserActivity.BAN },
+      select: [
+        'userId',
+        'nickname',
+        'activityName',
+        'email',
+        'activity',
+        'reportBannedUntil',
+        'reportStrikeResetAt',
+        'createdAt',
+      ],
+      order: { reportBannedUntil: 'ASC', createdAt: 'DESC' },
+    });
+
+    return rows.map((user) => ({
+      userId: user.userId,
+      nickname: user.nickname,
+      activityName: user.activityName,
+      email: user.email,
+      reportBannedUntil: user.reportBannedUntil?.toISOString() ?? null,
+      reportStrikeResetAt: user.reportStrikeResetAt?.toISOString() ?? null,
+      banType: user.reportBannedUntil ? 'auto_report' : 'manual',
+      createdAt: user.createdAt.toISOString(),
+    }));
+  }
+
+  async unbanUserForAdmin(userId: string) {
+    const user = await this.userRepository.findOne({ where: { userId } });
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+    if (user.activity !== UserActivity.BAN) {
+      throw new BadRequestException('정지 상태가 아닌 계정입니다.');
+    }
+
+    user.activity = UserActivity.NORMAL;
+    user.reportBannedUntil = null;
+    user.reportStrikeResetAt = new Date();
+    await this.userRepository.save(user);
+
+    return {
+      ok: true,
+      userId: user.userId,
+      nickname: user.nickname,
+      activityName: user.activityName,
+    };
   }
 
   async findAdminForWebLogin(email?: string) {

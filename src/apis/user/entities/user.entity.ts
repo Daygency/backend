@@ -60,6 +60,24 @@ export class User {
   })
   activity: UserActivity;
 
+  /** 신고 누적 1주 정지 만료 시각 — null 이면 영구 정지(관리자) 또는 정상 */
+  @Column({
+    name: 'report_banned_until',
+    type: 'datetime',
+    precision: 6,
+    nullable: true,
+  })
+  reportBannedUntil: Date | null;
+
+  /** 이 시각 이후 접수된 신고만 누적 카운트 (정지 해제 시 갱신) */
+  @Column({
+    name: 'report_strike_reset_at',
+    type: 'datetime',
+    precision: 6,
+    nullable: true,
+  })
+  reportStrikeResetAt: Date | null;
+
   @Column({ unique: true, length: 320 })
   email: string;
 

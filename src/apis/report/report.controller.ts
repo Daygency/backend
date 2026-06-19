@@ -46,7 +46,7 @@ export class ReportController {
   @ApiOperation({
     summary: '콘텐츠/사용자 신고',
     description:
-      '동일 신고자→피신고자는 1회만 가능. 차단 관계면 신고 불가. 누적 신고 수가 설정값 초과 시 피신고자 activity=FLAGGED.',
+      '동일 신고자→피신고자는 1회만 가능. 차단 관계면 신고 불가. 기간 내 신고 누적이 설정값 이상이면 피신고자 1주 자동 정지.',
   })
   @ApiResponse({ status: 201, description: '신고 접수' })
   @ApiResponse({ status: 400, description: '본인 신고·대상 불일치 등' })

@@ -21,7 +21,7 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'access') {
   }
 
   async validate(payload: IJwtPayload) {
-    const user = await this.userService.findOne(payload.sub);
+    const user = await this.userService.findOneForAuth(payload.sub);
     if (!user) {
       throw new UnauthorizedException(
         '계정을 찾을 수 없거나 탈퇴한 사용자입니다.',

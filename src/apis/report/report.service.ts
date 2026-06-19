@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
 import { Announcement } from '../announcement/entities/announcement.entity';
 import { Block } from '../block/entities/block.entity';
 import { ChatRoom, ChatRoomKind } from '../chat/entities/chat-room.entity';
@@ -20,10 +20,16 @@ import {
   getReportCategoryOptions,
 } from './constants/report-categories';
 import { getReportTargetTypeLabelKo } from './constants/report-target-types';
-import { REPORT_LIMIT } from './constants/report.constants';
+import {
+  REPORT_AUTO_BAN_THRESHOLD,
+} from './constants/report.constants';
 import { CreateReportDto } from './dto/create-report.dto';
 import { ListAdminReportsQueryDto } from './dto/list-admin-reports-query.dto';
 import { Report, ReportTargetType } from './entities/report.entity';
+import {
+  addReportBanUntil,
+  liftExpiredReportBanIfNeeded,
+} from './utils/report-ban.util';
 
 @Injectable()
 export class ReportService {
@@ -66,6 +72,11 @@ export class ReportService {
       throw new NotFoundException('신고 대상 사용자를 찾을 수 없습니다.');
     }
 
+    const activeReportedUser = await liftExpiredReportBanIfNeeded(
+      reportedUser,
+      (u) => this.userRepository.save(u),
+    );
+
     const blockedByReporter = await this.blockRepository.findOne({
       where: { blockerId: reporterId, blockedId: reportedUserId },
     });
@@ -102,22 +113,33 @@ export class ReportService {
       }),
     );
 
-    const totalReports = await this.reportRepository.count({
-      where: { reportedUserId },
+    const strikeResetAt =
+      activeReportedUser.reportStrikeResetAt ?? new Date(0);
+    const strikeCount = await this.reportRepository.count({
+      where: {
+        reportedUserId,
+        createdAt: MoreThanOrEqual(strikeResetAt),
+      },
     });
 
     if (
-      totalReports > REPORT_LIMIT &&
-      reportedUser.activity === UserActivity.NORMAL
+      strikeCount >= REPORT_AUTO_BAN_THRESHOLD &&
+      activeReportedUser.activity !== UserActivity.BAN
     ) {
-      reportedUser.activity = UserActivity.FLAGGED;
-      await this.userRepository.save(reportedUser);
+      activeReportedUser.activity = UserActivity.BAN;
+      activeReportedUser.reportBannedUntil = addReportBanUntil();
+      await this.userRepository.save(activeReportedUser);
     }
+
+    const totalReports = await this.reportRepository.count({
+      where: { reportedUserId },
+    });
 
     return {
       ok: true,
       reportedUserId,
       totalReportsAgainstUser: totalReports,
+      strikeCountInPeriod: strikeCount,
     };
   }
 
