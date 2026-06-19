@@ -18,8 +18,21 @@ import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { UpdateApplicationDto } from './dto/update-application.dto';
-import { Application } from './entities/application.entity';
+import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
+import { Application, ApplicationStatus } from './entities/application.entity';
 import { ChatService } from '../chat/chat.service';
+import type {
+  ApplicationAwardSnapshot,
+  ApplicationCareerSnapshot,
+  ApplicationCertificateSnapshot,
+  ApplicationEducationSnapshot,
+  ApplicationFileSnapshot,
+} from './types/application-snapshot.types';
+
+/** JSON 배열 컬럼에 1개 이상 항목이 있는지 */
+function hasJsonArrayContent(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
 
 @Injectable()
 export class ApplicationService {
@@ -72,33 +85,37 @@ export class ApplicationService {
 
     const existing = await this.applicationRepo.findOne({
       where: { postId, userId: applicantUserId },
+      withDeleted: true,
     });
-    if (existing) {
+    if (existing && !existing.deletedAt) {
       throw new ConflictException('이미 이 공고에 지원했습니다.');
     }
 
     this.validateAgainstConfig(config, dto);
 
+    const isRestore = Boolean(existing?.deletedAt);
+
+    if (isRestore && existing) {
+      this.patchApplicationFromSubmitDto(existing, dto, applicantUserId);
+      const saved = await this.applicationRepo.save(existing);
+      try {
+        await this.chatService.ensureAnnouncementRoomAfterApply(
+          applicantUserId,
+          postId,
+          saved.id,
+        );
+      } catch (err) {
+        await this.applicationRepo.softDelete({ id: saved.id });
+        throw err;
+      }
+      return saved;
+    }
+
     const entity = this.applicationRepo.create({
       postId,
       userId: applicantUserId,
-      includeName: dto.includeName?.trim() ?? null,
-      includeBirth: dto.includeBirth?.trim() ?? null,
-      includeGender: dto.includeGender ?? null,
-      includeMajor: dto.includeMajor?.trim() ?? null,
-      includeMajorDetail: dto.includeMajorDetail?.trim() ?? null,
-      includeEducation: dto.includeEducation?.trim() ?? null,
-      includeCategory: dto.includeCategory?.trim() ?? null,
-      includeMusic: dto.includeMusic?.trim() ?? null,
-      includeAddress: dto.includeAddress?.trim() ?? null,
-      includeFile:
-        dto.includeFile === undefined ? null : dto.includeFile ? 1 : 0,
-      includeLink: dto.includeLink?.trim() ?? null,
-      includeDepartment: dto.includeDepartment?.trim() ?? null,
-      includeCareer:
-        dto.includeCareer === undefined ? null : dto.includeCareer ? 1 : 0,
-      includeIntroduce: dto.includeIntroduce?.trim() ?? null,
     });
+    this.patchApplicationFromSubmitDto(entity, dto, applicantUserId);
 
     const saved = await this.applicationRepo.save(entity);
     try {
@@ -113,6 +130,49 @@ export class ApplicationService {
     }
     void this.notifyAnnouncementApplication(applicantUserId, announcement);
     return saved;
+  }
+
+  /** 제출/재제출(복구) 시 본문 필드 일괄 반영 */
+  private patchApplicationFromSubmitDto(
+    target: Application,
+    dto: CreateApplicationDto,
+    applicantUserId: string,
+  ): void {
+    target.postId = dto.postId;
+    target.userId = applicantUserId;
+    target.status = ApplicationStatus.SUBMITTED;
+    target.canceledAt = null;
+    target.deletedAt = null;
+    target.name = dto.name?.trim() ?? null;
+    target.birth =
+      dto.birth === undefined || dto.birth === null || dto.birth === ''
+        ? null
+        : new Date(dto.birth);
+    target.gender = dto.gender ?? null;
+    target.major = dto.major?.trim() ?? null;
+    target.majorDetail = dto.majorDetail?.trim() ?? null;
+    target.category = dto.category?.trim() ?? null;
+    target.music = dto.music?.trim() ?? null;
+    target.address = dto.address?.trim() ?? null;
+    target.file =
+      dto.file === undefined ? null : (dto.file as ApplicationFileSnapshot);
+    target.link = dto.link?.trim() ?? null;
+    target.department = dto.department?.trim() ?? null;
+    target.introduce = dto.introduce?.trim() ?? null;
+    target.education =
+      dto.education === undefined
+        ? null
+        : (dto.education as ApplicationEducationSnapshot);
+    target.career =
+      dto.career === undefined
+        ? null
+        : (dto.career as ApplicationCareerSnapshot);
+    target.award =
+      dto.award === undefined ? null : (dto.award as ApplicationAwardSnapshot);
+    target.certificate =
+      dto.certificate === undefined
+        ? null
+        : (dto.certificate as ApplicationCertificateSnapshot);
   }
 
   private async notifyAnnouncementApplication(
@@ -206,50 +266,102 @@ export class ApplicationService {
     const merged = this.mergeForValidation(existing, dto);
     this.validateAgainstConfig(config, merged);
 
-    if (dto.includeName !== undefined) {
-      existing.includeName = dto.includeName?.trim() ?? null;
+    if (dto.name !== undefined) {
+      existing.name = dto.name?.trim() ?? null;
     }
-    if (dto.includeBirth !== undefined) {
-      existing.includeBirth = dto.includeBirth?.trim() ?? null;
+    if (dto.birth !== undefined) {
+      existing.birth =
+        dto.birth === null || dto.birth === ''
+          ? null
+          : new Date(dto.birth);
     }
-    if (dto.includeGender !== undefined) {
-      existing.includeGender = dto.includeGender ?? null;
+    if (dto.gender !== undefined) {
+      existing.gender = dto.gender ?? null;
     }
-    if (dto.includeMajor !== undefined) {
-      existing.includeMajor = dto.includeMajor?.trim() ?? null;
+    if (dto.major !== undefined) {
+      existing.major = dto.major?.trim() ?? null;
     }
-    if (dto.includeMajorDetail !== undefined) {
-      existing.includeMajorDetail = dto.includeMajorDetail?.trim() ?? null;
+    if (dto.majorDetail !== undefined) {
+      existing.majorDetail = dto.majorDetail?.trim() ?? null;
     }
-    if (dto.includeEducation !== undefined) {
-      existing.includeEducation = dto.includeEducation?.trim() ?? null;
+    if (dto.category !== undefined) {
+      existing.category = dto.category?.trim() ?? null;
     }
-    if (dto.includeCategory !== undefined) {
-      existing.includeCategory = dto.includeCategory?.trim() ?? null;
+    if (dto.music !== undefined) {
+      existing.music = dto.music?.trim() ?? null;
     }
-    if (dto.includeMusic !== undefined) {
-      existing.includeMusic = dto.includeMusic?.trim() ?? null;
+    if (dto.address !== undefined) {
+      existing.address = dto.address?.trim() ?? null;
     }
-    if (dto.includeAddress !== undefined) {
-      existing.includeAddress = dto.includeAddress?.trim() ?? null;
+    if (dto.file !== undefined) {
+      existing.file = dto.file as ApplicationFileSnapshot;
     }
-    if (dto.includeFile !== undefined) {
-      existing.includeFile = dto.includeFile ? 1 : 0;
+    if (dto.link !== undefined) {
+      existing.link = dto.link?.trim() ?? null;
     }
-    if (dto.includeLink !== undefined) {
-      existing.includeLink = dto.includeLink?.trim() ?? null;
+    if (dto.department !== undefined) {
+      existing.department = dto.department?.trim() ?? null;
     }
-    if (dto.includeDepartment !== undefined) {
-      existing.includeDepartment = dto.includeDepartment?.trim() ?? null;
+    if (dto.introduce !== undefined) {
+      existing.introduce = dto.introduce?.trim() ?? null;
     }
-    if (dto.includeCareer !== undefined) {
-      existing.includeCareer = dto.includeCareer ? 1 : 0;
+    if (dto.education !== undefined) {
+      existing.education = dto.education as ApplicationEducationSnapshot;
     }
-    if (dto.includeIntroduce !== undefined) {
-      existing.includeIntroduce = dto.includeIntroduce?.trim() ?? null;
+    if (dto.career !== undefined) {
+      existing.career = dto.career as ApplicationCareerSnapshot;
+    }
+    if (dto.award !== undefined) {
+      existing.award = dto.award as ApplicationAwardSnapshot;
+    }
+    if (dto.certificate !== undefined) {
+      existing.certificate = dto.certificate as ApplicationCertificateSnapshot;
     }
 
     return this.applicationRepo.save(existing);
+  }
+
+  /**
+   * 해당 공고 작성자(모집자)만 지원서 심사 상태를 변경할 수 있습니다.
+   */
+  async updateStatusByRecruiter(
+    recruiterUserId: string,
+    applicationId: string,
+    dto: UpdateApplicationStatusDto,
+  ): Promise<Application> {
+    const existing = await this.applicationRepo.findOne({
+      where: { id: applicationId },
+      relations: { announcement: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('지원서를 찾을 수 없습니다.');
+    }
+    if (existing.announcement.userId !== recruiterUserId) {
+      throw new ForbiddenException(
+        '해당 공고 작성자만 지원 상태를 변경할 수 있습니다.',
+      );
+    }
+    existing.status = dto.status;
+    return this.applicationRepo.save(existing);
+  }
+
+  /**
+   * 지원자 본인만 소프트 삭제 (`deleted_at`). 이후 동일 공고에 다시 POST 지원 가능.
+   */
+  async removeByApplicant(
+    applicantUserId: string,
+    applicationId: string,
+  ): Promise<void> {
+    const app = await this.applicationRepo.findOne({
+      where: { id: applicationId },
+    });
+    if (!app) {
+      throw new NotFoundException('지원서를 찾을 수 없습니다.');
+    }
+    if (app.userId !== applicantUserId) {
+      throw new ForbiddenException('본인의 지원서만 삭제할 수 있습니다.');
+    }
+    await this.applicationRepo.softDelete({ id: applicationId });
   }
 
   async findMine(postId: string, userId: string): Promise<Application | null> {
@@ -274,7 +386,7 @@ export class ApplicationService {
     return this.applicationRepo.find({
       where: { postId },
       relations: { user: true },
-      order: { id: 'DESC' },
+      order: { createdAt: 'DESC' },
     });
   }
 
@@ -282,71 +394,59 @@ export class ApplicationService {
     existing: Application,
     dto: UpdateApplicationDto,
   ): CreateApplicationDto {
-    const fileVal =
-      dto.includeFile !== undefined
-        ? dto.includeFile
-        : existing.includeFile === null
-          ? undefined
-          : existing.includeFile === 1;
-    const careerVal =
-      dto.includeCareer !== undefined
-        ? dto.includeCareer
-        : existing.includeCareer === null
-          ? undefined
-          : existing.includeCareer === 1;
-
     return {
       postId: existing.postId,
-      includeName:
-        dto.includeName !== undefined
-          ? dto.includeName
-          : (existing.includeName ?? undefined),
-      includeBirth:
-        dto.includeBirth !== undefined
-          ? dto.includeBirth
-          : (existing.includeBirth ?? undefined),
-      includeGender:
-        dto.includeGender !== undefined
-          ? dto.includeGender
-          : (existing.includeGender ?? undefined),
-      includeMajor:
-        dto.includeMajor !== undefined
-          ? dto.includeMajor
-          : (existing.includeMajor ?? undefined),
-      includeMajorDetail:
-        dto.includeMajorDetail !== undefined
-          ? dto.includeMajorDetail
-          : (existing.includeMajorDetail ?? undefined),
-      includeEducation:
-        dto.includeEducation !== undefined
-          ? dto.includeEducation
-          : (existing.includeEducation ?? undefined),
-      includeCategory:
-        dto.includeCategory !== undefined
-          ? dto.includeCategory
-          : (existing.includeCategory ?? undefined),
-      includeMusic:
-        dto.includeMusic !== undefined
-          ? dto.includeMusic
-          : (existing.includeMusic ?? undefined),
-      includeAddress:
-        dto.includeAddress !== undefined
-          ? dto.includeAddress
-          : (existing.includeAddress ?? undefined),
-      includeFile: fileVal,
-      includeLink:
-        dto.includeLink !== undefined
-          ? dto.includeLink
-          : (existing.includeLink ?? undefined),
-      includeDepartment:
-        dto.includeDepartment !== undefined
-          ? dto.includeDepartment
-          : (existing.includeDepartment ?? undefined),
-      includeCareer: careerVal,
-      includeIntroduce:
-        dto.includeIntroduce !== undefined
-          ? dto.includeIntroduce
-          : (existing.includeIntroduce ?? undefined),
+      name: dto.name !== undefined ? dto.name : (existing.name ?? undefined),
+      birth:
+        dto.birth !== undefined
+          ? dto.birth
+          : (existing.birth != null
+              ? existing.birth.toISOString()
+              : undefined),
+      gender:
+        dto.gender !== undefined
+          ? dto.gender
+          : (existing.gender ?? undefined),
+      major:
+        dto.major !== undefined ? dto.major : (existing.major ?? undefined),
+      majorDetail:
+        dto.majorDetail !== undefined
+          ? dto.majorDetail
+          : (existing.majorDetail ?? undefined),
+      category:
+        dto.category !== undefined
+          ? dto.category
+          : (existing.category ?? undefined),
+      music:
+        dto.music !== undefined ? dto.music : (existing.music ?? undefined),
+      address:
+        dto.address !== undefined
+          ? dto.address
+          : (existing.address ?? undefined),
+      file: dto.file !== undefined ? dto.file : (existing.file ?? undefined),
+      link: dto.link !== undefined ? dto.link : (existing.link ?? undefined),
+      department:
+        dto.department !== undefined
+          ? dto.department
+          : (existing.department ?? undefined),
+      introduce:
+        dto.introduce !== undefined
+          ? dto.introduce
+          : (existing.introduce ?? undefined),
+      education:
+        dto.education !== undefined
+          ? dto.education
+          : (existing.education ?? undefined),
+      career:
+        dto.career !== undefined
+          ? dto.career
+          : (existing.career ?? undefined),
+      award:
+        dto.award !== undefined ? dto.award : (existing.award ?? undefined),
+      certificate:
+        dto.certificate !== undefined
+          ? dto.certificate
+          : (existing.certificate ?? undefined),
     };
   }
 
@@ -363,49 +463,52 @@ export class ApplicationService {
     };
 
     if (config.includeName) {
-      missing('이름', !!dto.includeName?.trim());
+      missing('이름', !!dto.name?.trim());
     }
     if (config.includeBirth) {
-      missing('출생연도', !!dto.includeBirth?.trim());
+      missing(
+        '생년월일',
+        dto.birth != null && String(dto.birth).trim() !== '',
+      );
     }
     if (config.includeGender) {
       missing(
         '성별',
-        dto.includeGender !== undefined && dto.includeGender !== null,
+        dto.gender !== undefined && dto.gender !== null,
       );
     }
     if (config.includeMajor) {
-      missing('전공', !!dto.includeMajor?.trim());
+      missing('전공', !!dto.major?.trim());
     }
     if (config.includeMajorDetail) {
-      missing('세부전공', !!dto.includeMajorDetail?.trim());
+      missing('세부전공', !!dto.majorDetail?.trim());
     }
     if (config.includeEducation) {
-      missing('학력', !!dto.includeEducation?.trim());
+      missing('학력', hasJsonArrayContent(dto.education));
     }
     if (config.includeCategory) {
-      missing('참가부문', !!dto.includeCategory?.trim());
+      missing('참가부문', !!dto.category?.trim());
     }
     if (config.includeMusic) {
-      missing('참가곡', !!dto.includeMusic?.trim());
+      missing('참가곡', !!dto.music?.trim());
     }
     if (config.includeAddress) {
-      missing('주소', !!dto.includeAddress?.trim());
+      missing('주소', !!dto.address?.trim());
     }
     if (config.includeFile) {
-      missing('파일 첨부 여부', dto.includeFile !== undefined);
+      missing('파일', hasJsonArrayContent(dto.file));
     }
     if (config.includeLink) {
-      missing('링크', !!dto.includeLink?.trim());
+      missing('링크', !!dto.link?.trim());
     }
     if (config.includeDepartment) {
-      missing('소속학부', !!dto.includeDepartment?.trim());
+      missing('소속학부', !!dto.department?.trim());
     }
     if (config.includeCareer) {
-      missing('경력', dto.includeCareer !== undefined);
+      missing('경력', hasJsonArrayContent(dto.career));
     }
     if (config.includeIntroduce) {
-      missing('자기소개/지원동기', !!dto.includeIntroduce?.trim());
+      missing('자기소개/지원동기', !!dto.introduce?.trim());
     }
   }
 }

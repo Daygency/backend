@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest matchers */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- test mocks */
 
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,14 +9,20 @@ import { AnnouncementService } from './announcement.service';
 import { Announcement } from './entities/announcement.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
-import { AnnouncementStatus } from './entities/announcement.entity';
+import {
+  AnnouncementPriceType,
+  AnnouncementStatus,
+} from './entities/announcement.entity';
 import { AnnouncementCategory } from './entities/announcement-category.entity';
 import { AnnouncementFileService } from './announcement-file.service';
+import { Application } from '../application/entities/application.entity';
+import { NoticeService } from '../notice/notice.service';
 
 describe('AnnouncementService', () => {
   let service: AnnouncementService;
   let announcementRepository: jest.Mocked<Repository<Announcement>>;
   let applicationConfigRepository: jest.Mocked<Repository<ApplicationConfig>>;
+  let majorFindMock: jest.Mock;
 
   const mockUserId = 'user-uuid-1234';
   const mockFileId = 'file-uuid-5678';
@@ -31,7 +38,8 @@ describe('AnnouncementService', () => {
     title: '2025 봄 정기연주회',
     content: '모집 내용입니다.',
     deadlineAt: '2025-04-15T23:59:59.000Z',
-    scheduledAt: '2025-04-20T14:00:00.000Z',
+    /** 테스트 시점(2026+)에서도 미래 공연일로 두어 completed 자동값이 false가 되게 함 */
+    scheduledAt: '2099-04-20T14:00:00.000Z',
     address: '서울시 강남구',
     fileId: mockFileId,
     categoryId: mockCategoryId,
@@ -51,14 +59,29 @@ describe('AnnouncementService', () => {
     scheduledAt: new Date(validCreateDto.scheduledAt),
     status: AnnouncementStatus.OPEN,
     address: validCreateDto.address,
+    priceType: AnnouncementPriceType.PENDING,
+    price: 0,
+    viewCount: 0,
+    completedManually: false,
     fileId: mockFileId,
     category: mockCategory,
     majors: [],
   };
 
+  const mockApplicationRepo = {
+    count: jest.fn().mockResolvedValue(0),
+    find: jest.fn().mockResolvedValue([]),
+  };
+  const mockNoticeService = {
+    createAndDispatchPush: jest.fn().mockResolvedValue(null),
+  };
+
   beforeEach(async () => {
+    majorFindMock = jest.fn().mockResolvedValue([
+      { majorId: mockMajorId, name: '테스트전공' },
+    ]);
     const mockMajorRepo = {
-      find: jest.fn().mockResolvedValue([{ majorId: mockMajorId }]),
+      find: majorFindMock,
     };
 
     const mockCategoryRepo = {
@@ -69,6 +92,7 @@ describe('AnnouncementService', () => {
       create: jest.fn().mockReturnValue({ ...mockSavedAnnouncement }),
       save: jest.fn().mockResolvedValue({ ...mockSavedAnnouncement }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
+      increment: jest.fn().mockResolvedValue(undefined),
       findOne: jest.fn().mockResolvedValue({
         ...mockSavedAnnouncement,
         category: mockCategory,
@@ -103,6 +127,10 @@ describe('AnnouncementService', () => {
           useValue: mockApplicationConfigRepo,
         },
         {
+          provide: getRepositoryToken(Application),
+          useValue: mockApplicationRepo,
+        },
+        {
           provide: getRepositoryToken(Major),
           useValue: mockMajorRepo,
         },
@@ -116,6 +144,10 @@ describe('AnnouncementService', () => {
             attachFilesToPost: jest.fn().mockResolvedValue([]),
           },
         },
+        {
+          provide: NoticeService,
+          useValue: mockNoticeService,
+        },
       ],
     }).compile();
 
@@ -124,6 +156,9 @@ describe('AnnouncementService', () => {
     applicationConfigRepository = module.get(
       getRepositoryToken(ApplicationConfig),
     );
+    mockApplicationRepo.count.mockResolvedValue(0);
+    mockApplicationRepo.find.mockResolvedValue([]);
+    mockNoticeService.createAndDispatchPush.mockClear();
   });
 
   it('should be defined', () => {
@@ -143,6 +178,8 @@ describe('AnnouncementService', () => {
           title: validCreateDto.title,
           content: validCreateDto.content,
           address: validCreateDto.address,
+          priceType: AnnouncementPriceType.PENDING,
+          price: 0,
           fileId: mockFileId,
           category: mockCategory,
           majors: expect.arrayContaining([
@@ -162,7 +199,7 @@ describe('AnnouncementService', () => {
       expect(applicationConfigRepository.save).toHaveBeenCalled();
     });
 
-    it('반환값이 목록 아이템 형태(postId, title, type, isRecruiting, dDay)여야 한다', async () => {
+    it('반환값이 목록 아이템 형태(postId, title, type, isRecruiting, dDay, deadlineAt)여야 한다', async () => {
       const result = await service.create(
         mockUserId,
         validCreateDto as Parameters<AnnouncementService['create']>[1],
@@ -173,6 +210,11 @@ describe('AnnouncementService', () => {
         title: validCreateDto.title,
         type: '행사',
         isRecruiting: true,
+        deadlineAt: new Date(validCreateDto.deadlineAt),
+        completed: false,
+        priceType: AnnouncementPriceType.PENDING,
+        price: 0,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
         attachments: [],
       });
       expect(result).toHaveProperty('dDay');
@@ -204,6 +246,19 @@ describe('AnnouncementService', () => {
 
       expect(result.isRecruiting).toBe(false);
     });
+
+    it('majorIds에 존재하지 않는 ID가 있으면 BadRequestException을 던진다', async () => {
+      majorFindMock.mockResolvedValueOnce([]);
+
+      await expect(
+        service.create(mockUserId, {
+          ...validCreateDto,
+          majorIds: ['00000000-0000-4000-8000-000000000099'],
+        } as Parameters<AnnouncementService['create']>[1]),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(announcementRepository.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('findList', () => {
@@ -226,10 +281,13 @@ describe('AnnouncementService', () => {
           postId: 'post-1',
           title: '공고1',
           deadlineAt: new Date('2025-04-20'),
-          scheduledAt: new Date('2025-04-25'),
+          scheduledAt: new Date('2099-04-25'),
+          completedManually: false,
           status: AnnouncementStatus.OPEN,
           category: { categoryId: 'cat-1', name: '마스터클래스' },
           address: 'addr1',
+          priceType: AnnouncementPriceType.PENDING,
+          price: 0,
           content: 'c',
           userId: 'u',
           fileId: 'f',
@@ -252,8 +310,14 @@ describe('AnnouncementService', () => {
       expect(result.items[0]).toMatchObject({
         postId: 'post-1',
         title: '공고1',
+        address: 'addr1',
         type: '마스터클래스',
         isRecruiting: true,
+        deadlineAt: new Date('2025-04-20'),
+        completed: false,
+        priceType: AnnouncementPriceType.PENDING,
+        price: 0,
+        viewCount: 0,
       });
       expect(result.items[0]).toHaveProperty('dDay');
     });
@@ -265,10 +329,13 @@ describe('AnnouncementService', () => {
           postId: `post-${i}`,
           title: `공고${i}`,
           deadlineAt: new Date('2025-04-20'),
-          scheduledAt: new Date('2025-04-25'),
+          scheduledAt: new Date('2099-04-25'),
+          completedManually: false,
           status: AnnouncementStatus.OPEN,
           category: { categoryId: 'cat-1', name: '행사' },
           address: 'addr',
+          priceType: AnnouncementPriceType.PENDING,
+          price: 0,
           content: 'c',
           userId: 'u',
           fileId: 'f',
@@ -310,6 +377,26 @@ describe('AnnouncementService', () => {
       );
     });
 
+    it('priceType 필터가 전달되면 andWhere가 호출되어야 한다', async () => {
+      const andWhereMock = jest.fn().mockReturnThis();
+      (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        andWhere: andWhereMock,
+        getMany: jest.fn().mockResolvedValue([]),
+      });
+
+      await service.findList({ priceType: AnnouncementPriceType.FREE });
+
+      expect(andWhereMock).toHaveBeenCalledWith(
+        'announcement.priceType = :priceType',
+        {
+          priceType: AnnouncementPriceType.FREE,
+        },
+      );
+    });
+
     it('cursor가 전달되면 andWhere에 cursor 조건이 포함되어야 한다', async () => {
       const andWhereMock = jest.fn().mockReturnThis();
       (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({
@@ -327,6 +414,98 @@ describe('AnnouncementService', () => {
         {
           cursor: 'some-post-id',
         },
+      );
+    });
+  });
+
+  describe('update', () => {
+    it('지원자가 있고 조기마감이 아닌 수정이면 ForbiddenException을 던진다', async () => {
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        category: mockCategory,
+        majors: [],
+      });
+      mockApplicationRepo.count.mockResolvedValue(1);
+
+      await expect(
+        service.update(mockUserId, mockSavedAnnouncement.postId!, {
+          title: '변경',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(announcementRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('지원자가 있어도 status만 CLOSED로 보내면 조기마감된다', async () => {
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        category: mockCategory,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
+      });
+      mockApplicationRepo.count.mockResolvedValue(1);
+
+      const result = await service.update(
+        mockUserId,
+        mockSavedAnnouncement.postId!,
+        { status: AnnouncementStatus.CLOSED },
+      );
+
+      expect(announcementRepository.save).toHaveBeenCalled();
+      expect(result).toEqual({
+        postId: mockSavedAnnouncement.postId,
+        status: AnnouncementStatus.CLOSED,
+        isRecruiting: false,
+      });
+    });
+
+    it('지원자가 있어도 completed만 보내면 수동 완료 처리된다', async () => {
+      const base = {
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        category: mockCategory,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
+      };
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue(base);
+      mockApplicationRepo.count.mockResolvedValue(1);
+
+      const result = await service.update(mockUserId, mockSavedAnnouncement.postId!, {
+        completed: true,
+      });
+
+      expect(announcementRepository.save).toHaveBeenCalled();
+      expect(result).toEqual({
+        postId: mockSavedAnnouncement.postId,
+        completed: true,
+      });
+    });
+
+    it('completed=true 전환 시 합격 지원자 전원에게 notice를 생성한다', async () => {
+      const base = {
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        title: '완료 알림 테스트 공고',
+        category: mockCategory,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
+      };
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue(base);
+      mockApplicationRepo.count.mockResolvedValue(2);
+      mockApplicationRepo.find.mockResolvedValue([
+        { userId: 'accepted-1' },
+        { userId: 'accepted-2' },
+      ]);
+
+      await service.update(mockUserId, mockSavedAnnouncement.postId!, {
+        completed: true,
+      });
+
+      expect(mockNoticeService.createAndDispatchPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorUserId: mockUserId,
+          targetId: mockSavedAnnouncement.postId,
+          recipientUserIds: ['accepted-1', 'accepted-2'],
+        } as object),
       );
     });
   });

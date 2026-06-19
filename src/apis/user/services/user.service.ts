@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { User, SocialProvider, UserRole } from '../entities/user.entity';
 import type { SocialProfile } from '../../auth/types/social-profile.type';
@@ -36,6 +36,9 @@ import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { Follow } from '../../follow/entities/follow.entity';
 import { FileService } from '../../file/file.service';
+import { UserPushDevice } from '../../notice/entities/user-push-device.entity';
+import { hardDeleteUserCascade } from '../utils/user-hard-delete-cascade';
+import type { PurgeExpiredSoftDeletedUsersResult } from '../types/purge-soft-deleted.types';
 
 function encodeUserListCursor(createdAt: Date, userId: string): string {
   return Buffer.from(
@@ -97,6 +100,7 @@ export class UserService {
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
     private readonly fileService: FileService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async findBySocial(
@@ -235,6 +239,67 @@ export class UserService {
 
   findOne(userId: string) {
     return this.userRepository.findOne({ where: { userId } });
+  }
+
+  /**
+   * 본인 계정 소프트 삭제 — FCM 기기 행 삭제 후 `user.deleted_at` 설정.
+   * Access JWT는 이후 검증에서 거부, Refresh는 `findOne`에서 탈퇴 사용자 제외로 거부된다.
+   */
+  async deleteMyAccount(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { userId } });
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+    await this.userRepository.manager.transaction(async (em) => {
+      await em
+        .createQueryBuilder()
+        .delete()
+        .from(UserPushDevice)
+        .where('user_id = :userId', { userId })
+        .execute();
+      await em.softDelete(User, { userId });
+    });
+  }
+
+  /**
+   * `deletedAt` 이 retentionDays 일보다 오래된 소프트 삭제 사용자를 물리 삭제한다.
+   * 스케줄러에서 호출한다.
+   */
+  async purgeSoftDeletedUsersOlderThanDays(
+    retentionDays: number,
+  ): Promise<PurgeExpiredSoftDeletedUsersResult> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+
+    const candidates = await this.userRepository
+      .createQueryBuilder('u')
+      .withDeleted()
+      .where('u.deletedAt IS NOT NULL')
+      .andWhere('u.deletedAt < :cutoff', { cutoff })
+      .select(['u.userId'])
+      .getMany();
+
+    const purgedUserIds: string[] = [];
+    for (const { userId } of candidates) {
+      try {
+        await this.dataSource.transaction(async (manager) => {
+          await hardDeleteUserCascade(manager, userId);
+        });
+        purgedUserIds.push(userId);
+      } catch (err) {
+        this.logger.error(
+          `탈퇴 사용자 물리 삭제 실패 userId=${userId}`,
+          err instanceof Error ? err.stack : err,
+        );
+      }
+    }
+
+    return {
+      retentionDays,
+      cutoffAt: cutoff.toISOString(),
+      purgedCount: purgedUserIds.length,
+      purgedUserIds,
+    };
   }
 
   async getMyProfile(userId: string): Promise<ProfileResponseDto> {
@@ -401,17 +466,21 @@ export class UserService {
     const toSave: Education[] = [];
 
     for (const dto of educationDtos) {
+      const endedAt =
+        dto.endedAt != null && dto.endedAt !== ''
+          ? new Date(dto.endedAt)
+          : null;
       if (dto.educationId && existingMap.has(dto.educationId)) {
         const entity = existingMap.get(dto.educationId) as Education;
         entity.description = dto.description;
         entity.startedAt = new Date(dto.startedAt);
-        entity.endedAt = new Date(dto.endedAt);
+        entity.endedAt = endedAt;
         toSave.push(entity);
       } else {
         const entity = this.educationRepository.create({
           description: dto.description,
           startedAt: new Date(dto.startedAt),
-          endedAt: new Date(dto.endedAt),
+          endedAt,
           user,
         });
         toSave.push(entity);
@@ -446,17 +515,22 @@ export class UserService {
     const toSave: Career[] = [];
 
     for (const dto of careerDtos) {
+      const organization = dto.organization?.trim()
+        ? dto.organization.trim().slice(0, 10)
+        : null;
       if (dto.careerId && existingMap.has(dto.careerId)) {
         const entity = existingMap.get(dto.careerId) as Career;
         entity.description = dto.description;
         entity.startedAt = new Date(dto.startedAt);
         entity.endedAt = new Date(dto.endedAt);
+        entity.organization = organization;
         toSave.push(entity);
       } else {
         const entity = this.careerRepository.create({
           description: dto.description,
           startedAt: new Date(dto.startedAt),
           endedAt: new Date(dto.endedAt),
+          organization,
           user,
         });
         toSave.push(entity);
@@ -491,15 +565,24 @@ export class UserService {
     const toSave: Award[] = [];
 
     for (const dto of awardDtos) {
+      const awardedAt =
+        dto.awardedAt != null && dto.awardedAt !== ''
+          ? new Date(dto.awardedAt)
+          : null;
+      const organization = dto.organization?.trim()
+        ? dto.organization.trim().slice(0, 10)
+        : null;
       if (dto.awardId && existingMap.has(dto.awardId)) {
         const entity = existingMap.get(dto.awardId) as Award;
         entity.description = dto.description;
-        entity.awardedAt = new Date(dto.awardedAt);
+        entity.awardedAt = awardedAt;
+        entity.organization = organization;
         toSave.push(entity);
       } else {
         const entity = this.awardRepository.create({
           description: dto.description,
-          awardedAt: new Date(dto.awardedAt),
+          awardedAt,
+          organization,
           user,
         });
         toSave.push(entity);
@@ -644,6 +727,8 @@ export class UserService {
         category: item.category?.name ?? null,
         scheduledAt: item.scheduledAt,
         deadlineAt: item.deadlineAt,
+        priceType: item.priceType,
+        price: item.price,
         likeCount: announcementLikeCountMap.get(item.postId) ?? 0,
         viewCount: 0,
         commentCount: 0,
@@ -679,6 +764,60 @@ export class UserService {
     }));
   }
 
+  async getMyCommentPosts(userId: string) {
+    const comments = await this.commentRepository.find({
+      where: { user: { userId } },
+      order: { createdAt: 'DESC' },
+    });
+
+    const newsIds = [
+      ...new Set(
+        comments
+          .filter((c) => c.targetType === CommentTargetType.NEWS)
+          .map((c) => c.targetId),
+      ),
+    ];
+    const communityIds = [
+      ...new Set(
+        comments
+          .filter((c) => c.targetType === CommentTargetType.COMMUNITY)
+          .map((c) => c.targetId),
+      ),
+    ];
+
+    const [newsRows, communityRows] = await Promise.all([
+      newsIds.length
+        ? this.newsRepository.find({
+            where: { newsId: In(newsIds) },
+            select: ['newsId', 'title'],
+          })
+        : Promise.resolve([]),
+      communityIds.length
+        ? this.communityRepository.find({
+            where: { communityId: In(communityIds) },
+            select: ['communityId', 'title'],
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const newsTitleMap = new Map(newsRows.map((row) => [row.newsId, row.title]));
+    const communityTitleMap = new Map(
+      communityRows.map((row) => [row.communityId, row.title]),
+    );
+
+    return comments.map((comment) => ({
+      commentId: comment.id,
+      content: comment.content,
+      createdAt: comment.createdAt,
+      targetType: comment.targetType,
+      targetId: comment.targetId,
+      postTitle:
+        comment.targetType === CommentTargetType.NEWS
+          ? (newsTitleMap.get(comment.targetId) ?? null)
+          : (communityTitleMap.get(comment.targetId) ?? null),
+    }));
+  }
+
   async getMyAnnouncementPosts(userId: string) {
     const announcements = await this.announcementRepository.find({
       where: { userId },
@@ -698,6 +837,8 @@ export class UserService {
       scheduledAt: item.scheduledAt,
       deadlineAt: item.deadlineAt,
       status: item.status,
+      priceType: item.priceType,
+      price: item.price,
       likeCount: announcementLikeCountMap.get(item.postId) ?? 0,
       viewCount: 0,
       commentCount: 0,
@@ -725,6 +866,8 @@ export class UserService {
         'announcement.title AS title',
         'announcement.status AS status',
         'announcement.deadlineAt AS deadlineAt',
+        'announcement.price_type AS priceType',
+        'announcement.price AS price',
         'category.name AS categoryName',
       ])
       .where('scrap.user_id = :userId', { userId })
@@ -749,6 +892,8 @@ export class UserService {
       title: string;
       status: string;
       deadlineAt: Date;
+      priceType: string;
+      price: number;
       categoryName: string | null;
     }>();
 
@@ -763,6 +908,8 @@ export class UserService {
       type: row.categoryName ?? '기타',
       isRecruiting: row.status === 'OPEN',
       dDay: calcDDay(new Date(row.deadlineAt)),
+      priceType: row.priceType,
+      price: row.price,
     }));
 
     const nextCursor = hasMore
@@ -1119,6 +1266,8 @@ export class UserService {
             category: latestAnnouncement.category?.name ?? null,
             scheduledAt: latestAnnouncement.scheduledAt,
             deadlineAt: latestAnnouncement.deadlineAt,
+            priceType: latestAnnouncement.priceType,
+            price: latestAnnouncement.price,
             likeCount:
               latestAnnouncementLikeCountMap.get(latestAnnouncement.postId) ??
               0,

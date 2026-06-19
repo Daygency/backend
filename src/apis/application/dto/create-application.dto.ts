@@ -1,17 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsBoolean,
+  IsArray,
+  IsDateString,
   IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApplicationGender } from '../entities/application.entity';
+import type {
+  ApplicationAwardSnapshotItem,
+  ApplicationCareerSnapshotItem,
+  ApplicationCertificateSnapshotItem,
+  ApplicationEducationSnapshotItem,
+  ApplicationFileSnapshotItem,
+} from '../types/application-snapshot.types';
 
 /**
  * 지원폼 제출 DTO — application_config에서 true인 항목만 서비스에서 필수 검증
+ * file / education / career / award / certificate 는 스냅샷 JSON 배열 (항목 타입은 types 참고)
  */
 export class CreateApplicationDto {
   @ApiProperty({ description: '모집공고 post_id' })
@@ -22,82 +30,111 @@ export class CreateApplicationDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeName?: string;
+  name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: '생년월일(또는 출생 시각) — ISO 8601 문자열',
+    example: '1999-03-15',
+  })
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
-  includeBirth?: string;
+  @IsDateString()
+  birth?: string;
 
   @ApiPropertyOptional({ enum: ApplicationGender })
   @IsOptional()
   @IsEnum(ApplicationGender)
-  includeGender?: ApplicationGender;
+  gender?: ApplicationGender;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeMajor?: string;
+  major?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeMajorDetail?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  includeEducation?: string;
+  majorDetail?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeCategory?: string;
+  category?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  includeMusic?: string;
+  music?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  includeAddress?: string;
+  address?: string;
 
-  @ApiPropertyOptional({ description: '사진/영상/파일 첨부 여부' })
+  @ApiPropertyOptional({
+    description: '첨부 파일 스냅샷 (ApplicationFileSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
   @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true' || value === 1)
-  @IsBoolean()
-  includeFile?: boolean;
+  @IsArray()
+  file?: ApplicationFileSnapshotItem[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  includeLink?: string;
+  link?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  includeDepartment?: string;
-
-  @ApiPropertyOptional({ description: '경력 관련 플래그' })
-  @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true' || value === 1)
-  @IsBoolean()
-  includeCareer?: boolean;
+  department?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  includeIntroduce?: string;
+  introduce?: string;
+
+  @ApiPropertyOptional({
+    description: '학력 스냅샷 (ApplicationEducationSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
+  @IsOptional()
+  @IsArray()
+  education?: ApplicationEducationSnapshotItem[];
+
+  @ApiPropertyOptional({
+    description: '경력 스냅샷 (ApplicationCareerSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
+  @IsOptional()
+  @IsArray()
+  career?: ApplicationCareerSnapshotItem[];
+
+  @ApiPropertyOptional({
+    description: '수상 스냅샷 (ApplicationAwardSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
+  @IsOptional()
+  @IsArray()
+  award?: ApplicationAwardSnapshotItem[];
+
+  @ApiPropertyOptional({
+    description: '수료증·자격증 스냅샷 (ApplicationCertificateSnapshotItem[])',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
+  @IsOptional()
+  @IsArray()
+  certificate?: ApplicationCertificateSnapshotItem[];
 }

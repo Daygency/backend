@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -17,6 +20,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApplicationService } from './application.service';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { UpdateApplicationDto } from './dto/update-application.dto';
+import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
 
 @ApiTags('applications')
 @Controller('applications')
@@ -27,7 +31,10 @@ export class ApplicationController {
   @Post()
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
-  @ApiOperation({ summary: '공고에 지원서 제출 (공고당·유저당 1건)' })
+  @ApiOperation({
+    summary:
+      '공고에 지원서 제출 (동일 공고에 삭제되지 않은 활성 지원은 1건만)',
+  })
   create(
     @Request() req: { user: { id: string } },
     @Body() dto: CreateApplicationDto,
@@ -76,6 +83,25 @@ export class ApplicationController {
     return this.applicationService.findOneById(id, req.user.id);
   }
 
+  @Patch(':id/status')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      '지원 심사 상태 변경 (해당 공고 작성자만: 서류 검토·합격·불합격 등)',
+  })
+  updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateApplicationStatusDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.applicationService.updateStatusByRecruiter(
+      req.user.id,
+      id,
+      dto,
+    );
+  }
+
   @Patch(':id')
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
@@ -89,5 +115,20 @@ export class ApplicationController {
     @Request() req: { user: { id: string } },
   ) {
     return this.applicationService.update(req.user.id, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      '내 지원서 소프트 삭제 (지원자 본인만, 삭제 후 동일 공고 재지원 가능)',
+  })
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: { user: { id: string } },
+  ): Promise<void> {
+    await this.applicationService.removeByApplicant(req.user.id, id);
   }
 }

@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,6 +14,7 @@ import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { ListAnnouncementQueryDto } from './dto/list-announcement-query.dto';
 import {
   Announcement,
+  AnnouncementPriceType,
   AnnouncementStatus,
 } from './entities/announcement.entity';
 import { AnnouncementCategory } from './entities/announcement-category.entity';
@@ -20,6 +22,16 @@ import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
 import { File } from '../file/entities/file.entity';
 import { AnnouncementFileService } from './announcement-file.service';
+import {
+  Application,
+  ApplicationStatus,
+} from '../application/entities/application.entity';
+import { NoticeTargetType } from '../notice/entities/notice.entity';
+import { NoticeService } from '../notice/notice.service';
+import {
+  ChatRoom,
+  ChatRoomKind,
+} from '../chat/entities/chat-room.entity';
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -33,13 +45,55 @@ function calcDDay(deadlineAt: Date): string {
   return '마감';
 }
 
+/** 공연(예정)일시가 현재보다 이전이면 자동 완료로 간주 */
+function isScheduledPast(scheduledAt: Date): boolean {
+  return new Date(scheduledAt).getTime() < Date.now();
+}
+
+/** 수동 완료이거나 공연일이 지난 경우 */
+function effectiveCompleted(a: Announcement): boolean {
+  return Boolean(a.completedManually) || isScheduledPast(a.scheduledAt);
+}
+
+/** PATCH로 본문·메타를 바꾼 경우 (목록 아이템 + 전공) */
+export type AnnouncementUpdateFullResponse = ReturnType<typeof toListItem> & {
+  majors: Array<{ majorId: string; name: string }>;
+};
+
+/** PATCH로 조기마감만 한 경우 */
+export type AnnouncementUpdateEarlyCloseResponse = {
+  postId: string;
+  status: AnnouncementStatus;
+  isRecruiting: boolean;
+};
+
+/** PATCH로 completed만 바꾼 경우 */
+export type AnnouncementUpdateCompletedOnlyResponse = {
+  postId: string;
+  completed: boolean;
+};
+
+export type AnnouncementUpdateResponse =
+  | AnnouncementUpdateFullResponse
+  | AnnouncementUpdateEarlyCloseResponse
+  | AnnouncementUpdateCompletedOnlyResponse;
+
 export interface AnnouncementListResponse {
   items: Array<{
     postId: string;
     title: string;
+    address: string;
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    deadlineAt: Date;
+    /** 공연·계약 종료 여부(수동 완료 또는 `scheduledAt` 경과) */
+    completed: boolean;
+    priceType: AnnouncementPriceType;
+    /** 금액(원), 0 이상 */
+    price: number;
+    /** 누적 조회수 (목록 조회 시 DB 값, 상세 진입 시 증가분은 반영되지 않음) */
+    viewCount: number;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
@@ -50,15 +104,85 @@ function toListItem(a: Announcement) {
   return {
     postId: a.postId,
     title: a.title,
+    address: a.address,
     type: a.category?.name ?? '기타',
     isRecruiting: a.status === AnnouncementStatus.OPEN,
     dDay: calcDDay(a.deadlineAt),
+    deadlineAt: a.deadlineAt,
+    completed: effectiveCompleted(a),
+    priceType: a.priceType,
+    price: a.price,
+    viewCount: Number(a.viewCount ?? 0),
   };
+}
+
+/** 지원자가 있더라도 허용되는 수정: `status`만 `CLOSED`(조기마감) */
+function isEarlyCloseOnlyUpdate(dto: UpdateAnnouncementDto): boolean {
+  if (dto.status !== AnnouncementStatus.CLOSED) {
+    return false;
+  }
+  return (
+    dto.completed === undefined &&
+    dto.title === undefined &&
+    dto.content === undefined &&
+    dto.deadlineAt === undefined &&
+    dto.scheduledAt === undefined &&
+    dto.address === undefined &&
+    dto.priceType === undefined &&
+    dto.price === undefined &&
+    dto.fileId === undefined &&
+    dto.categoryId === undefined &&
+    dto.majorIds === undefined &&
+    dto.applicationConfig === undefined
+  );
+}
+
+/** 지원자가 있어도 `completed`만 바꾸는 수정 허용 */
+function isCompletedOnlyUpdate(dto: UpdateAnnouncementDto): boolean {
+  if (dto.completed === undefined) {
+    return false;
+  }
+  return (
+    dto.status === undefined &&
+    dto.title === undefined &&
+    dto.content === undefined &&
+    dto.deadlineAt === undefined &&
+    dto.scheduledAt === undefined &&
+    dto.address === undefined &&
+    dto.priceType === undefined &&
+    dto.price === undefined &&
+    dto.fileId === undefined &&
+    dto.categoryId === undefined &&
+    dto.majorIds === undefined &&
+    dto.applicationConfig === undefined
+  );
 }
 
 @Injectable()
 export class AnnouncementService {
   private readonly logger = new Logger(AnnouncementService.name);
+
+  /**
+   * 모집 전공 ID 목록을 엔티티로 조회. 빈 배열이면 연결 없음.
+   * ID가 하나라도 DB에 없으면 400.
+   */
+  private async resolveMajorsByIds(
+    majorIds: string[] | undefined,
+  ): Promise<Major[]> {
+    if (!majorIds?.length) {
+      return [];
+    }
+    const unique = [...new Set(majorIds)];
+    const majors = await this.majorRepository.find({
+      where: { majorId: In(unique) },
+    });
+    if (majors.length !== unique.length) {
+      throw new BadRequestException(
+        '존재하지 않는 전공 ID가 포함되어 있습니다.',
+      );
+    }
+    return majors;
+  }
 
   constructor(
     @InjectRepository(Announcement)
@@ -69,8 +193,71 @@ export class AnnouncementService {
     private readonly majorRepository: Repository<Major>,
     @InjectRepository(AnnouncementCategory)
     private readonly categoryRepository: Repository<AnnouncementCategory>,
+    @InjectRepository(Application)
+    private readonly applicationRepository: Repository<Application>,
+    @InjectRepository(ChatRoom)
+    private readonly chatRoomRepository: Repository<ChatRoom>,
     private readonly announcementFileService: AnnouncementFileService,
+    private readonly noticeService: NoticeService,
   ) {}
+
+  private async loadChatRoomCountsByPostIds(
+    postIds: string[],
+  ): Promise<Map<string, number>> {
+    if (postIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.chatRoomRepository
+      .createQueryBuilder('room')
+      .innerJoin('room.announcement', 'announcement')
+      .select('announcement.postId', 'postId')
+      .addSelect('COUNT(room.id)', 'count')
+      .where('announcement.postId IN (:...postIds)', { postIds })
+      .andWhere('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
+      .andWhere('room.deletedAt IS NULL')
+      .groupBy('announcement.postId')
+      .getRawMany<{ postId: string; count: string }>();
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      map.set(row.postId, Number(row.count) || 0);
+    }
+    return map;
+  }
+
+  private async notifyAcceptedPerformersCompleted(
+    actorUserId: string,
+    announcement: Announcement,
+  ): Promise<void> {
+    const accepted = await this.applicationRepository.find({
+      where: {
+        postId: announcement.postId,
+        status: ApplicationStatus.ACCEPTED,
+      },
+      select: ['userId'],
+    });
+    const recipientUserIds = [...new Set(accepted.map((a) => a.userId))].filter(
+      (id) => id !== actorUserId,
+    );
+    if (recipientUserIds.length === 0) {
+      return;
+    }
+    const titleCut =
+      announcement.title.length > 80
+        ? `${announcement.title.slice(0, 80)}…`
+        : announcement.title;
+    const content =
+      `"${titleCut}" 공고가 완료되어 활동 후기를 작성할 수 있어요.`.slice(
+        0,
+        500,
+      );
+    await this.noticeService.createAndDispatchPush({
+      actorUserId,
+      targetType: NoticeTargetType.APPLICATION,
+      targetId: announcement.postId,
+      content,
+      recipientUserIds,
+    });
+  }
 
   /**
    * 모집공고 작성 (announcement + application_config 함께 저장)
@@ -83,9 +270,17 @@ export class AnnouncementService {
   ): Promise<{
     postId: string;
     title: string;
+    address: string;
     type: string;
     isRecruiting: boolean;
     dDay: string;
+    deadlineAt: Date;
+    completed: boolean;
+    priceType: AnnouncementPriceType;
+    price: number;
+    viewCount: number;
+    /** 저장된 모집 전공 (없으면 빈 배열) */
+    majors: Array<{ majorId: string; name: string }>;
     attachments: Array<{
       fileId: string;
       imgUrl: string;
@@ -101,12 +296,7 @@ export class AnnouncementService {
       throw new NotFoundException('공고 유형을 찾을 수 없습니다.');
     }
 
-    let majors: Major[] = [];
-    if (dto.majorIds?.length) {
-      majors = await this.majorRepository.find({
-        where: { majorId: In(dto.majorIds) },
-      });
-    }
+    const majors = await this.resolveMajorsByIds(dto.majorIds);
 
     const announcement = this.announcementRepository.create({
       userId,
@@ -116,6 +306,8 @@ export class AnnouncementService {
       scheduledAt: new Date(dto.scheduledAt),
       status: dto.status ?? AnnouncementStatus.OPEN,
       address: dto.address,
+      priceType: dto.priceType ?? AnnouncementPriceType.PENDING,
+      price: dto.price ?? 0,
       fileId: dto.fileId ?? null,
       category,
       majors,
@@ -157,6 +349,7 @@ export class AnnouncementService {
     const list = toListItem(withCategory ?? saved);
     return {
       ...list,
+      majors: majors.map((m) => ({ majorId: m.majorId, name: m.name })),
       attachments: uploaded.map((f) => ({
         fileId: f.fileId,
         imgUrl: f.imgUrl,
@@ -185,7 +378,7 @@ export class AnnouncementService {
    * 공고 목록 조회 (무한스크롤 + 필터)
    * - cursor: 마지막 postId (없으면 첫 페이지)
    * - limit: 페이지 크기 (기본 20, 최대 50)
-   * - status, categoryId, majorIds: 필터 파라미터
+   * - status, categoryId, majorIds, priceType: 필터 파라미터
    */
   async findList(
     query: ListAnnouncementQueryDto,
@@ -196,6 +389,7 @@ export class AnnouncementService {
       status,
       categoryId,
       majorIds: majorIdsStr,
+      priceType,
     } = query;
 
     const qb = this.announcementRepository
@@ -215,6 +409,9 @@ export class AnnouncementService {
         categoryId: categoryId,
       });
     }
+    if (priceType) {
+      qb.andWhere('announcement.priceType = :priceType', { priceType });
+    }
     if (majorIdsStr) {
       const str = majorIdsStr;
       const majorIds: string[] = str
@@ -231,13 +428,7 @@ export class AnnouncementService {
     const rows = await qb.getMany();
 
     const hasMore = rows.length > limit;
-    const items = (hasMore ? rows.slice(0, limit) : rows).map((a) => ({
-      postId: a.postId,
-      title: a.title,
-      type: a.category?.name ?? '기타',
-      isRecruiting: a.status === AnnouncementStatus.OPEN,
-      dDay: calcDDay(a.deadlineAt),
-    }));
+    const items = (hasMore ? rows.slice(0, limit) : rows).map(toListItem);
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
 
@@ -257,6 +448,7 @@ export class AnnouncementService {
       status,
       categoryId,
       majorIds: majorIdsStr,
+      priceType,
     } = query;
 
     const qb = this.announcementRepository
@@ -277,6 +469,9 @@ export class AnnouncementService {
         categoryId: categoryId,
       });
     }
+    if (priceType) {
+      qb.andWhere('announcement.priceType = :priceType', { priceType });
+    }
     if (majorIdsStr) {
       const str = majorIdsStr;
       const majorIds: string[] = str
@@ -293,12 +488,13 @@ export class AnnouncementService {
     const rows = await qb.getMany();
 
     const hasMore = rows.length > limit;
-    const items = (hasMore ? rows.slice(0, limit) : rows).map((a) => ({
-      postId: a.postId,
-      title: a.title,
-      type: a.category?.name ?? '기타',
-      isRecruiting: a.status === AnnouncementStatus.OPEN,
-      dDay: calcDDay(a.deadlineAt),
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const roomCounts = await this.loadChatRoomCountsByPostIds(
+      slice.map((row) => row.postId),
+    );
+    const items = slice.map((row) => ({
+      ...toListItem(row),
+      chatRoomCount: roomCounts.get(row.postId) ?? 0,
     }));
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
@@ -329,27 +525,27 @@ export class AnnouncementService {
     this.logger.log(
       `[공고 상세] postId=${id}, currentUserId=${currentUserId ?? 'undefined'}, authorId=${authorId}, isMine=${isMine}`,
     );
+
+    await this.announcementRepository.increment({ postId: id }, 'viewCount', 1);
+    announcement.viewCount = Number(announcement.viewCount ?? 0) + 1;
+
     return {
       ...announcement,
+      completed: effectiveCompleted(announcement),
       isMine,
     };
   }
 
   /**
    * 모집공고 수정. 작성자만 수정 가능.
-   * 반환: 목록 아이템 형태 (create와 동일)
+   * 조기마감·completed만 바꾸는 요청은 최소 필드만 반환하고, 그 외는 목록 아이템+전공.
+   * 지원자가 있으면 조기마감(`status: CLOSED`만) 또는 `completed`만 변경 허용.
    */
   async update(
     userId: string,
     id: string,
     dto: UpdateAnnouncementDto,
-  ): Promise<{
-    postId: string;
-    title: string;
-    type: string;
-    isRecruiting: boolean;
-    dDay: string;
-  }> {
+  ): Promise<AnnouncementUpdateResponse> {
     const announcement = await this.announcementRepository.findOne({
       where: { postId: id },
       relations: ['category', 'majors'],
@@ -361,6 +557,40 @@ export class AnnouncementService {
       throw new ForbiddenException('수정 권한이 없습니다.');
     }
 
+    const applicationCount = await this.applicationRepository.count({
+      where: { postId: id },
+    });
+
+    if (isEarlyCloseOnlyUpdate(dto)) {
+      announcement.status = AnnouncementStatus.CLOSED;
+      await this.announcementRepository.save(announcement);
+      return {
+        postId: id,
+        status: AnnouncementStatus.CLOSED,
+        isRecruiting: false,
+      };
+    }
+
+    if (isCompletedOnlyUpdate(dto)) {
+      const wasCompleted = effectiveCompleted(announcement);
+      announcement.completedManually = Boolean(dto.completed);
+      await this.announcementRepository.save(announcement);
+      const isCompleted = effectiveCompleted(announcement);
+      if (!wasCompleted && isCompleted && dto.completed === true) {
+        await this.notifyAcceptedPerformersCompleted(userId, announcement);
+      }
+      return {
+        postId: id,
+        completed: isCompleted,
+      };
+    }
+
+    if (applicationCount > 0) {
+      throw new ForbiddenException(
+        '지원자가 있는 공고는 조기마감(상태만 마감) 또는 완료 표시(completed)만 변경할 수 있습니다.',
+      );
+    }
+
     if (dto.title !== undefined) announcement.title = dto.title;
     if (dto.content !== undefined) announcement.content = dto.content;
     if (dto.deadlineAt !== undefined)
@@ -369,7 +599,13 @@ export class AnnouncementService {
       announcement.scheduledAt = new Date(dto.scheduledAt);
     if (dto.status !== undefined) announcement.status = dto.status;
     if (dto.address !== undefined) announcement.address = dto.address;
+    if (dto.priceType !== undefined) announcement.priceType = dto.priceType;
+    if (dto.price !== undefined) announcement.price = dto.price;
     if (dto.fileId !== undefined) announcement.fileId = dto.fileId ?? null;
+    const wasCompleted = effectiveCompleted(announcement);
+    if (dto.completed !== undefined) {
+      announcement.completedManually = Boolean(dto.completed);
+    }
 
     if (dto.categoryId !== undefined) {
       const category = await this.categoryRepository.findOne({
@@ -382,15 +618,14 @@ export class AnnouncementService {
     }
 
     if (dto.majorIds !== undefined) {
-      announcement.majors =
-        dto.majorIds.length > 0
-          ? await this.majorRepository.find({
-              where: { majorId: In(dto.majorIds) },
-            })
-          : [];
+      announcement.majors = await this.resolveMajorsByIds(dto.majorIds);
     }
 
     await this.announcementRepository.save(announcement);
+    const isCompleted = effectiveCompleted(announcement);
+    if (!wasCompleted && isCompleted && dto.completed === true) {
+      await this.notifyAcceptedPerformersCompleted(userId, announcement);
+    }
 
     if (dto.applicationConfig !== undefined) {
       let config = await this.applicationConfigRepository.findOne({
@@ -414,9 +649,14 @@ export class AnnouncementService {
 
     const updated = await this.announcementRepository.findOne({
       where: { postId: id },
-      relations: ['category'],
+      relations: ['category', 'majors'],
     });
-    return toListItem(updated!);
+    const list = toListItem(updated!);
+    const majorRows = updated!.majors ?? [];
+    return {
+      ...list,
+      majors: majorRows.map((m) => ({ majorId: m.majorId, name: m.name })),
+    };
   }
 
   /**

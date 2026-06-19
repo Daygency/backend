@@ -17,6 +17,8 @@ export enum NoticeTargetType {
   FOLLOW = 'FOLLOW',
   APPLICATION = 'APPLICATION',
   LIKE = 'LIKE',
+  /** 공연 완료 후 상대방이 남긴 활동 후기 */
+  REVIEW = 'REVIEW',
 }
 
 @Entity('notice')

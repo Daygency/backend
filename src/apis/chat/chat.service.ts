@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import { ChatGateway } from './chat.gateway';
 import { Announcement } from '../announcement/entities/announcement.entity';
 import { Application } from '../application/entities/application.entity';
@@ -15,6 +15,7 @@ import { User } from '../user/entities/user.entity';
 import { CreateAnnouncementChatRoomDto } from './dto/create-announcement-chat-room.dto';
 import { ListChatRoomsQueryDto } from './dto/list-chat-rooms-query.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
+import { ChatRoomMember } from './entities/chat-room-member.entity';
 import { ChatRoom, ChatRoomKind } from './entities/chat-room.entity';
 import { Message } from './entities/message.entity';
 
@@ -51,6 +52,8 @@ export class ChatService {
   constructor(
     @InjectRepository(ChatRoom)
     private readonly chatRoomRepo: Repository<ChatRoom>,
+    @InjectRepository(ChatRoomMember)
+    private readonly chatRoomMemberRepo: Repository<ChatRoomMember>,
     @InjectRepository(Message)
     private readonly messageRepo: Repository<Message>,
     @InjectRepository(User)
@@ -63,8 +66,65 @@ export class ChatService {
     private readonly chatGateway: ChatGateway,
   ) {}
 
-  private static orderParticipantPair(a: string, b: string): [string, string] {
-    return a < b ? [a, b] : [b, a];
+  /** COFFEE: 정확히 2명(삭제되지 않은 멤버)만 있는 방 중 두 사용자를 모두 포함하는 방 */
+  private async findCoffeeRoomBetweenUsers(
+    userIdA: string,
+    userIdB: string,
+    em?: EntityManager,
+  ): Promise<ChatRoom | null> {
+    const roomRepo = em ? em.getRepository(ChatRoom) : this.chatRoomRepo;
+    return roomRepo
+      .createQueryBuilder('room')
+      .where('room.kind = :kind', { kind: ChatRoomKind.COFFEE })
+      .andWhere('room.deletedAt IS NULL')
+      .andWhere(
+        '(SELECT COUNT(*) FROM chat_room_member rm WHERE rm.chat_room_id = room.id AND rm.deleted_at IS NULL) = 2',
+      )
+      .andWhere(
+        'EXISTS (SELECT 1 FROM chat_room_member m1 WHERE m1.chat_room_id = room.id AND m1.user_id = :a AND m1.deleted_at IS NULL)',
+        { a: userIdA },
+      )
+      .andWhere(
+        'EXISTS (SELECT 1 FROM chat_room_member m2 WHERE m2.chat_room_id = room.id AND m2.user_id = :b AND m2.deleted_at IS NULL)',
+        { b: userIdB },
+      )
+      .getOne();
+  }
+
+  private async recoverChatRoomAndMembers(roomId: string): Promise<void> {
+    const room = await this.chatRoomRepo.findOne({
+      where: { id: roomId },
+      withDeleted: true,
+    });
+    if (room?.deletedAt) {
+      await this.chatRoomRepo.recover(room);
+    }
+    const members = await this.chatRoomMemberRepo.find({
+      where: { chatRoom: { id: roomId } },
+      withDeleted: true,
+    });
+    for (const m of members) {
+      if (m.deletedAt) {
+        await this.chatRoomMemberRepo.recover(m);
+      }
+    }
+  }
+
+  private async addMembers(
+    em: EntityManager | null,
+    roomId: string,
+    userIds: string[],
+  ): Promise<void> {
+    const repo = em
+      ? em.getRepository(ChatRoomMember)
+      : this.chatRoomMemberRepo;
+    const rows = userIds.map((uid) =>
+      repo.create({
+        chatRoom: { id: roomId } as ChatRoom,
+        user: { userId: uid } as User,
+      }),
+    );
+    await repo.save(rows);
   }
 
   async getOrCreateCoffeeRoom(
@@ -78,26 +138,35 @@ export class ChatService {
     if (!peer) {
       throw new NotFoundException('대화 상대 사용자를 찾을 수 없습니다.');
     }
-    const [low, high] = ChatService.orderParticipantPair(userId, peerUserId);
-    let room = await this.chatRoomRepo.findOne({
-      where: {
-        kind: ChatRoomKind.COFFEE,
-        participantLowId: low,
-        participantHighId: high,
-      },
-    });
-    if (!room) {
-      room = this.chatRoomRepo.create({
-        kind: ChatRoomKind.COFFEE,
-        participantLowId: low,
-        participantHighId: high,
-        postId: null,
-        applicantUserId: null,
-        formId: null,
-      });
-      room = await this.chatRoomRepo.save(room);
+
+    const existing = await this.findCoffeeRoomBetweenUsers(userId, peerUserId);
+    if (existing) {
+      return existing;
     }
-    return room;
+
+    return this.chatRoomRepo.manager.transaction(async (em) => {
+      const found = await this.findCoffeeRoomBetweenUsers(
+        userId,
+        peerUserId,
+        em,
+      );
+      if (found) {
+        return found;
+      }
+      const roomRepo = em.getRepository(ChatRoom);
+      const room = await roomRepo.save(
+        roomRepo.create({
+          kind: ChatRoomKind.COFFEE,
+          announcement: null,
+          application: null,
+        }),
+      );
+      await this.addMembers(em, room.id, [userId, peerUserId]);
+      return roomRepo.findOneOrFail({
+        where: { id: room.id },
+        relations: { members: { user: true } },
+      });
+    });
   }
 
   async createAnnouncementChatRoom(
@@ -148,22 +217,56 @@ export class ChatService {
     let room = await this.chatRoomRepo.findOne({
       where: {
         kind: ChatRoomKind.ANNOUNCEMENT,
-        postId: dto.postId,
-        applicantUserId,
+        application: { id: submitted.id },
       },
+      withDeleted: true,
+      relations: { members: true },
     });
-    if (!room) {
+    if (room) {
+      if (room.deletedAt) {
+        await this.recoverChatRoomAndMembers(room.id);
+        room = await this.chatRoomRepo.findOneOrFail({
+          where: { id: room.id },
+          relations: { members: true },
+        });
+      }
+      return room;
+    }
+    try {
       room = this.chatRoomRepo.create({
         kind: ChatRoomKind.ANNOUNCEMENT,
-        postId: dto.postId,
-        applicantUserId,
-        participantLowId: null,
-        participantHighId: null,
-        formId: submitted.id,
+        announcement: { postId: dto.postId } as Announcement,
+        application: { id: submitted.id } as Application,
       });
       room = await this.chatRoomRepo.save(room);
+      await this.addMembers(null, room.id, [post.userId, applicantUserId]);
+    } catch (err) {
+      const dup =
+        err instanceof QueryFailedError &&
+        (err as QueryFailedError).driverError &&
+        (err as QueryFailedError).driverError['errno'] === 1062;
+      if (!dup) {
+        throw err;
+      }
+      room = await this.chatRoomRepo.findOne({
+        where: {
+          kind: ChatRoomKind.ANNOUNCEMENT,
+          application: { id: submitted.id },
+        },
+        withDeleted: true,
+        relations: { members: true },
+      });
+      if (!room) {
+        throw err;
+      }
+      if (room.deletedAt) {
+        await this.recoverChatRoomAndMembers(room.id);
+      }
     }
-    return room;
+    return this.chatRoomRepo.findOneOrFail({
+      where: { id: room!.id },
+      relations: { members: true },
+    });
   }
 
   /**
@@ -175,56 +278,65 @@ export class ChatService {
     postId: string,
     applicationId: string,
   ): Promise<void> {
-    let room = await this.chatRoomRepo.findOne({
+    const existing = await this.chatRoomRepo.findOne({
       where: {
         kind: ChatRoomKind.ANNOUNCEMENT,
-        postId,
-        applicantUserId,
+        application: { id: applicationId },
       },
+      withDeleted: true,
     });
-    let isNewRoom = false;
-    if (!room) {
-      room = this.chatRoomRepo.create({
-        kind: ChatRoomKind.ANNOUNCEMENT,
-        postId,
-        applicantUserId,
-        participantLowId: null,
-        participantHighId: null,
-        formId: applicationId,
-      });
-      try {
-        room = await this.chatRoomRepo.save(room);
-        isNewRoom = true;
-      } catch (err) {
-        const dup =
-          err instanceof QueryFailedError &&
-          (err as QueryFailedError).driverError &&
-          (err as QueryFailedError).driverError['errno'] === 1062;
-        if (!dup) {
-          throw err;
-        }
-        room = await this.chatRoomRepo.findOne({
-          where: {
-            kind: ChatRoomKind.ANNOUNCEMENT,
-            postId,
-            applicantUserId,
-          },
-        });
-        if (!room) {
-          throw err;
-        }
+    if (existing) {
+      if (existing.deletedAt) {
+        await this.recoverChatRoomAndMembers(existing.id);
       }
-    }
-    if (!room) {
-      return;
-    }
-
-    if (!isNewRoom) {
       return;
     }
 
     const post = await this.announcementRepo.findOne({ where: { postId } });
-    const title = post?.title?.trim() ? post.title.trim() : '공고';
+    if (!post) {
+      return;
+    }
+
+    let room = this.chatRoomRepo.create({
+      kind: ChatRoomKind.ANNOUNCEMENT,
+      announcement: { postId } as Announcement,
+      application: { id: applicationId } as Application,
+    });
+    let isNewRoom = false;
+    try {
+      room = await this.chatRoomRepo.save(room);
+      isNewRoom = true;
+    } catch (err) {
+      const dup =
+        err instanceof QueryFailedError &&
+        (err as QueryFailedError).driverError &&
+        (err as QueryFailedError).driverError['errno'] === 1062;
+      if (!dup) {
+        throw err;
+      }
+      room = (await this.chatRoomRepo.findOne({
+        where: {
+          kind: ChatRoomKind.ANNOUNCEMENT,
+          application: { id: applicationId },
+        },
+        withDeleted: true,
+      }))!;
+      if (!room) {
+        throw err;
+      }
+      if (room.deletedAt) {
+        await this.recoverChatRoomAndMembers(room.id);
+      }
+      return;
+    }
+
+    if (isNewRoom) {
+      await this.addMembers(null, room.id, [post.userId, applicantUserId]);
+    } else {
+      return;
+    }
+
+    const title = post.title?.trim() ? post.title.trim() : '공고';
     const msg = `[${title}] 공고에 신청하였습니다.`;
     await this.createMessage(room.id, applicantUserId, msg);
   }
@@ -235,31 +347,18 @@ export class ChatService {
   ): Promise<ChatRoom> {
     const room = await this.chatRoomRepo.findOne({
       where: { id: roomId },
-      relations: { announcement: true },
+      relations: { announcement: true, application: true },
     });
     if (!room) {
       throw new NotFoundException('채팅방을 찾을 수 없습니다.');
     }
-    if (room.kind === ChatRoomKind.COFFEE) {
-      if (
-        room.participantLowId !== userId &&
-        room.participantHighId !== userId
-      ) {
-        throw new ForbiddenException('이 채팅방에 참여할 수 없습니다.');
-      }
-      return room;
-    }
-    const post = room.announcement
-      ? room.announcement
-      : await this.announcementRepo.findOne({
-          where: { postId: room.postId! },
-        });
-    if (!post) {
-      throw new NotFoundException('연결된 공고를 찾을 수 없습니다.');
-    }
-    const isRecruiter = post.userId === userId;
-    const isApplicant = room.applicantUserId === userId;
-    if (!isRecruiter && !isApplicant) {
+    const member = await this.chatRoomMemberRepo.findOne({
+      where: {
+        chatRoom: { id: roomId },
+        user: { userId },
+      },
+    });
+    if (!member) {
       throw new ForbiddenException('이 채팅방에 참여할 수 없습니다.');
     }
     return room;
@@ -335,11 +434,12 @@ export class ChatService {
     const limit = query.limit ?? 20;
     const qb = this.chatRoomRepo
       .createQueryBuilder('room')
+      .innerJoin('room.members', 'mb')
+      .innerJoin('mb.user', 'u')
       .where('room.kind = :kind', { kind: ChatRoomKind.COFFEE })
-      .andWhere(
-        '(room.participantLowId = :uid OR room.participantHighId = :uid)',
-        { uid: userId },
-      )
+      .andWhere('room.deletedAt IS NULL')
+      .andWhere('mb.deletedAt IS NULL')
+      .andWhere('u.userId = :uid', { uid: userId })
       .orderBy('room.id', 'DESC')
       .take(limit + 1);
     if (query.cursor) {
@@ -358,8 +458,10 @@ export class ChatService {
     const qb = this.chatRoomRepo
       .createQueryBuilder('room')
       .leftJoinAndSelect('room.announcement', 'announcement')
+      .innerJoin('room.application', 'app')
       .where('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
-      .andWhere('room.applicantUserId = :uid', { uid: userId })
+      .andWhere('room.deletedAt IS NULL')
+      .andWhere('app.userId = :uid', { uid: userId })
       .orderBy('room.id', 'DESC')
       .take(limit + 1);
     if (query.cursor) {
@@ -387,7 +489,8 @@ export class ChatService {
       .createQueryBuilder('room')
       .leftJoinAndSelect('room.announcement', 'announcement')
       .where('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
-      .andWhere('room.postId = :postId', { postId })
+      .andWhere('room.deletedAt IS NULL')
+      .andWhere('announcement.postId = :postId', { postId })
       .orderBy('room.id', 'DESC')
       .take(limit + 1);
     if (query.cursor) {
@@ -410,6 +513,26 @@ export class ChatService {
     return { items: mapped, nextCursor, hasMore };
   }
 
+  private async loadMembersByRoomIds(
+    roomIds: string[],
+  ): Promise<Map<string, ChatRoomMember[]>> {
+    if (roomIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.chatRoomMemberRepo.find({
+      where: { chatRoom: { id: In(roomIds) } },
+      relations: { user: true, chatRoom: true },
+    });
+    const map = new Map<string, ChatRoomMember[]>();
+    for (const m of rows) {
+      const rid = m.chatRoom.id;
+      const list = map.get(rid) ?? [];
+      list.push(m);
+      map.set(rid, list);
+    }
+    return map;
+  }
+
   private async mapRoomsToListItems(
     rooms: ChatRoom[],
     currentUserId: string,
@@ -417,10 +540,12 @@ export class ChatService {
     if (rooms.length === 0) return [];
     const roomIds = rooms.map((r) => r.id);
     const lastByRoom = await this.loadLastMessageByRoomIds(roomIds);
+    const membersByRoom = await this.loadMembersByRoomIds(roomIds);
 
     const peerIds = new Set<string>();
     for (const room of rooms) {
-      const pid = this.resolvePeerUserId(room, currentUserId);
+      const members = membersByRoom.get(room.id) ?? [];
+      const pid = this.resolvePeerUserId(members, currentUserId);
       if (pid) peerIds.add(pid);
     }
     const peers = await this.userRepo.find({
@@ -429,7 +554,8 @@ export class ChatService {
     const peerMap = new Map(peers.map((u) => [u.userId, u]));
 
     return rooms.map((room) => {
-      const peerId = this.resolvePeerUserId(room, currentUserId);
+      const members = membersByRoom.get(room.id) ?? [];
+      const peerId = this.resolvePeerUserId(members, currentUserId);
       const peerUser = peerId ? peerMap.get(peerId) : undefined;
       const post =
         room.kind === ChatRoomKind.ANNOUNCEMENT && room.announcement
@@ -462,23 +588,13 @@ export class ChatService {
     });
   }
 
+  /** 1:1 UI: 나를 제외한 첫 멤버 (그룹 확장 시 목록/이름 정책 변경) */
   private resolvePeerUserId(
-    room: ChatRoom,
+    members: ChatRoomMember[],
     currentUserId: string,
   ): string | null {
-    if (room.kind === ChatRoomKind.COFFEE) {
-      if (room.participantLowId === currentUserId) {
-        return room.participantHighId;
-      }
-      if (room.participantHighId === currentUserId) {
-        return room.participantLowId;
-      }
-      return null;
-    }
-    if (room.applicantUserId === currentUserId) {
-      return room.announcement?.userId ?? null;
-    }
-    return room.applicantUserId;
+    const others = members.filter((m) => m.user.userId !== currentUserId);
+    return others[0]?.user.userId ?? null;
   }
 
   private async loadLastMessageByRoomIds(
@@ -501,8 +617,10 @@ export class ChatService {
          SELECT chat_room_id, MAX(created_at) AS max_c
          FROM message
          WHERE chat_room_id IN (${placeholders})
+           AND deleted_at IS NULL
          GROUP BY chat_room_id
-       ) t ON m.chat_room_id = t.chat_room_id AND m.created_at = t.max_c`,
+       ) t ON m.chat_room_id = t.chat_room_id AND m.created_at = t.max_c
+       WHERE m.deleted_at IS NULL`,
       roomIds,
     );
     for (const row of rows) {

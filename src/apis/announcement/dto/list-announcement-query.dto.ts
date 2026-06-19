@@ -8,13 +8,16 @@ import {
   Min,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { AnnouncementStatus } from '../entities/announcement.entity';
+import {
+  AnnouncementPriceType,
+  AnnouncementStatus,
+} from '../entities/announcement.entity';
 
 /**
  * 공고 목록 조회 Query DTO (무한스크롤 + 필터)
  *
  * 무한스크롤: cursor = 마지막 post_id, limit = 페이지 크기
- * 필터: status, type, major (선택 태그 기준)
+ * 필터: status, categoryId, majorIds, priceType
  */
 export class ListAnnouncementQueryDto {
   @ApiPropertyOptional({
@@ -55,6 +58,15 @@ export class ListAnnouncementQueryDto {
   @IsOptional()
   @IsString()
   categoryId?: string;
+
+  @ApiPropertyOptional({
+    enum: AnnouncementPriceType,
+    description:
+      '금액 구분 필터. 지정 시 해당 `price_type`과 일치하는 공고만 (EXPENSE, INCOME, FREE, PENDING)',
+  })
+  @IsOptional()
+  @IsEnum(AnnouncementPriceType)
+  priceType?: AnnouncementPriceType;
 
   /** 모집 전공 ID (여러 개 선택 시 콤마 구분) */
   @ApiPropertyOptional({

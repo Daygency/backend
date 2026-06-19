@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { UserModule } from './apis/user/user.module';
 import { AuthModule } from './apis/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
@@ -21,12 +22,16 @@ import { BlockModule } from './apis/block/block.module';
 import { HealthModule } from './health/health.module';
 import { HomeModule } from './apis/home/home.module';
 import { NoticeModule } from './apis/notice/notice.module';
+import { ReportModule } from './apis/report/report.module';
+import { MajorModule } from './apis/major/major.module';
+import { ReviewModule } from './apis/review/review.module';
 
 @Module({
   imports: [
     UserModule, //
     AuthModule,
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRoot({
       type: process.env.DATABASE_TYPE as 'mysql',
       host: process.env.DATABASE_HOST,
@@ -53,6 +58,9 @@ import { NoticeModule } from './apis/notice/notice.module';
     HealthModule,
     HomeModule,
     NoticeModule,
+    ReportModule,
+    MajorModule,
+    ReviewModule,
   ],
   providers: [DatabaseSeedService],
 })

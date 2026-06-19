@@ -8,9 +8,14 @@ import {
   IsDefined,
   IsArray,
   ValidateNested,
+  IsInt,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AnnouncementStatus } from '../entities/announcement.entity';
+import {
+  AnnouncementPriceType,
+  AnnouncementStatus,
+} from '../entities/announcement.entity';
 import { ApplicationConfigDto } from './application-config.dto';
 
 export class CreateAnnouncementDto {
@@ -49,6 +54,25 @@ export class CreateAnnouncementDto {
   @IsString()
   address: string;
 
+  @ApiPropertyOptional({
+    description:
+      '금액 구분. 생략 시 PENDING(협의). EXPENSE=지출, INCOME=수입, FREE=무료, PENDING=협의 가능',
+    enum: AnnouncementPriceType,
+    default: AnnouncementPriceType.PENDING,
+  })
+  @IsOptional()
+  @IsEnum(AnnouncementPriceType)
+  priceType?: AnnouncementPriceType;
+
+  @ApiPropertyOptional({
+    description: '금액(원). 0 이상. FREE·PENDING 등은 보통 0',
+    default: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  price?: number;
+
   @ApiPropertyOptional({ description: '대표 파일 ID (썸네일)', nullable: true })
   @IsOptional()
   @IsUUID()
@@ -60,7 +84,8 @@ export class CreateAnnouncementDto {
   @IsUUID()
   categoryId: string;
   @ApiPropertyOptional({
-    description: '모집 전공 ID 배열',
+    description:
+      '모집 전공 ID 배열(UUID v4). 생략·빈 배열이면 전공 미지정. `GET /major`로 조회한 `majorId`만 사용. 중복 ID는 한 번으로 처리되며, 존재하지 않는 ID가 있으면 400.',
     example: [
       '550e8400-e29b-41d4-a716-446655440000',
       '550e8400-e29b-41d4-a716-446655440001',

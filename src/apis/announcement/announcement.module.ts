@@ -9,6 +9,9 @@ import { FileModule } from '../file/file.module';
 import { AuthModule } from '../auth/auth.module';
 import { MajorModule } from '../major/major.module';
 import { AnnouncementFileService } from './announcement-file.service';
+import { Application } from '../application/entities/application.entity';
+import { NoticeModule } from '../notice/notice.module';
+import { ChatRoom } from '../chat/entities/chat-room.entity';
 
 @Module({
   imports: [
@@ -16,10 +19,13 @@ import { AnnouncementFileService } from './announcement-file.service';
       Announcement,
       AnnouncementCategory,
       ApplicationConfig,
+      Application,
+      ChatRoom,
     ]),
     FileModule,
     AuthModule,
     MajorModule,
+    NoticeModule,
   ],
   controllers: [AnnouncementController],
   providers: [AnnouncementService, AnnouncementFileService],

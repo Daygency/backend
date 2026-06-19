@@ -22,6 +22,7 @@ const PUSH_TITLE_BY_TARGET: Record<NoticeTargetType, string> = {
   [NoticeTargetType.FOLLOW]: '팔로우',
   [NoticeTargetType.APPLICATION]: '지원',
   [NoticeTargetType.LIKE]: '좋아요',
+  [NoticeTargetType.REVIEW]: '활동 후기',
 };
 
 export interface CreateNoticePayload {
@@ -123,7 +124,7 @@ export class NoticeService {
       .innerJoinAndSelect('nr.notice', 'n')
       .leftJoinAndSelect('n.actorUser', 'actor')
       .where('nr.user_id = :userId', { userId })
-      .orderBy('n.created_at', 'DESC')
+      .orderBy('n.createdAt', 'DESC')
       .addOrderBy('nr.id', 'DESC')
       .take(limit + 1);
 

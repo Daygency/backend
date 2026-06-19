@@ -15,14 +15,11 @@ export class Education {
   @Column({ length: 100 })
   description: string;
 
-  @Column()
+  @Column({ type: 'datetime' })
   startedAt: Date;
 
-  @Column()
-  endedAt: Date;
-
-  @Column({ default: false })
-  isVerified: boolean;
+  @Column({ type: 'datetime', nullable: true })
+  endedAt: Date | null;
 
   @ManyToOne(() => User, (user) => user.educations, { nullable: true })
   @JoinColumn({ name: 'userId' })

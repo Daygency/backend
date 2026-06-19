@@ -56,9 +56,12 @@ describe('AnnouncementController', () => {
       };
       mockAnnouncementService.create.mockResolvedValue(mockResult);
 
-      const result = await controller.createJson(dto as any, {
-        user: { id: 'user-123' },
-      } as any);
+      const result = await controller.createJson(
+        dto as any,
+        {
+          user: { id: 'user-123' },
+        } as any,
+      );
 
       expect(mockAnnouncementService.create).toHaveBeenCalledWith(
         'user-123',

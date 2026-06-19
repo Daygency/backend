@@ -5,7 +5,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { User } from './user.entity';
+import { User } from 'src/apis/user/entities/user.entity';
 
 @Entity()
 export class Certificate {
@@ -15,8 +15,11 @@ export class Certificate {
   @Column({ length: 100 })
   description: string;
 
-  @Column()
-  obtainedAt: Date;
+  @Column({ type: 'datetime', precision: 6, nullable: true })
+  obtainedAt: Date | null;
+
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  organization: string | null;
 
   @ManyToOne(() => User, (user) => user.certificates)
   @JoinColumn({ name: 'userId' })

@@ -146,6 +146,9 @@ export class HomeService {
         type: item.category?.name ?? '기타',
         isRecruiting: item.status === AnnouncementStatus.OPEN,
         dDay: calcDDay(item.deadlineAt),
+        priceType: item.priceType,
+        price: item.price,
+        viewCount: Number(item.viewCount ?? 0),
       })),
       recentNews: recentNews.map((item) => ({
         newsId: item.newsId,
