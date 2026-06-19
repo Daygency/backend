@@ -77,4 +77,11 @@ export class ListAnnouncementQueryDto {
   @IsOptional()
   @IsString()
   majorIds?: string;
+
+  @ApiPropertyOptional({
+    description: '제목·본문·주소 키워드 검색 (부분 일치)',
+  })
+  @IsOptional()
+  @IsString()
+  q?: string;
 }

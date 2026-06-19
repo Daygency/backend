@@ -34,6 +34,7 @@ import {
 import { Scrap, ScrapTargetType } from '../../scrap/entities/scrap.entity';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
+import { toLikePattern } from '../../../common/escape-like-pattern.util';
 import { Follow } from '../../follow/entities/follow.entity';
 import { FileService } from '../../file/file.service';
 import { FileTargetType } from '../../file/entities/file.entity';
@@ -1398,6 +1399,7 @@ export class UserService {
     hasMore: boolean;
   }> {
     const limit = query.limit ?? 20;
+    const likeQ = query.q ? toLikePattern(query.q) : null;
     const qb = this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.major', 'major')
@@ -1420,6 +1422,12 @@ export class UserService {
       qb.andWhere(
         '(user.createdAt < :ca OR (user.createdAt = :ca AND user.userId < :uid))',
         { ca: new Date(ca), uid },
+      );
+    }
+    if (likeQ) {
+      qb.andWhere(
+        '(user.nickname LIKE :likeQ ESCAPE \'\\\\\' OR user.activityName LIKE :likeQ ESCAPE \'\\\\\' OR user.aboutMe LIKE :likeQ ESCAPE \'\\\\\')',
+        { likeQ },
       );
     }
 

@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 import { ListNewsQueryDto } from './dto/list-news-query.dto';
+import { toLikePattern } from '../../common/escape-like-pattern.util';
 import { News } from './entities/news.entity';
 import { Like, LikeType } from '../like/entities/like.entity';
 import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
@@ -114,7 +115,8 @@ export class NewsService {
    * 공연소식 목록 조회 (무한스크롤)
    */
   async findList(query: ListNewsQueryDto): Promise<NewsListResponse> {
-    const { cursor, limit = 20 } = query;
+    const { cursor, limit = 20, q } = query;
+    const likeQ = q ? toLikePattern(q) : null;
 
     const qb = this.newsRepository
       .createQueryBuilder('news')
@@ -124,6 +126,12 @@ export class NewsService {
 
     if (cursor) {
       qb.andWhere('news.newsId < :cursor', { cursor });
+    }
+    if (likeQ) {
+      qb.andWhere(
+        '(news.title LIKE :likeQ ESCAPE \'\\\\\' OR news.place LIKE :likeQ ESCAPE \'\\\\\')',
+        { likeQ },
+      );
     }
 
     const rows = await qb.getMany();

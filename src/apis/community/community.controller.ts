@@ -61,8 +61,11 @@ export class CommunityController {
   }
 
   @Get()
-  findAll(@Query('categoryId') categoryId?: string) {
-    return this.communityService.findAll(categoryId);
+  findAll(
+    @Query('categoryId') categoryId?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.communityService.findAll(categoryId, q);
   }
 
   @Get('categories')

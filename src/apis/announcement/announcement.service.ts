@@ -12,6 +12,7 @@ import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import type { ApplicationConfigDto } from './dto/application-config.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { ListAnnouncementQueryDto } from './dto/list-announcement-query.dto';
+import { toLikePattern } from '../../common/escape-like-pattern.util';
 import {
   Announcement,
   AnnouncementPriceType,
@@ -390,7 +391,9 @@ export class AnnouncementService {
       categoryId,
       majorIds: majorIdsStr,
       priceType,
+      q,
     } = query;
+    const likeQ = q ? toLikePattern(q) : null;
 
     const qb = this.announcementRepository
       .createQueryBuilder('announcement')
@@ -423,6 +426,12 @@ export class AnnouncementService {
           .andWhere('am.majorId IN (:...majorIds)', { majorIds })
           .distinct(true);
       }
+    }
+    if (likeQ) {
+      qb.andWhere(
+        '(announcement.title LIKE :likeQ ESCAPE \'\\\\\' OR announcement.content LIKE :likeQ ESCAPE \'\\\\\' OR announcement.address LIKE :likeQ ESCAPE \'\\\\\')',
+        { likeQ },
+      );
     }
 
     const rows = await qb.getMany();
