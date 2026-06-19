@@ -1,5 +1,6 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   JoinColumn,
   JoinTable,
@@ -7,6 +8,7 @@ import {
   ManyToOne,
   OneToOne,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { File } from '../../file/entities/file.entity';
@@ -112,4 +114,10 @@ export class Announcement {
   /** 지원서 양식 (1:1) - application_config.post_id → announcement.post_id */
   @OneToOne(() => ApplicationConfig, (config) => config.announcement)
   applicationConfig: ApplicationConfig;
+
+  @CreateDateColumn({ name: 'created_at', type: 'datetime', precision: 6 })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'datetime', precision: 6 })
+  updatedAt: Date;
 }

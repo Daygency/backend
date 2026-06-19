@@ -25,6 +25,19 @@ function isBannerVisibleNow(banner: HomeBanner, now = new Date()): boolean {
   return true;
 }
 
+function resolveImageUrls(banner: HomeBanner): string[] {
+  if (Array.isArray(banner.imageUrls) && banner.imageUrls.length > 0) {
+    return banner.imageUrls;
+  }
+  if (banner.imageUrl) return [banner.imageUrl];
+  return [];
+}
+
+function applyImageUrls(banner: HomeBanner, urls: string[]) {
+  banner.imageUrls = urls;
+  banner.imageUrl = urls[0] ?? '';
+}
+
 @Injectable()
 export class HomeBannerService {
   constructor(
@@ -33,36 +46,80 @@ export class HomeBannerService {
     private readonly fileService: FileService,
   ) {}
 
+  private async uploadImages(
+    files: Express.Multer.File[],
+    targetId: string | null,
+  ): Promise<string[]> {
+    const urls: string[] = [];
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i];
+      const savedFile = await this.fileService.uploadAndSave({
+        buffer: file.buffer,
+        originalName: file.originalname,
+        contentType: file.mimetype,
+        targetType: FileTargetType.HOME_BANNER,
+        targetId,
+        sortOrder: i,
+      });
+      urls.push(savedFile.imgUrl);
+    }
+    return urls;
+  }
+
   async findActivePublic() {
     const rows = await this.bannerRepository.find({
       order: { sortOrder: 'DESC', createdAt: 'DESC' },
     });
     return rows
       .filter((row) => isBannerVisibleNow(row))
-      .map((row) => ({
+      .map((row) => {
+        const imageUrls = resolveImageUrls(row);
+        return {
+          bannerId: row.bannerId,
+          title: row.title,
+          imageUrl: imageUrls[0] ?? row.imageUrl,
+        };
+      });
+  }
+
+  async findAllPublic() {
+    const rows = await this.bannerRepository.find({
+      order: { sortOrder: 'DESC', createdAt: 'DESC' },
+    });
+    return rows.map((row) => {
+      const imageUrls = resolveImageUrls(row);
+      return {
         bannerId: row.bannerId,
         title: row.title,
-        imageUrl: row.imageUrl,
-      }));
+        imageUrl: imageUrls[0] ?? row.imageUrl,
+        isCurrent: isBannerVisibleNow(row),
+        createdAt: row.createdAt,
+      };
+    });
   }
 
   async findOnePublic(bannerId: string) {
     const banner = await this.bannerRepository.findOne({ where: { bannerId } });
-    if (!banner || !isBannerVisibleNow(banner)) {
+    if (!banner) {
       throw new NotFoundException('배너를 찾을 수 없습니다.');
     }
+    const imageUrls = resolveImageUrls(banner);
     return {
       bannerId: banner.bannerId,
       title: banner.title,
-      content: banner.content,
-      imageUrl: banner.imageUrl,
+      imageUrls,
+      createdAt: banner.createdAt,
     };
   }
 
   async findAllAdmin() {
-    return this.bannerRepository.find({
+    const rows = await this.bannerRepository.find({
       order: { sortOrder: 'DESC', createdAt: 'DESC' },
     });
+    return rows.map((row) => ({
+      ...row,
+      imageUrls: resolveImageUrls(row),
+    }));
   }
 
   async findOneAdmin(bannerId: string) {
@@ -70,45 +127,51 @@ export class HomeBannerService {
     if (!banner) {
       throw new NotFoundException('배너를 찾을 수 없습니다.');
     }
-    return banner;
+    return {
+      ...banner,
+      imageUrls: resolveImageUrls(banner),
+    };
   }
 
-  async create(dto: CreateHomeBannerDto, file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('배너 이미지가 필요합니다.');
+  async create(dto: CreateHomeBannerDto, files: Express.Multer.File[]) {
+    if (!files?.length) {
+      throw new BadRequestException('배너 이미지가 최소 1장 필요합니다.');
     }
-    const savedFile = await this.fileService.uploadAndSave({
-      buffer: file.buffer,
-      originalName: file.originalname,
-      contentType: file.mimetype,
-      targetType: FileTargetType.HOME_BANNER,
-      targetId: null,
-      sortOrder: 0,
-    });
 
     const banner = this.bannerRepository.create({
       title: dto.title,
-      content: dto.content,
-      imageUrl: savedFile.imgUrl,
+      content: dto.content?.trim() ?? '',
       sortOrder: dto.sortOrder ?? 0,
       isActive: dto.isActive ?? true,
       startsAt: parseOptionalDate(dto.startsAt),
       endsAt: parseOptionalDate(dto.endsAt),
+      imageUrl: '',
+      imageUrls: [],
     });
-
     const saved = await this.bannerRepository.save(banner);
-    return saved;
+
+    const uploadedUrls = await this.uploadImages(files, saved.bannerId);
+    applyImageUrls(saved, uploadedUrls);
+    const final = await this.bannerRepository.save(saved);
+
+    return {
+      ...final,
+      imageUrls: resolveImageUrls(final),
+    };
   }
 
   async update(
     bannerId: string,
     dto: UpdateHomeBannerDto,
-    file?: Express.Multer.File,
+    files?: Express.Multer.File[],
   ) {
-    const banner = await this.findOneAdmin(bannerId);
+    const banner = await this.bannerRepository.findOne({ where: { bannerId } });
+    if (!banner) {
+      throw new NotFoundException('배너를 찾을 수 없습니다.');
+    }
 
     if (dto.title !== undefined) banner.title = dto.title;
-    if (dto.content !== undefined) banner.content = dto.content;
+    if (dto.content !== undefined) banner.content = dto.content?.trim() ?? '';
     if (dto.sortOrder !== undefined) banner.sortOrder = dto.sortOrder;
     if (dto.isActive !== undefined) banner.isActive = dto.isActive;
     if (dto.startsAt !== undefined) {
@@ -118,23 +181,37 @@ export class HomeBannerService {
       banner.endsAt = parseOptionalDate(dto.endsAt);
     }
 
-    if (file) {
-      const savedFile = await this.fileService.uploadAndSave({
-        buffer: file.buffer,
-        originalName: file.originalname,
-        contentType: file.mimetype,
-        targetType: FileTargetType.HOME_BANNER,
-        targetId: banner.bannerId,
-        sortOrder: 0,
-      });
-      banner.imageUrl = savedFile.imgUrl;
+    const hasImageChange =
+      dto.keptImageUrls !== undefined || (files && files.length > 0);
+
+    if (hasImageChange) {
+      const currentUrls = resolveImageUrls(banner);
+      const kept =
+        dto.keptImageUrls !== undefined ? dto.keptImageUrls : currentUrls;
+      const validKept = kept.filter((url) => currentUrls.includes(url));
+      const newUrls =
+        files && files.length > 0
+          ? await this.uploadImages(files, banner.bannerId)
+          : [];
+      const merged = [...validKept, ...newUrls];
+      if (merged.length === 0) {
+        throw new BadRequestException('배너 이미지가 최소 1장 필요합니다.');
+      }
+      applyImageUrls(banner, merged);
     }
 
-    return this.bannerRepository.save(banner);
+    const saved = await this.bannerRepository.save(banner);
+    return {
+      ...saved,
+      imageUrls: resolveImageUrls(saved),
+    };
   }
 
   async remove(bannerId: string) {
-    const banner = await this.findOneAdmin(bannerId);
+    const banner = await this.bannerRepository.findOne({ where: { bannerId } });
+    if (!banner) {
+      throw new NotFoundException('배너를 찾을 수 없습니다.');
+    }
     await this.bannerRepository.remove(banner);
     return { success: true };
   }

@@ -13,6 +13,12 @@ export class HomeBannerController {
     return this.homeBannerService.findActivePublic();
   }
 
+  @Get('all')
+  @ApiOperation({ summary: '홈 배너 전체 목록 (이전 배너 포함)' })
+  findAll() {
+    return this.homeBannerService.findAllPublic();
+  }
+
   @Get(':bannerId')
   @ApiOperation({ summary: '홈 배너 상세' })
   findOne(@Param('bannerId') bannerId: string) {

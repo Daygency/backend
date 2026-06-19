@@ -11,6 +11,7 @@ import { In, Repository } from 'typeorm';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import type { ApplicationConfigDto } from './dto/application-config.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
+import { resolveAnnouncementPostedAt } from './announcement-created-at.util';
 import { ListAnnouncementQueryDto } from './dto/list-announcement-query.dto';
 import { toLikePattern } from '../../common/escape-like-pattern.util';
 import {
@@ -21,7 +22,8 @@ import {
 import { AnnouncementCategory } from './entities/announcement-category.entity';
 import { ApplicationConfig } from './entities/application-config.entity';
 import { Major } from '../major/entities/major.entity';
-import { File } from '../file/entities/file.entity';
+import { File, FileTargetType } from '../file/entities/file.entity';
+import { FileService } from '../file/file.service';
 import { AnnouncementFileService } from './announcement-file.service';
 import {
   Application,
@@ -95,6 +97,7 @@ export interface AnnouncementListResponse {
     price: number;
     /** 누적 조회수 (목록 조회 시 DB 값, 상세 진입 시 증가분은 반영되지 않음) */
     viewCount: number;
+    createdAt?: Date;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
@@ -114,6 +117,7 @@ function toListItem(a: Announcement) {
     priceType: a.priceType,
     price: a.price,
     viewCount: Number(a.viewCount ?? 0),
+    fileId: a.fileId,
   };
 }
 
@@ -199,6 +203,7 @@ export class AnnouncementService {
     @InjectRepository(ChatRoom)
     private readonly chatRoomRepository: Repository<ChatRoom>,
     private readonly announcementFileService: AnnouncementFileService,
+    private readonly fileService: FileService,
     private readonly noticeService: NoticeService,
   ) {}
 
@@ -375,6 +380,17 @@ export class AnnouncementService {
     }));
   }
 
+  private async attachCreatedAtToListItems<
+    T extends { postId: string; fileId?: string | null },
+  >(items: T[]): Promise<Array<T & { createdAt?: Date }>> {
+    const postedAtMap =
+      await this.fileService.getAnnouncementPostedAtMap(items);
+    return items.map((item) => ({
+      ...item,
+      createdAt: resolveAnnouncementPostedAt(postedAtMap.get(item.postId)),
+    }));
+  }
+
   /**
    * 공고 목록 조회 (무한스크롤 + 필터)
    * - cursor: 마지막 postId (없으면 첫 페이지)
@@ -437,7 +453,9 @@ export class AnnouncementService {
     const rows = await qb.getMany();
 
     const hasMore = rows.length > limit;
-    const items = (hasMore ? rows.slice(0, limit) : rows).map(toListItem);
+    const items = await this.attachCreatedAtToListItems(
+      (hasMore ? rows.slice(0, limit) : rows).map(toListItem),
+    );
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
 
@@ -501,10 +519,12 @@ export class AnnouncementService {
     const roomCounts = await this.loadChatRoomCountsByPostIds(
       slice.map((row) => row.postId),
     );
-    const items = slice.map((row) => ({
-      ...toListItem(row),
-      chatRoomCount: roomCounts.get(row.postId) ?? 0,
-    }));
+    const items = await this.attachCreatedAtToListItems(
+      slice.map((row) => ({
+        ...toListItem(row),
+        chatRoomCount: roomCounts.get(row.postId) ?? 0,
+      })),
+    );
 
     const nextCursor = hasMore ? items[items.length - 1].postId : null;
 
@@ -538,8 +558,13 @@ export class AnnouncementService {
     await this.announcementRepository.increment({ postId: id }, 'viewCount', 1);
     announcement.viewCount = Number(announcement.viewCount ?? 0) + 1;
 
+    const postedAtMap = await this.fileService.getAnnouncementPostedAtMap([
+      { postId: id, fileId: announcement.fileId },
+    ]);
+
     return {
       ...announcement,
+      createdAt: resolveAnnouncementPostedAt(postedAtMap.get(id)),
       completed: effectiveCompleted(announcement),
       isMine,
     };

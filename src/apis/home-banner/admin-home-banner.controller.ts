@@ -7,12 +7,12 @@ import {
   Param,
   Patch,
   Post,
-  UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { parseAndValidateJsonPayload } from '../../common/parse-json-payload.util';
@@ -41,37 +41,37 @@ export class AdminHomeBannerController {
 
   @Post()
   @UseInterceptors(
-    FileInterceptor('image', {
+    FilesInterceptor('images', 20, {
       storage: memoryStorage(),
     }),
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: '홈 배너 등록 — FormData: payload(JSON) + image(파일)',
+    summary: '홈 배너 등록 — FormData: payload(JSON) + images(파일, 복수)',
   })
   async create(
     @Body('payload') payload: string,
-    @UploadedFile() image: Express.Multer.File,
+    @UploadedFiles() images: Express.Multer.File[],
   ) {
     const dto = await parseAndValidateJsonPayload(CreateHomeBannerDto, payload);
-    return this.homeBannerService.create(dto, image);
+    return this.homeBannerService.create(dto, images ?? []);
   }
 
   @Patch(':bannerId')
   @UseInterceptors(
-    FileInterceptor('image', {
+    FilesInterceptor('images', 20, {
       storage: memoryStorage(),
     }),
   )
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: '홈 배너 수정' })
+  @ApiOperation({ summary: '홈 배너 수정 — images 복수, payload.keptImageUrls 로 기존 이미지 유지' })
   async update(
     @Param('bannerId') bannerId: string,
     @Body('payload') payload: string,
-    @UploadedFile() image?: Express.Multer.File,
+    @UploadedFiles() images?: Express.Multer.File[],
   ) {
     const dto = await parseAndValidateJsonPayload(UpdateHomeBannerDto, payload);
-    return this.homeBannerService.update(bannerId, dto, image);
+    return this.homeBannerService.update(bannerId, dto, images);
   }
 
   @Delete(':bannerId')

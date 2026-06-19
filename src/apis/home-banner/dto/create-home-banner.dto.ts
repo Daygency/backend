@@ -13,9 +13,10 @@ export class CreateHomeBannerDto {
   @Length(1, 120)
   title: string;
 
+  @IsOptional()
   @IsString()
-  @Length(1, 10000)
-  content: string;
+  @Length(0, 10000)
+  content?: string;
 
   @IsOptional()
   @IsInt()

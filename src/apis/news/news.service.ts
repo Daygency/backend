@@ -27,6 +27,7 @@ export interface NewsListResponse {
     commentCount: number;
     /** `file.type`+`news_id` 첨부 중 `order` 최소 1장, 없으면 글의 `file_id` 대표 이미지 */
     thumbnailUrl: string | null;
+    createdAt: Date;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
@@ -187,6 +188,7 @@ export class NewsService {
       commentCount: commentCountMap.get(n.newsId) ?? 0,
       thumbnailUrl:
         thumbMap.get(n.newsId)?.imgUrl ?? n.file?.imgUrl ?? null,
+      createdAt: n.createdAt,
     }));
 
     const nextCursor = hasMore ? items[items.length - 1].newsId : null;

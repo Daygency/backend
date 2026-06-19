@@ -14,11 +14,15 @@ export class HomeBanner {
   @Column({ length: 120 })
   title: string;
 
-  @Column({ type: 'text' })
-  content: string;
+  @Column({ type: 'text', nullable: true })
+  content: string | null;
 
+  /** 썸네일 — imageUrls[0] 과 동기화 */
   @Column({ length: 512 })
   imageUrl: string;
+
+  @Column({ type: 'json', nullable: true })
+  imageUrls: string[] | null;
 
   @Column({ type: 'int', default: 0 })
   sortOrder: number;
