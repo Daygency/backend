@@ -22,12 +22,17 @@ export class UpdateEducationDto {
   @Length(1, 100)
   description: string;
 
+  @IsOptional()
   @IsDateString()
-  startedAt: string;
+  startedAt?: string | null;
 
   @IsOptional()
   @IsDateString()
   endedAt?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  isOngoing?: boolean;
 }
 
 export class UpdateCareerDto {
@@ -39,11 +44,17 @@ export class UpdateCareerDto {
   @Length(1, 100)
   description: string;
 
+  @IsOptional()
   @IsDateString()
-  startedAt: string;
+  startedAt?: string | null;
 
+  @IsOptional()
   @IsDateString()
-  endedAt: string;
+  endedAt?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  isOngoing?: boolean;
 
   @IsOptional()
   @IsString()

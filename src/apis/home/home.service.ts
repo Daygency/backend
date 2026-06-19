@@ -12,6 +12,7 @@ import { Like, LikeType } from '../like/entities/like.entity';
 import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
 import { FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
+import { HomeBannerService } from '../home-banner/home-banner.service';
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -41,10 +42,12 @@ export class HomeService {
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
     private readonly fileService: FileService,
+    private readonly homeBannerService: HomeBannerService,
   ) {}
 
   async getHome() {
-    const [latestAnnouncements, recentNews, categories] = await Promise.all([
+    const [latestAnnouncements, recentNews, categories, banners] =
+      await Promise.all([
       this.announcementRepository.find({
         relations: ['category'],
         order: { postId: 'DESC' },
@@ -58,6 +61,7 @@ export class HomeService {
       this.communityCategoryRepository.find({
         order: { name: 'ASC' },
       }),
+      this.homeBannerService.findActivePublic(),
     ]);
 
     const latestCommunityByCategoryRows = await Promise.all(
@@ -140,6 +144,7 @@ export class HomeService {
     );
 
     return {
+      banners,
       latestAnnouncements: latestAnnouncements.map((item) => ({
         postId: item.postId,
         title: item.title,

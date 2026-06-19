@@ -249,6 +249,18 @@ export class UserService {
     return this.userRepository.findOne({ where: { userId } });
   }
 
+  async findAdminForWebLogin(email?: string) {
+    if (email?.trim()) {
+      return this.userRepository.findOne({
+        where: { email: email.trim(), role: UserRole.ADMIN },
+      });
+    }
+    return this.userRepository.findOne({
+      where: { role: UserRole.ADMIN },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
   /**
    * 본인 계정 소프트 삭제 — FCM 기기 행 삭제 후 `user.deleted_at` 설정.
    * Access JWT는 이후 검증에서 거부, Refresh는 `findOne`에서 탈퇴 사용자 제외로 거부된다.
@@ -518,21 +530,28 @@ export class UserService {
     const toSave: Education[] = [];
 
     for (const dto of educationDtos) {
-      const endedAt =
-        dto.endedAt != null && dto.endedAt !== ''
-          ? new Date(dto.endedAt)
+      const startedAt =
+        dto.startedAt != null && dto.startedAt !== ''
+          ? new Date(dto.startedAt)
           : null;
+      const isOngoing = dto.isOngoing ?? false;
+      const endedAt =
+        isOngoing || dto.endedAt == null || dto.endedAt === ''
+          ? null
+          : new Date(dto.endedAt);
       if (dto.educationId && existingMap.has(dto.educationId)) {
         const entity = existingMap.get(dto.educationId) as Education;
         entity.description = dto.description;
-        entity.startedAt = new Date(dto.startedAt);
+        entity.startedAt = startedAt;
         entity.endedAt = endedAt;
+        entity.isOngoing = isOngoing;
         toSave.push(entity);
       } else {
         const entity = this.educationRepository.create({
           description: dto.description,
-          startedAt: new Date(dto.startedAt),
+          startedAt,
           endedAt,
+          isOngoing,
           user,
         });
         toSave.push(entity);
@@ -567,21 +586,32 @@ export class UserService {
     const toSave: Career[] = [];
 
     for (const dto of careerDtos) {
+      const startedAt =
+        dto.startedAt != null && dto.startedAt !== ''
+          ? new Date(dto.startedAt)
+          : null;
+      const isOngoing = dto.isOngoing ?? false;
+      const endedAt =
+        isOngoing || dto.endedAt == null || dto.endedAt === ''
+          ? null
+          : new Date(dto.endedAt);
       const organization = dto.organization?.trim()
         ? dto.organization.trim().slice(0, 10)
         : null;
       if (dto.careerId && existingMap.has(dto.careerId)) {
         const entity = existingMap.get(dto.careerId) as Career;
         entity.description = dto.description;
-        entity.startedAt = new Date(dto.startedAt);
-        entity.endedAt = new Date(dto.endedAt);
+        entity.startedAt = startedAt;
+        entity.endedAt = endedAt;
+        entity.isOngoing = isOngoing;
         entity.organization = organization;
         toSave.push(entity);
       } else {
         const entity = this.careerRepository.create({
           description: dto.description,
-          startedAt: new Date(dto.startedAt),
-          endedAt: new Date(dto.endedAt),
+          startedAt,
+          endedAt,
+          isOngoing,
           organization,
           user,
         });

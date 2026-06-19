@@ -15,6 +15,7 @@ export enum FileTargetType {
   COMMUNITY = 'community',
   /** 내 자료 보관함 직접 업로드 — `target_id` = userId */
   USER_ARCHIVE = 'user_archive',
+  HOME_BANNER = 'home_banner',
 }
 
 @Entity('file')
