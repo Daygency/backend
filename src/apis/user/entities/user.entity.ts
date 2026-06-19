@@ -72,6 +72,9 @@ export class User {
   @Column()
   profileImgUrl: string;
 
+  @Column({ name: 'cover_img_url', type: 'varchar', length: 512, default: '' })
+  coverImgUrl: string;
+
   @Column()
   isEmailSubscribed: boolean;
 

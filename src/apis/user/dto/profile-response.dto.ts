@@ -4,6 +4,7 @@ import { Education } from '../entities/education.entity';
 import { Career } from '../entities/career.entity';
 import { Award } from '../entities/award.entity';
 import { Major } from '../../major/entities/major.entity';
+import { Certificate } from '../entities/certificate.entity';
 
 export class ProfileResponseDto {
   @ApiProperty({
@@ -14,6 +15,9 @@ export class ProfileResponseDto {
 
   @ApiProperty({ description: '프로필 이미지 URL' })
   profileImgUrl: string;
+
+  @ApiProperty({ description: '포트폴리오 배경 이미지 URL' })
+  coverImgUrl: string;
 
   @ApiProperty({ description: '닉네임' })
   nickname: string;
@@ -38,6 +42,9 @@ export class ProfileResponseDto {
 
   @ApiProperty({ description: '수상경력', type: [Award] })
   awards: Award[];
+
+  @ApiProperty({ description: '자격증', type: [Certificate] })
+  certificates: Certificate[];
 
   @ApiProperty({ description: '전공', type: Major })
   major: Major;

@@ -70,6 +70,25 @@ export class UpdateAwardDto {
   organization?: string | null;
 }
 
+export class UpdateCertificateDto {
+  @IsOptional()
+  @IsUUID()
+  certificateId?: string;
+
+  @IsString()
+  @Length(1, 100)
+  description: string;
+
+  @IsOptional()
+  @IsDateString()
+  obtainedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 10)
+  organization?: string | null;
+}
+
 export class UpdateUserDto {
   @IsOptional()
   @IsString()
@@ -146,4 +165,10 @@ export class UpdateUserDto {
   @ValidateNested({ each: true })
   @Type(() => UpdateAwardDto)
   awards?: UpdateAwardDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateCertificateDto)
+  certificates?: UpdateCertificateDto[];
 }

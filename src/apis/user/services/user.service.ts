@@ -16,6 +16,7 @@ import { PublicProfileResponseDto } from '../dto/public-profile-response.dto';
 import {
   UpdateAwardDto,
   UpdateCareerDto,
+  UpdateCertificateDto,
   UpdateEducationDto,
   UpdateUserDto,
 } from '../dto/update-user.dto';
@@ -23,6 +24,7 @@ import { Education } from '../entities/education.entity';
 import { Career } from '../entities/career.entity';
 import { Major } from '../../major/entities/major.entity';
 import { Award } from '../entities/award.entity';
+import { Certificate } from '../entities/certificate.entity';
 import { News } from '../../news/entities/news.entity';
 import { Community } from '../../community/entities/community.entity';
 import { Announcement } from '../../announcement/entities/announcement.entity';
@@ -87,6 +89,8 @@ export class UserService {
     private readonly majorRepository: Repository<Major>,
     @InjectRepository(Award)
     private readonly awardRepository: Repository<Award>,
+    @InjectRepository(Certificate)
+    private readonly certificateRepository: Repository<Certificate>,
     @InjectRepository(News)
     private readonly newsRepository: Repository<News>,
     @InjectRepository(Community)
@@ -307,10 +311,11 @@ export class UserService {
   async getMyProfile(userId: string): Promise<ProfileResponseDto> {
     const user = await this.userRepository.findOne({
       where: { userId },
-      relations: ['educations', 'careers', 'awards', 'major'], // 이 줄 추가
+      relations: ['educations', 'careers', 'awards', 'certificates', 'major'],
       select: [
         'userId',
         'profileImgUrl',
+        'coverImgUrl',
         'activityName',
         'nickname',
         'role',
@@ -332,6 +337,7 @@ export class UserService {
     return {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
+      coverImgUrl: user.coverImgUrl ?? '',
       nickname: user.nickname,
       activityName: user.activityName,
       role: user.role,
@@ -340,6 +346,7 @@ export class UserService {
       educations: user.educations ?? null,
       careers: user.careers ?? null,
       awards: user.awards ?? null,
+      certificates: user.certificates ?? null,
       major: user.major ?? null,
       contact: {
         email: user.email,
@@ -356,10 +363,11 @@ export class UserService {
   async getPublicProfile(userId: string): Promise<PublicProfileResponseDto> {
     const user = await this.userRepository.findOne({
       where: { userId },
-      relations: ['educations', 'careers', 'awards', 'major'],
+      relations: ['educations', 'careers', 'awards', 'certificates', 'major'],
       select: [
         'userId',
         'profileImgUrl',
+        'coverImgUrl',
         'activityName',
         'nickname',
         'role',
@@ -379,6 +387,7 @@ export class UserService {
     return {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
+      coverImgUrl: user.coverImgUrl ?? '',
       nickname: user.nickname,
       activityName: user.activityName,
       role: user.role,
@@ -387,6 +396,7 @@ export class UserService {
       educations: user.educations ?? null,
       careers: user.careers ?? null,
       awards: user.awards ?? null,
+      certificates: user.certificates ?? null,
       major: user.major ?? null,
       followingCount,
       followerCount,
@@ -397,16 +407,17 @@ export class UserService {
     userId: string,
     updateUserDto: UpdateUserDto,
     profileImage?: Express.Multer.File,
+    coverImage?: Express.Multer.File,
   ) {
     const user = await this.userRepository.findOne({
       where: { userId },
-      relations: ['educations', 'careers', 'awards', 'major'],
+      relations: ['educations', 'careers', 'awards', 'certificates', 'major'],
     });
     if (!user) {
       throw new NotFoundException('프로필을 찾을 수 없습니다.');
     }
 
-    const { educations, careers, awards, majorId, ...scalarFields } =
+    const { educations, careers, awards, certificates, majorId, ...scalarFields } =
       updateUserDto;
 
     Object.assign(user, scalarFields as Partial<User>);
@@ -433,6 +444,18 @@ export class UserService {
       user.profileImgUrl = uploaded.imgUrl;
     }
 
+    if (coverImage) {
+      const uploaded = await this.fileService.uploadAndSave({
+        buffer: coverImage.buffer,
+        originalName: coverImage.originalname,
+        contentType: coverImage.mimetype,
+        targetType: null,
+        targetId: null,
+        sortOrder: 0,
+      });
+      user.coverImgUrl = uploaded.imgUrl;
+    }
+
     const savedUser = await this.userRepository.save(user);
 
     if (educations) {
@@ -445,6 +468,10 @@ export class UserService {
 
     if (awards) {
       await this.syncAwards(savedUser, awards);
+    }
+
+    if (certificates) {
+      await this.syncCertificates(savedUser, certificates);
     }
 
     return this.getMyProfile(savedUser.userId);
@@ -601,6 +628,63 @@ export class UserService {
 
     if (toSave.length) {
       await this.awardRepository.save(toSave);
+    }
+  }
+
+  private async syncCertificates(
+    user: User,
+    certificateDtos: UpdateCertificateDto[],
+  ) {
+    const existing: Certificate[] = user.certificates ?? [];
+    const existingMap = new Map<string, Certificate>(
+      existing.map((c: Certificate) => [c.certificateId, c]),
+    );
+
+    const incomingIds = new Set(
+      certificateDtos
+        .map((c: UpdateCertificateDto) => c.certificateId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    const toSave: Certificate[] = [];
+
+    for (const dto of certificateDtos) {
+      const obtainedAt =
+        dto.obtainedAt != null && dto.obtainedAt !== ''
+          ? new Date(dto.obtainedAt)
+          : null;
+      const organization = dto.organization?.trim()
+        ? dto.organization.trim().slice(0, 10)
+        : null;
+      if (dto.certificateId && existingMap.has(dto.certificateId)) {
+        const entity = existingMap.get(dto.certificateId) as Certificate;
+        entity.description = dto.description;
+        entity.obtainedAt = obtainedAt;
+        entity.organization = organization;
+        toSave.push(entity);
+      } else {
+        const entity = this.certificateRepository.create({
+          description: dto.description,
+          obtainedAt,
+          organization,
+          user,
+        });
+        toSave.push(entity);
+      }
+    }
+
+    const toDeleteIds = existing
+      .filter((c: Certificate) => !incomingIds.has(c.certificateId))
+      .map((c: Certificate) => c.certificateId);
+
+    if (toDeleteIds.length) {
+      await this.certificateRepository.delete({
+        certificateId: In(toDeleteIds),
+      });
+    }
+
+    if (toSave.length) {
+      await this.certificateRepository.save(toSave);
     }
   }
 

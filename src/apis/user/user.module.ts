@@ -20,6 +20,7 @@ import { Follow } from '../follow/entities/follow.entity';
 import { Application } from '../application/entities/application.entity';
 import { FileModule } from '../file/file.module';
 import { File } from '../file/entities/file.entity';
+import { ReviewModule } from '../review/review.module';
 import { UserSoftDeletePurgeScheduler } from './user-soft-delete-purge.scheduler';
 import { UserDocumentService } from './services/user-document.service';
 @Module({
@@ -42,6 +43,7 @@ import { UserDocumentService } from './services/user-document.service';
     ]),
     FileModule,
     MajorModule,
+    ReviewModule,
     forwardRef(() => AuthModule),
   ],
   controllers: [UserController],

@@ -16,6 +16,7 @@ import {
   UsePipes,
   ValidationPipe,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
   Delete,
   HttpCode,
@@ -23,7 +24,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import {
   ApiBearerAuth,
@@ -38,6 +39,8 @@ import { UpdateUserDto } from '../dto/update-user.dto';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { parseAndValidateJsonPayload } from '../../../common/parse-json-payload.util';
+import { ReviewService } from '../../review/review.service';
+import { ListReviewsQueryDto } from '../../review/dto/list-reviews-query.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -45,6 +48,7 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly userDocumentService: UserDocumentService,
+    private readonly reviewService: ReviewService,
   ) {}
 
   @Post()
@@ -267,6 +271,18 @@ export class UserController {
     return this.userService.getPublicProfile(id);
   }
 
+  @Get(':id/reviews/received')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @ApiOperation({ summary: '특정 유저가 받은 활동 후기 목록 (공개)' })
+  @ApiResponse({ status: 200, description: '받은 후기 목록 반환' })
+  @ApiResponse({ status: 404, description: '유저 없음' })
+  getUserReceivedReviews(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ListReviewsQueryDto,
+  ) {
+    return this.reviewService.listReceivedByUser(id, query);
+  }
+
   @Delete('me')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(AuthGuard('access'))
@@ -293,9 +309,15 @@ export class UserController {
   @Patch('profile/my')
   @UseGuards(AuthGuard('access'))
   @UseInterceptors(
-    FileInterceptor('profileImage', {
-      storage: memoryStorage(),
-    }),
+    FileFieldsInterceptor(
+      [
+        { name: 'profileImage', maxCount: 1 },
+        { name: 'coverImage', maxCount: 1 },
+      ],
+      {
+        storage: memoryStorage(),
+      },
+    ),
   )
   @ApiConsumes('application/json', 'multipart/form-data')
   @ApiOperation({ summary: '내 프로필 수정' })
@@ -308,13 +330,26 @@ export class UserController {
   async updateMyProfile(
     @Body() updateUserDto: UpdateUserDto,
     @Body('payload') payload: string | undefined,
-    @UploadedFile() profileImage: Express.Multer.File | undefined,
+    @UploadedFiles()
+    files:
+      | {
+          profileImage?: Express.Multer.File[];
+          coverImage?: Express.Multer.File[];
+        }
+      | undefined,
     @Request() req: { user: { id: string } },
   ) {
     const userId = req.user.id;
     const dto = payload
       ? await parseAndValidateJsonPayload(UpdateUserDto, payload)
       : updateUserDto;
-    return this.userService.updateMyProfile(userId, dto, profileImage);
+    const profileImage = files?.profileImage?.[0];
+    const coverImage = files?.coverImage?.[0];
+    return this.userService.updateMyProfile(
+      userId,
+      dto,
+      profileImage,
+      coverImage,
+    );
   }
 }
