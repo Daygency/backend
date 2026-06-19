@@ -17,8 +17,11 @@ import { Like } from '../like/entities/like.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { Scrap } from '../scrap/entities/scrap.entity';
 import { Follow } from '../follow/entities/follow.entity';
+import { Application } from '../application/entities/application.entity';
 import { FileModule } from '../file/file.module';
+import { File } from '../file/entities/file.entity';
 import { UserSoftDeletePurgeScheduler } from './user-soft-delete-purge.scheduler';
+import { UserDocumentService } from './services/user-document.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -34,13 +37,15 @@ import { UserSoftDeletePurgeScheduler } from './user-soft-delete-purge.scheduler
       Comment,
       Scrap,
       Follow,
+      Application,
+      File,
     ]),
     FileModule,
     MajorModule,
     forwardRef(() => AuthModule),
   ],
   controllers: [UserController],
-  providers: [UserService, PortfolioService, UserSoftDeletePurgeScheduler],
+  providers: [UserService, PortfolioService, UserDocumentService, UserSoftDeletePurgeScheduler],
   exports: [UserService],
 })
 export class UserModule {}

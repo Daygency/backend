@@ -13,6 +13,8 @@ export enum FileTargetType {
   ANNOUNCEMENT = 'announcement',
   NEWS = 'news',
   COMMUNITY = 'community',
+  /** 내 자료 보관함 직접 업로드 — `target_id` = userId */
+  USER_ARCHIVE = 'user_archive',
 }
 
 @Entity('file')
