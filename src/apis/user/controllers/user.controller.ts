@@ -280,7 +280,9 @@ export class UserController {
     @Param('id', ParseUUIDPipe) id: string,
     @Query() query: ListReviewsQueryDto,
   ) {
-    return this.reviewService.listReceivedByUser(id, query);
+    return this.userService
+      .ensurePortfolioPublic(id)
+      .then(() => this.reviewService.listReceivedByUser(id, query));
   }
 
   @Delete('me')

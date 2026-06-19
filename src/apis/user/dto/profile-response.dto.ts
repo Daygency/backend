@@ -60,4 +60,7 @@ export class ProfileResponseDto {
 
   @ApiProperty({ description: '팔로워 수 (나를 팔로우한 사람 수)' })
   followerCount: number;
+
+  @ApiProperty({ description: '포트폴리오 비공개 여부' })
+  isPortfolioPrivate: boolean;
 }

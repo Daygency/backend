@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -195,6 +196,7 @@ export class UserService {
       phoneNumber: '0000000000000',
       isEmailSubscribed: false,
       isPushEnabled: false,
+      isPortfolioPrivate: false,
       artTempo: 0,
       profileImgUrl: profile.profileImgUrl || '',
       socialId: profile.socialId,
@@ -323,6 +325,7 @@ export class UserService {
         'selfIntroduction',
         'email',
         'phoneNumber',
+        'isPortfolioPrivate',
       ],
     });
     if (!user) {
@@ -354,13 +357,33 @@ export class UserService {
       },
       followingCount,
       followerCount,
+      isPortfolioPrivate: user.isPortfolioPrivate ?? false,
     };
+  }
+
+  async ensurePortfolioPublic(userId: string): Promise<void> {
+    await this.assertPortfolioVisible(userId);
+  }
+
+  private async assertPortfolioVisible(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { userId },
+      select: ['userId', 'isPortfolioPrivate'],
+    });
+    if (!user) {
+      throw new NotFoundException('프로필을 찾을 수 없습니다.');
+    }
+    if (user.isPortfolioPrivate) {
+      throw new ForbiddenException('비공개 프로필입니다.');
+    }
   }
 
   /**
    * 타인 프로필(포트폴리오) — 내 프로필 조회와 동일 필드, 연락처 제외
    */
   async getPublicProfile(userId: string): Promise<PublicProfileResponseDto> {
+    await this.assertPortfolioVisible(userId);
+
     const user = await this.userRepository.findOne({
       where: { userId },
       relations: ['educations', 'careers', 'awards', 'certificates', 'major'],

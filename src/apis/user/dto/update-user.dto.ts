@@ -137,6 +137,10 @@ export class UpdateUserDto {
   isPushEnabled?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isPortfolioPrivate?: boolean;
+
+  @IsOptional()
   @IsEnum(SocialProvider)
   socialProvider?: SocialProvider;
 

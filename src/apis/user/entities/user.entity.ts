@@ -81,6 +81,9 @@ export class User {
   @Column()
   isPushEnabled: boolean;
 
+  @Column({ name: 'is_portfolio_private', default: false })
+  isPortfolioPrivate: boolean;
+
   @Column()
   socialId: string;
 
