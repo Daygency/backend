@@ -36,6 +36,7 @@ import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { Follow } from '../../follow/entities/follow.entity';
 import { FileService } from '../../file/file.service';
+import { FileTargetType } from '../../file/entities/file.entity';
 import { UserPushDevice } from '../../notice/entities/user-push-device.entity';
 import { hardDeleteUserCascade } from '../utils/user-hard-delete-cascade';
 import type { PurgeExpiredSoftDeletedUsersResult } from '../types/purge-soft-deleted.types';
@@ -660,11 +661,12 @@ export class UserService {
       this.communityRepository.find({
         where: { user: { userId } },
         order: { createdAt: 'DESC' },
-        relations: ['category'],
+        relations: ['category', 'file'],
       }),
       this.newsRepository.find({
         where: { user: { userId } },
         order: { createdAt: 'DESC' },
+        relations: ['file'],
       }),
       this.announcementRepository.find({
         where: { userId },
@@ -702,6 +704,11 @@ export class UserService {
       announcements.map((item) => item.postId),
     );
 
+    const [communityThumbMap, newsThumbMap] = await Promise.all([
+      this.buildCommunityThumbnailUrlMap(communities),
+      this.buildNewsThumbnailUrlMap(news),
+    ]);
+
     return {
       community: communities.map((item: Community) => ({
         communityId: item.communityId,
@@ -711,6 +718,7 @@ export class UserService {
         likeCount: communityLikeCountMap.get(item.communityId) ?? 0,
         viewCount: Number(item.viewCount ?? 0),
         commentCount: communityCommentCountMap.get(item.communityId) ?? 0,
+        thumbnailUrl: communityThumbMap.get(item.communityId) ?? null,
       })),
       news: news.map((item: News) => ({
         newsId: item.newsId,
@@ -720,6 +728,7 @@ export class UserService {
         likeCount: newsLikeCountMap.get(item.newsId) ?? 0,
         viewCount: Number(item.viewCount ?? 0),
         commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
+        thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
       })),
       announcements: announcements.map((item: Announcement) => ({
         postId: item.postId,
@@ -740,18 +749,21 @@ export class UserService {
     const news = await this.newsRepository.find({
       where: { user: { userId } },
       order: { createdAt: 'DESC' },
+      relations: ['file'],
     });
 
-    const [newsLikeCountMap, newsCommentCountMap] = await Promise.all([
-      this.getLikeCountMap(
-        LikeType.NEWS,
-        news.map((item) => item.newsId),
-      ),
-      this.getCommentCountMap(
-        CommentTargetType.NEWS,
-        news.map((item) => item.newsId),
-      ),
-    ]);
+    const [newsLikeCountMap, newsCommentCountMap, newsThumbMap] =
+      await Promise.all([
+        this.getLikeCountMap(
+          LikeType.NEWS,
+          news.map((item) => item.newsId),
+        ),
+        this.getCommentCountMap(
+          CommentTargetType.NEWS,
+          news.map((item) => item.newsId),
+        ),
+        this.buildNewsThumbnailUrlMap(news),
+      ]);
 
     return news.map((item: News) => ({
       newsId: item.newsId,
@@ -761,6 +773,7 @@ export class UserService {
       likeCount: newsLikeCountMap.get(item.newsId) ?? 0,
       viewCount: Number(item.viewCount ?? 0),
       commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
+      thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
     }));
   }
 
@@ -1191,11 +1204,12 @@ export class UserService {
         this.communityRepository.findOne({
           where: { user: { userId } },
           order: { createdAt: 'DESC' },
-          relations: ['category'],
+          relations: ['category', 'file'],
         }),
         this.newsRepository.find({
           where: { user: { userId } },
           order: { createdAt: 'DESC' },
+          relations: ['file'],
           take: 5,
         }),
         this.announcementRepository.findOne({
@@ -1235,6 +1249,13 @@ export class UserService {
       latestAnnouncement ? [latestAnnouncement.postId] : [],
     );
 
+    const [communityThumbMap, newsThumbMap] = await Promise.all([
+      this.buildCommunityThumbnailUrlMap(
+        latestCommunity ? [latestCommunity] : [],
+      ),
+      this.buildNewsThumbnailUrlMap(recentNews),
+    ]);
+
     return {
       latestCommunity: latestCommunity
         ? {
@@ -1248,6 +1269,8 @@ export class UserService {
             commentCount:
               latestCommunityCommentCountMap.get(latestCommunity.communityId) ??
               0,
+            thumbnailUrl:
+              communityThumbMap.get(latestCommunity.communityId) ?? null,
           }
         : null,
       recentNews: recentNews.map((item: News) => ({
@@ -1258,6 +1281,7 @@ export class UserService {
         likeCount: recentNewsLikeCountMap.get(item.newsId) ?? 0,
         viewCount: Number(item.viewCount ?? 0),
         commentCount: recentNewsCommentCountMap.get(item.newsId) ?? 0,
+        thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
       })),
       latestAnnouncement: latestAnnouncement
         ? {
@@ -1276,6 +1300,44 @@ export class UserService {
           }
         : null,
     };
+  }
+
+  private async buildNewsThumbnailUrlMap(
+    items: Pick<News, 'newsId' | 'file'>[],
+  ): Promise<Map<string, string | null>> {
+    const newsIds = items.map((item) => item.newsId);
+    if (!newsIds.length) return new Map();
+
+    const thumbMap = await this.fileService.getSmallestOrderThumbnailByTargetIds(
+      FileTargetType.NEWS,
+      newsIds,
+    );
+
+    return new Map(
+      items.map((item) => [
+        item.newsId,
+        thumbMap.get(item.newsId)?.imgUrl ?? item.file?.imgUrl ?? null,
+      ]),
+    );
+  }
+
+  private async buildCommunityThumbnailUrlMap(
+    items: Pick<Community, 'communityId' | 'file'>[],
+  ): Promise<Map<string, string | null>> {
+    const communityIds = items.map((item) => item.communityId);
+    if (!communityIds.length) return new Map();
+
+    const thumbMap = await this.fileService.getSmallestOrderThumbnailByTargetIds(
+      FileTargetType.COMMUNITY,
+      communityIds,
+    );
+
+    return new Map(
+      items.map((item) => [
+        item.communityId,
+        thumbMap.get(item.communityId)?.imgUrl ?? item.file?.imgUrl ?? null,
+      ]),
+    );
   }
 
   private async getLikeCountMap(
