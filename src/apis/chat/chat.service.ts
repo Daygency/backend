@@ -17,6 +17,7 @@ import { ListChatRoomsQueryDto } from './dto/list-chat-rooms-query.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
 import { ChatRoomMember } from './entities/chat-room-member.entity';
 import { ChatRoom, ChatRoomKind } from './entities/chat-room.entity';
+import { FileService } from '../file/file.service';
 import { Message } from './entities/message.entity';
 
 export type MessagePayload = {
@@ -24,6 +25,9 @@ export type MessagePayload = {
   chatRoomId: string;
   userId: string;
   content: string | null;
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileMime?: string | null;
   createdAt: Date;
 };
 
@@ -64,6 +68,7 @@ export class ChatService {
     private readonly applicationRepo: Repository<Application>,
     @Inject(forwardRef(() => ChatGateway))
     private readonly chatGateway: ChatGateway,
+    private readonly fileService: FileService,
   ) {}
 
   /** COFFEE: 정확히 2명(삭제되지 않은 멤버)만 있는 방 중 두 사용자를 모두 포함하는 방 */
@@ -396,6 +401,51 @@ export class ChatService {
     return payload;
   }
 
+  async createFileMessage(
+    chatRoomId: string,
+    userId: string,
+    file: { buffer: Buffer; originalName: string; contentType: string },
+  ): Promise<MessagePayload> {
+    await this.findRoomForUserOrThrow(chatRoomId, userId);
+    if (!file.buffer?.length) {
+      throw new BadRequestException('업로드할 파일이 필요합니다.');
+    }
+
+    const uploaded = await this.fileService.uploadAndSave({
+      buffer: file.buffer,
+      originalName: file.originalName || 'file',
+      contentType: file.contentType || 'application/octet-stream',
+      targetType: null,
+      targetId: null,
+      sortOrder: 0,
+    });
+
+    const fileName = uploaded.originalName || file.originalName || 'file';
+    const message = await this.messageRepo.save(
+      this.messageRepo.create({
+        content: `[파일] ${fileName}`,
+        fileUrl: uploaded.imgUrl,
+        fileName,
+        fileMime: file.contentType || null,
+        chatRoom: { id: chatRoomId },
+        user: { userId } as User,
+      }),
+    );
+
+    const payload: MessagePayload = {
+      id: message.id,
+      chatRoomId,
+      userId,
+      content: message.content,
+      fileUrl: message.fileUrl,
+      fileName: message.fileName,
+      fileMime: message.fileMime,
+      createdAt: message.createdAt,
+    };
+    this.chatGateway.emitMessageToRoom(chatRoomId, payload);
+    return payload;
+  }
+
   async listMessages(
     chatRoomId: string,
     userId: string,
@@ -425,6 +475,48 @@ export class ChatService {
       page,
       limit,
     };
+  }
+
+  async getMemberSettings(
+    roomId: string,
+    userId: string,
+  ): Promise<{ notificationsMuted: boolean }> {
+    const member = await this.findActiveMemberOrThrow(roomId, userId);
+    return { notificationsMuted: member.notificationsMuted };
+  }
+
+  async setNotificationsMuted(
+    roomId: string,
+    userId: string,
+    muted: boolean,
+  ): Promise<{ notificationsMuted: boolean }> {
+    const member = await this.findActiveMemberOrThrow(roomId, userId);
+    member.notificationsMuted = muted;
+    await this.chatRoomMemberRepo.save(member);
+    return { notificationsMuted: member.notificationsMuted };
+  }
+
+  async leaveRoom(roomId: string, userId: string): Promise<{ ok: true }> {
+    const member = await this.findActiveMemberOrThrow(roomId, userId);
+    await this.chatRoomMemberRepo.softRemove(member);
+    return { ok: true };
+  }
+
+  private async findActiveMemberOrThrow(
+    roomId: string,
+    userId: string,
+  ): Promise<ChatRoomMember> {
+    await this.findRoomForUserOrThrow(roomId, userId);
+    const member = await this.chatRoomMemberRepo.findOne({
+      where: {
+        chatRoom: { id: roomId },
+        user: { userId },
+      },
+    });
+    if (!member) {
+      throw new ForbiddenException('이 채팅방에 참여할 수 없습니다.');
+    }
+    return member;
   }
 
   async listCoffeeRooms(
@@ -458,9 +550,12 @@ export class ChatService {
     const qb = this.chatRoomRepo
       .createQueryBuilder('room')
       .leftJoinAndSelect('room.announcement', 'announcement')
+      .innerJoin('room.members', 'mb')
       .innerJoin('room.application', 'app')
       .where('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
       .andWhere('room.deletedAt IS NULL')
+      .andWhere('mb.deletedAt IS NULL')
+      .andWhere('mb.user_id = :uid', { uid: userId })
       .andWhere('app.userId = :uid', { uid: userId })
       .orderBy('room.id', 'DESC')
       .take(limit + 1);
@@ -488,8 +583,11 @@ export class ChatService {
     const qb = this.chatRoomRepo
       .createQueryBuilder('room')
       .leftJoinAndSelect('room.announcement', 'announcement')
+      .innerJoin('room.members', 'mb')
       .where('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
       .andWhere('room.deletedAt IS NULL')
+      .andWhere('mb.deletedAt IS NULL')
+      .andWhere('mb.user_id = :uid', { uid: recruiterUserId })
       .andWhere('announcement.postId = :postId', { postId })
       .orderBy('room.id', 'DESC')
       .take(limit + 1);
@@ -641,6 +739,9 @@ export class ChatService {
       chatRoomId: message.chatRoom.id,
       userId: message.user.userId,
       content: message.content,
+      fileUrl: message.fileUrl,
+      fileName: message.fileName,
+      fileMime: message.fileMime,
       createdAt: message.createdAt,
     };
   }

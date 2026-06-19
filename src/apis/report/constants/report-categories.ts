@@ -31,3 +31,7 @@ export function getReportCategoryOptions(): ReportCategoryOption[] {
     labelKo: REPORT_CATEGORY_LABEL_KO[value],
   }));
 }
+
+export function getReportCategoryLabelKo(category: ReportCategory): string {
+  return REPORT_CATEGORY_LABEL_KO[category] ?? category;
+}

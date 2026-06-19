@@ -26,6 +26,15 @@ export class Message {
   @Column({ type: 'varchar', length: 255, nullable: true })
   content: string | null;
 
+  @Column({ name: 'file_url', type: 'varchar', length: 512, nullable: true })
+  fileUrl: string | null;
+
+  @Column({ name: 'file_name', type: 'varchar', length: 255, nullable: true })
+  fileName: string | null;
+
+  @Column({ name: 'file_mime', type: 'varchar', length: 100, nullable: true })
+  fileMime: string | null;
+
   @CreateDateColumn({
     name: 'created_at',
     type: 'datetime',

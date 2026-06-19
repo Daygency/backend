@@ -4,20 +4,27 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Request,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Express } from 'express';
 import { ChatService } from './chat.service';
 import { CreateAnnouncementChatRoomDto } from './dto/create-announcement-chat-room.dto';
 import { CreateCoffeeRoomDto } from './dto/create-coffee-room.dto';
 import { ListChatRoomsQueryDto } from './dto/list-chat-rooms-query.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
+import { SetChatNotificationsMutedDto } from './dto/set-chat-notifications-muted.dto';
 
 @ApiTags('chat')
 @Controller('chat')
@@ -101,5 +108,66 @@ export class ChatController {
     @Query() query: ListMessagesQueryDto,
   ) {
     return this.chatService.listMessages(roomId, req.user.id, query);
+  }
+
+  @Post('rooms/:roomId/messages/file')
+  @UseGuards(AuthGuard('access'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 20 * 1024 * 1024 },
+    }),
+  )
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '채팅방 파일 메시지 전송' })
+  sendFileMessage(
+    @Request() req: { user: { id: string } },
+    @Param('roomId', ParseUUIDPipe) roomId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    return this.chatService.createFileMessage(roomId, req.user.id, {
+      buffer: file?.buffer ?? Buffer.alloc(0),
+      originalName: file?.originalname ?? 'file',
+      contentType: file?.mimetype ?? 'application/octet-stream',
+    });
+  }
+
+  @Get('rooms/:roomId/member-settings')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '채팅방 멤버 설정 (알림 해제 여부)' })
+  getMemberSettings(
+    @Request() req: { user: { id: string } },
+    @Param('roomId', ParseUUIDPipe) roomId: string,
+  ) {
+    return this.chatService.getMemberSettings(roomId, req.user.id);
+  }
+
+  @Patch('rooms/:roomId/notifications-muted')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '채팅방 알림 해제/켜기' })
+  setNotificationsMuted(
+    @Request() req: { user: { id: string } },
+    @Param('roomId', ParseUUIDPipe) roomId: string,
+    @Body() dto: SetChatNotificationsMutedDto,
+  ) {
+    return this.chatService.setNotificationsMuted(
+      roomId,
+      req.user.id,
+      dto.muted,
+    );
+  }
+
+  @Post('rooms/:roomId/leave')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '채팅방 나가기' })
+  leaveRoom(
+    @Request() req: { user: { id: string } },
+    @Param('roomId', ParseUUIDPipe) roomId: string,
+  ) {
+    return this.chatService.leaveRoom(roomId, req.user.id);
   }
 }
