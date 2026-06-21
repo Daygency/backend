@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Query,
+  Request,
   UseGuards,
   UsePipes,
   ValidationPipe,
@@ -40,9 +41,10 @@ export class AdminInquiryController {
   @Patch(':inquiryId/reply')
   @ApiOperation({ summary: '고객센터 문의 답변 (관리자)' })
   reply(
+    @Request() req: { user: { id: string } },
     @Param('inquiryId', ParseUUIDPipe) inquiryId: string,
     @Body() dto: ReplyInquiryDto,
   ) {
-    return this.inquiryService.reply(inquiryId, dto.answer);
+    return this.inquiryService.reply(inquiryId, dto.answer, req.user.id);
   }
 }

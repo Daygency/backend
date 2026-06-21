@@ -8,6 +8,8 @@ import type { Express } from 'express';
 import { Repository } from 'typeorm';
 import { FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
+import { NoticeTargetType } from '../notice/entities/notice.entity';
+import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
 import { ListAdminInquiriesQueryDto } from './dto/list-admin-inquiries-query.dto';
 import { Inquiry } from './entities/inquiry.entity';
@@ -35,6 +37,7 @@ export class InquiryService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly fileService: FileService,
+    private readonly noticeService: NoticeService,
   ) {}
 
   async create(
@@ -125,7 +128,11 @@ export class InquiryService {
     return this.toDto(row);
   }
 
-  async reply(inquiryId: string, answer: string): Promise<InquiryDto> {
+  async reply(
+    inquiryId: string,
+    answer: string,
+    actorUserId: string,
+  ): Promise<InquiryDto> {
     const row = await this.inquiryRepository.findOne({
       where: { id: inquiryId },
       relations: { user: true },
@@ -142,6 +149,18 @@ export class InquiryService {
     row.answer = trimmed;
     row.answeredAt = new Date();
     await this.inquiryRepository.save(row);
+
+    const recipientUserId = row.user?.userId;
+    if (recipientUserId) {
+      await this.noticeService.createAndDispatchPush({
+        actorUserId,
+        targetType: NoticeTargetType.INQUIRY,
+        targetId: row.id,
+        content: '고객센터 문의에 답변이 등록되었습니다.',
+        recipientUserIds: [recipientUserId],
+      });
+    }
+
     return this.toDto(row);
   }
 
