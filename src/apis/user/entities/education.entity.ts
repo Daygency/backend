@@ -15,11 +15,14 @@ export class Education {
   @Column({ length: 100 })
   description: string;
 
-  @Column({ type: 'datetime' })
-  startedAt: Date;
+  @Column({ type: 'datetime', nullable: true })
+  startedAt: Date | null;
 
   @Column({ type: 'datetime', nullable: true })
   endedAt: Date | null;
+
+  @Column({ type: 'boolean', default: false })
+  isOngoing: boolean;
 
   @ManyToOne(() => User, (user) => user.educations, { nullable: true })
   @JoinColumn({ name: 'userId' })

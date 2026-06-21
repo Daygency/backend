@@ -19,6 +19,8 @@ export enum NoticeTargetType {
   LIKE = 'LIKE',
   /** 공연 완료 후 상대방이 남긴 활동 후기 */
   REVIEW = 'REVIEW',
+  /** 고객센터 1:1 문의 답변 — `target_id` = inquiry id */
+  INQUIRY = 'INQUIRY',
 }
 
 @Entity('notice')

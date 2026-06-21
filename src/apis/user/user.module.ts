@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserService } from './services/user.service';
 import { UserController } from './controllers/user.controller';
+import { AdminUserController } from './controllers/admin-user.controller';
 import { User } from './entities/user.entity';
 import { AuthModule } from '../auth/auth.module';
 import { MajorModule } from '../major/major.module';
@@ -17,8 +18,14 @@ import { Like } from '../like/entities/like.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { Scrap } from '../scrap/entities/scrap.entity';
 import { Follow } from '../follow/entities/follow.entity';
+import { Application } from '../application/entities/application.entity';
 import { FileModule } from '../file/file.module';
+import { File } from '../file/entities/file.entity';
+import { ReviewModule } from '../review/review.module';
 import { UserSoftDeletePurgeScheduler } from './user-soft-delete-purge.scheduler';
+import { UserDocumentService } from './services/user-document.service';
+import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -34,13 +41,16 @@ import { UserSoftDeletePurgeScheduler } from './user-soft-delete-purge.scheduler
       Comment,
       Scrap,
       Follow,
+      Application,
+      File,
     ]),
     FileModule,
     MajorModule,
+    ReviewModule,
     forwardRef(() => AuthModule),
   ],
-  controllers: [UserController],
-  providers: [UserService, PortfolioService, UserSoftDeletePurgeScheduler],
+  controllers: [UserController, AdminUserController],
+  providers: [UserService, PortfolioService, UserDocumentService, UserSoftDeletePurgeScheduler, AdminRoleGuard],
   exports: [UserService],
 })
 export class UserModule {}

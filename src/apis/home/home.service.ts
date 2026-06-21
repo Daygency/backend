@@ -12,6 +12,8 @@ import { Like, LikeType } from '../like/entities/like.entity';
 import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
 import { FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
+import { HomeBannerService } from '../home-banner/home-banner.service';
+import { resolveAnnouncementPostedAt } from '../announcement/announcement-created-at.util';
 
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
@@ -41,10 +43,12 @@ export class HomeService {
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
     private readonly fileService: FileService,
+    private readonly homeBannerService: HomeBannerService,
   ) {}
 
   async getHome() {
-    const [latestAnnouncements, recentNews, categories] = await Promise.all([
+    const [latestAnnouncements, recentNews, categories, banners] =
+      await Promise.all([
       this.announcementRepository.find({
         relations: ['category'],
         order: { postId: 'DESC' },
@@ -58,6 +62,7 @@ export class HomeService {
       this.communityCategoryRepository.find({
         order: { name: 'ASC' },
       }),
+      this.homeBannerService.findActivePublic(),
     ]);
 
     const latestCommunityByCategoryRows = await Promise.all(
@@ -76,6 +81,7 @@ export class HomeService {
                 communityId: post.communityId,
                 title: post.title,
                 viewCount: Number(post.viewCount ?? 0),
+                createdAt: post.createdAt,
               }
             : null,
         };
@@ -118,11 +124,18 @@ export class HomeService {
       commentCounts.map((row) => [row.targetId, Number(row.count)]),
     );
     const newsIds = recentNews.map((item) => item.newsId);
-    const newsThumbMap =
-      await this.fileService.getSmallestOrderThumbnailByTargetIds(
+    const [newsThumbMap, announcementPostedAtMap] = await Promise.all([
+      this.fileService.getSmallestOrderThumbnailByTargetIds(
         FileTargetType.NEWS,
         newsIds,
-      );
+      ),
+      this.fileService.getAnnouncementPostedAtMap(
+        latestAnnouncements.map((item) => ({
+          postId: item.postId,
+          fileId: item.fileId,
+        })),
+      ),
+    ]);
 
     const latestCommunityByCategory = latestCommunityByCategoryRows.map(
       (row) => ({
@@ -140,6 +153,7 @@ export class HomeService {
     );
 
     return {
+      banners,
       latestAnnouncements: latestAnnouncements.map((item) => ({
         postId: item.postId,
         title: item.title,
@@ -149,12 +163,16 @@ export class HomeService {
         priceType: item.priceType,
         price: item.price,
         viewCount: Number(item.viewCount ?? 0),
+        createdAt: resolveAnnouncementPostedAt(
+          announcementPostedAtMap.get(item.postId),
+        ),
       })),
       recentNews: recentNews.map((item) => ({
         newsId: item.newsId,
         title: item.title,
         place: item.place,
         startedAt: item.startedAt,
+        createdAt: item.createdAt,
         thumbnailUrl:
           newsThumbMap.get(item.newsId)?.imgUrl ?? item.file?.imgUrl ?? null,
       })),

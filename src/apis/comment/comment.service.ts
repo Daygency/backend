@@ -64,7 +64,7 @@ export class CommentService {
 
     const saved = await this.commentRepository.save(comment);
     void this.notifyCommentCreated(saved, userId);
-    return saved;
+    return this.findOne(saved.id);
   }
 
   async findAll(query: ListCommentQueryDto) {

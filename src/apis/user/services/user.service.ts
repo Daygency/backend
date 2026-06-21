@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -9,13 +10,15 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { CreateUserDto } from '../dto/create-user.dto';
-import { User, SocialProvider, UserRole } from '../entities/user.entity';
+import { User, SocialProvider, UserRole, UserActivity } from '../entities/user.entity';
+import { liftExpiredReportBanIfNeeded } from '../../report/utils/report-ban.util';
 import type { SocialProfile } from '../../auth/types/social-profile.type';
 import { ProfileResponseDto } from '../dto/profile-response.dto';
 import { PublicProfileResponseDto } from '../dto/public-profile-response.dto';
 import {
   UpdateAwardDto,
   UpdateCareerDto,
+  UpdateCertificateDto,
   UpdateEducationDto,
   UpdateUserDto,
 } from '../dto/update-user.dto';
@@ -23,6 +26,7 @@ import { Education } from '../entities/education.entity';
 import { Career } from '../entities/career.entity';
 import { Major } from '../../major/entities/major.entity';
 import { Award } from '../entities/award.entity';
+import { Certificate } from '../entities/certificate.entity';
 import { News } from '../../news/entities/news.entity';
 import { Community } from '../../community/entities/community.entity';
 import { Announcement } from '../../announcement/entities/announcement.entity';
@@ -34,8 +38,10 @@ import {
 import { Scrap, ScrapTargetType } from '../../scrap/entities/scrap.entity';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
+import { toLikePattern } from '../../../common/escape-like-pattern.util';
 import { Follow } from '../../follow/entities/follow.entity';
 import { FileService } from '../../file/file.service';
+import { FileTargetType } from '../../file/entities/file.entity';
 import { UserPushDevice } from '../../notice/entities/user-push-device.entity';
 import { hardDeleteUserCascade } from '../utils/user-hard-delete-cascade';
 import type { PurgeExpiredSoftDeletedUsersResult } from '../types/purge-soft-deleted.types';
@@ -85,6 +91,8 @@ export class UserService {
     private readonly majorRepository: Repository<Major>,
     @InjectRepository(Award)
     private readonly awardRepository: Repository<Award>,
+    @InjectRepository(Certificate)
+    private readonly certificateRepository: Repository<Certificate>,
     @InjectRepository(News)
     private readonly newsRepository: Repository<News>,
     @InjectRepository(Community)
@@ -189,6 +197,7 @@ export class UserService {
       phoneNumber: '0000000000000',
       isEmailSubscribed: false,
       isPushEnabled: false,
+      isPortfolioPrivate: false,
       artTempo: 0,
       profileImgUrl: profile.profileImgUrl || '',
       socialId: profile.socialId,
@@ -239,6 +248,75 @@ export class UserService {
 
   findOne(userId: string) {
     return this.userRepository.findOne({ where: { userId } });
+  }
+
+  /** JWT·리프레시 검증용 — 신고 자동 정지 만료 시 복구 후 반환 */
+  async findOneForAuth(userId: string) {
+    const user = await this.userRepository.findOne({ where: { userId } });
+    if (!user) return null;
+    return liftExpiredReportBanIfNeeded(user, (u) => this.userRepository.save(u));
+  }
+
+  async listBannedForAdmin() {
+    const rows = await this.userRepository.find({
+      where: { activity: UserActivity.BAN },
+      select: [
+        'userId',
+        'nickname',
+        'activityName',
+        'email',
+        'activity',
+        'reportBannedUntil',
+        'reportStrikeResetAt',
+        'createdAt',
+      ],
+      order: { reportBannedUntil: 'ASC', createdAt: 'DESC' },
+    });
+
+    return rows.map((user) => ({
+      userId: user.userId,
+      nickname: user.nickname,
+      activityName: user.activityName,
+      email: user.email,
+      reportBannedUntil: user.reportBannedUntil?.toISOString() ?? null,
+      reportStrikeResetAt: user.reportStrikeResetAt?.toISOString() ?? null,
+      banType: user.reportBannedUntil ? 'auto_report' : 'manual',
+      createdAt: user.createdAt.toISOString(),
+    }));
+  }
+
+  async unbanUserForAdmin(userId: string) {
+    const user = await this.userRepository.findOne({ where: { userId } });
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+    if (user.activity !== UserActivity.BAN) {
+      throw new BadRequestException('정지 상태가 아닌 계정입니다.');
+    }
+
+    user.activity = UserActivity.NORMAL;
+    user.reportBannedUntil = null;
+    user.reportStrikeResetAt = new Date();
+    await this.userRepository.save(user);
+
+    return {
+      ok: true,
+      userId: user.userId,
+      nickname: user.nickname,
+      activityName: user.activityName,
+    };
+  }
+
+  async findAdminForWebLogin(email?: string) {
+    if (email?.trim()) {
+      return this.userRepository.findOne({
+        where: { email: email.trim(), role: UserRole.ADMIN },
+      });
+    }
+    return this.userRepository.findOne({
+      where: { role: UserRole.ADMIN },
+      order: { createdAt: 'ASC' },
+    });
   }
 
   /**
@@ -305,10 +383,11 @@ export class UserService {
   async getMyProfile(userId: string): Promise<ProfileResponseDto> {
     const user = await this.userRepository.findOne({
       where: { userId },
-      relations: ['educations', 'careers', 'awards', 'major'], // 이 줄 추가
+      relations: ['educations', 'careers', 'awards', 'certificates', 'major'],
       select: [
         'userId',
         'profileImgUrl',
+        'coverImgUrl',
         'activityName',
         'nickname',
         'role',
@@ -316,6 +395,7 @@ export class UserService {
         'selfIntroduction',
         'email',
         'phoneNumber',
+        'isPortfolioPrivate',
       ],
     });
     if (!user) {
@@ -330,6 +410,7 @@ export class UserService {
     return {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
+      coverImgUrl: user.coverImgUrl ?? '',
       nickname: user.nickname,
       activityName: user.activityName,
       role: user.role,
@@ -338,6 +419,7 @@ export class UserService {
       educations: user.educations ?? null,
       careers: user.careers ?? null,
       awards: user.awards ?? null,
+      certificates: user.certificates ?? null,
       major: user.major ?? null,
       contact: {
         email: user.email,
@@ -345,19 +427,40 @@ export class UserService {
       },
       followingCount,
       followerCount,
+      isPortfolioPrivate: user.isPortfolioPrivate ?? false,
     };
+  }
+
+  async ensurePortfolioPublic(userId: string): Promise<void> {
+    await this.assertPortfolioVisible(userId);
+  }
+
+  private async assertPortfolioVisible(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { userId },
+      select: ['userId', 'isPortfolioPrivate'],
+    });
+    if (!user) {
+      throw new NotFoundException('프로필을 찾을 수 없습니다.');
+    }
+    if (user.isPortfolioPrivate) {
+      throw new ForbiddenException('비공개 프로필입니다.');
+    }
   }
 
   /**
    * 타인 프로필(포트폴리오) — 내 프로필 조회와 동일 필드, 연락처 제외
    */
   async getPublicProfile(userId: string): Promise<PublicProfileResponseDto> {
+    await this.assertPortfolioVisible(userId);
+
     const user = await this.userRepository.findOne({
       where: { userId },
-      relations: ['educations', 'careers', 'awards', 'major'],
+      relations: ['educations', 'careers', 'awards', 'certificates', 'major'],
       select: [
         'userId',
         'profileImgUrl',
+        'coverImgUrl',
         'activityName',
         'nickname',
         'role',
@@ -377,6 +480,7 @@ export class UserService {
     return {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
+      coverImgUrl: user.coverImgUrl ?? '',
       nickname: user.nickname,
       activityName: user.activityName,
       role: user.role,
@@ -385,6 +489,7 @@ export class UserService {
       educations: user.educations ?? null,
       careers: user.careers ?? null,
       awards: user.awards ?? null,
+      certificates: user.certificates ?? null,
       major: user.major ?? null,
       followingCount,
       followerCount,
@@ -395,16 +500,17 @@ export class UserService {
     userId: string,
     updateUserDto: UpdateUserDto,
     profileImage?: Express.Multer.File,
+    coverImage?: Express.Multer.File,
   ) {
     const user = await this.userRepository.findOne({
       where: { userId },
-      relations: ['educations', 'careers', 'awards', 'major'],
+      relations: ['educations', 'careers', 'awards', 'certificates', 'major'],
     });
     if (!user) {
       throw new NotFoundException('프로필을 찾을 수 없습니다.');
     }
 
-    const { educations, careers, awards, majorId, ...scalarFields } =
+    const { educations, careers, awards, certificates, majorId, ...scalarFields } =
       updateUserDto;
 
     Object.assign(user, scalarFields as Partial<User>);
@@ -431,6 +537,18 @@ export class UserService {
       user.profileImgUrl = uploaded.imgUrl;
     }
 
+    if (coverImage) {
+      const uploaded = await this.fileService.uploadAndSave({
+        buffer: coverImage.buffer,
+        originalName: coverImage.originalname,
+        contentType: coverImage.mimetype,
+        targetType: null,
+        targetId: null,
+        sortOrder: 0,
+      });
+      user.coverImgUrl = uploaded.imgUrl;
+    }
+
     const savedUser = await this.userRepository.save(user);
 
     if (educations) {
@@ -443,6 +561,10 @@ export class UserService {
 
     if (awards) {
       await this.syncAwards(savedUser, awards);
+    }
+
+    if (certificates) {
+      await this.syncCertificates(savedUser, certificates);
     }
 
     return this.getMyProfile(savedUser.userId);
@@ -466,21 +588,28 @@ export class UserService {
     const toSave: Education[] = [];
 
     for (const dto of educationDtos) {
-      const endedAt =
-        dto.endedAt != null && dto.endedAt !== ''
-          ? new Date(dto.endedAt)
+      const startedAt =
+        dto.startedAt != null && dto.startedAt !== ''
+          ? new Date(dto.startedAt)
           : null;
+      const isOngoing = dto.isOngoing ?? false;
+      const endedAt =
+        isOngoing || dto.endedAt == null || dto.endedAt === ''
+          ? null
+          : new Date(dto.endedAt);
       if (dto.educationId && existingMap.has(dto.educationId)) {
         const entity = existingMap.get(dto.educationId) as Education;
         entity.description = dto.description;
-        entity.startedAt = new Date(dto.startedAt);
+        entity.startedAt = startedAt;
         entity.endedAt = endedAt;
+        entity.isOngoing = isOngoing;
         toSave.push(entity);
       } else {
         const entity = this.educationRepository.create({
           description: dto.description,
-          startedAt: new Date(dto.startedAt),
+          startedAt,
           endedAt,
+          isOngoing,
           user,
         });
         toSave.push(entity);
@@ -515,21 +644,32 @@ export class UserService {
     const toSave: Career[] = [];
 
     for (const dto of careerDtos) {
+      const startedAt =
+        dto.startedAt != null && dto.startedAt !== ''
+          ? new Date(dto.startedAt)
+          : null;
+      const isOngoing = dto.isOngoing ?? false;
+      const endedAt =
+        isOngoing || dto.endedAt == null || dto.endedAt === ''
+          ? null
+          : new Date(dto.endedAt);
       const organization = dto.organization?.trim()
         ? dto.organization.trim().slice(0, 10)
         : null;
       if (dto.careerId && existingMap.has(dto.careerId)) {
         const entity = existingMap.get(dto.careerId) as Career;
         entity.description = dto.description;
-        entity.startedAt = new Date(dto.startedAt);
-        entity.endedAt = new Date(dto.endedAt);
+        entity.startedAt = startedAt;
+        entity.endedAt = endedAt;
+        entity.isOngoing = isOngoing;
         entity.organization = organization;
         toSave.push(entity);
       } else {
         const entity = this.careerRepository.create({
           description: dto.description,
-          startedAt: new Date(dto.startedAt),
-          endedAt: new Date(dto.endedAt),
+          startedAt,
+          endedAt,
+          isOngoing,
           organization,
           user,
         });
@@ -602,6 +742,63 @@ export class UserService {
     }
   }
 
+  private async syncCertificates(
+    user: User,
+    certificateDtos: UpdateCertificateDto[],
+  ) {
+    const existing: Certificate[] = user.certificates ?? [];
+    const existingMap = new Map<string, Certificate>(
+      existing.map((c: Certificate) => [c.certificateId, c]),
+    );
+
+    const incomingIds = new Set(
+      certificateDtos
+        .map((c: UpdateCertificateDto) => c.certificateId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    const toSave: Certificate[] = [];
+
+    for (const dto of certificateDtos) {
+      const obtainedAt =
+        dto.obtainedAt != null && dto.obtainedAt !== ''
+          ? new Date(dto.obtainedAt)
+          : null;
+      const organization = dto.organization?.trim()
+        ? dto.organization.trim().slice(0, 10)
+        : null;
+      if (dto.certificateId && existingMap.has(dto.certificateId)) {
+        const entity = existingMap.get(dto.certificateId) as Certificate;
+        entity.description = dto.description;
+        entity.obtainedAt = obtainedAt;
+        entity.organization = organization;
+        toSave.push(entity);
+      } else {
+        const entity = this.certificateRepository.create({
+          description: dto.description,
+          obtainedAt,
+          organization,
+          user,
+        });
+        toSave.push(entity);
+      }
+    }
+
+    const toDeleteIds = existing
+      .filter((c: Certificate) => !incomingIds.has(c.certificateId))
+      .map((c: Certificate) => c.certificateId);
+
+    if (toDeleteIds.length) {
+      await this.certificateRepository.delete({
+        certificateId: In(toDeleteIds),
+      });
+    }
+
+    if (toSave.length) {
+      await this.certificateRepository.save(toSave);
+    }
+  }
+
   async checkActivityNameAvailable(
     activityName: string,
   ): Promise<{ available: boolean }> {
@@ -660,11 +857,12 @@ export class UserService {
       this.communityRepository.find({
         where: { user: { userId } },
         order: { createdAt: 'DESC' },
-        relations: ['category'],
+        relations: ['category', 'file'],
       }),
       this.newsRepository.find({
         where: { user: { userId } },
         order: { createdAt: 'DESC' },
+        relations: ['file'],
       }),
       this.announcementRepository.find({
         where: { userId },
@@ -702,6 +900,11 @@ export class UserService {
       announcements.map((item) => item.postId),
     );
 
+    const [communityThumbMap, newsThumbMap] = await Promise.all([
+      this.buildCommunityThumbnailUrlMap(communities),
+      this.buildNewsThumbnailUrlMap(news),
+    ]);
+
     return {
       community: communities.map((item: Community) => ({
         communityId: item.communityId,
@@ -711,6 +914,7 @@ export class UserService {
         likeCount: communityLikeCountMap.get(item.communityId) ?? 0,
         viewCount: Number(item.viewCount ?? 0),
         commentCount: communityCommentCountMap.get(item.communityId) ?? 0,
+        thumbnailUrl: communityThumbMap.get(item.communityId) ?? null,
       })),
       news: news.map((item: News) => ({
         newsId: item.newsId,
@@ -720,6 +924,7 @@ export class UserService {
         likeCount: newsLikeCountMap.get(item.newsId) ?? 0,
         viewCount: Number(item.viewCount ?? 0),
         commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
+        thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
       })),
       announcements: announcements.map((item: Announcement) => ({
         postId: item.postId,
@@ -740,18 +945,21 @@ export class UserService {
     const news = await this.newsRepository.find({
       where: { user: { userId } },
       order: { createdAt: 'DESC' },
+      relations: ['file'],
     });
 
-    const [newsLikeCountMap, newsCommentCountMap] = await Promise.all([
-      this.getLikeCountMap(
-        LikeType.NEWS,
-        news.map((item) => item.newsId),
-      ),
-      this.getCommentCountMap(
-        CommentTargetType.NEWS,
-        news.map((item) => item.newsId),
-      ),
-    ]);
+    const [newsLikeCountMap, newsCommentCountMap, newsThumbMap] =
+      await Promise.all([
+        this.getLikeCountMap(
+          LikeType.NEWS,
+          news.map((item) => item.newsId),
+        ),
+        this.getCommentCountMap(
+          CommentTargetType.NEWS,
+          news.map((item) => item.newsId),
+        ),
+        this.buildNewsThumbnailUrlMap(news),
+      ]);
 
     return news.map((item: News) => ({
       newsId: item.newsId,
@@ -761,6 +969,7 @@ export class UserService {
       likeCount: newsLikeCountMap.get(item.newsId) ?? 0,
       viewCount: Number(item.viewCount ?? 0),
       commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
+      thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
     }));
   }
 
@@ -1191,11 +1400,12 @@ export class UserService {
         this.communityRepository.findOne({
           where: { user: { userId } },
           order: { createdAt: 'DESC' },
-          relations: ['category'],
+          relations: ['category', 'file'],
         }),
         this.newsRepository.find({
           where: { user: { userId } },
           order: { createdAt: 'DESC' },
+          relations: ['file'],
           take: 5,
         }),
         this.announcementRepository.findOne({
@@ -1235,6 +1445,13 @@ export class UserService {
       latestAnnouncement ? [latestAnnouncement.postId] : [],
     );
 
+    const [communityThumbMap, newsThumbMap] = await Promise.all([
+      this.buildCommunityThumbnailUrlMap(
+        latestCommunity ? [latestCommunity] : [],
+      ),
+      this.buildNewsThumbnailUrlMap(recentNews),
+    ]);
+
     return {
       latestCommunity: latestCommunity
         ? {
@@ -1248,6 +1465,8 @@ export class UserService {
             commentCount:
               latestCommunityCommentCountMap.get(latestCommunity.communityId) ??
               0,
+            thumbnailUrl:
+              communityThumbMap.get(latestCommunity.communityId) ?? null,
           }
         : null,
       recentNews: recentNews.map((item: News) => ({
@@ -1258,6 +1477,7 @@ export class UserService {
         likeCount: recentNewsLikeCountMap.get(item.newsId) ?? 0,
         viewCount: Number(item.viewCount ?? 0),
         commentCount: recentNewsCommentCountMap.get(item.newsId) ?? 0,
+        thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
       })),
       latestAnnouncement: latestAnnouncement
         ? {
@@ -1276,6 +1496,44 @@ export class UserService {
           }
         : null,
     };
+  }
+
+  private async buildNewsThumbnailUrlMap(
+    items: Pick<News, 'newsId' | 'file'>[],
+  ): Promise<Map<string, string | null>> {
+    const newsIds = items.map((item) => item.newsId);
+    if (!newsIds.length) return new Map();
+
+    const thumbMap = await this.fileService.getSmallestOrderThumbnailByTargetIds(
+      FileTargetType.NEWS,
+      newsIds,
+    );
+
+    return new Map(
+      items.map((item) => [
+        item.newsId,
+        thumbMap.get(item.newsId)?.imgUrl ?? item.file?.imgUrl ?? null,
+      ]),
+    );
+  }
+
+  private async buildCommunityThumbnailUrlMap(
+    items: Pick<Community, 'communityId' | 'file'>[],
+  ): Promise<Map<string, string | null>> {
+    const communityIds = items.map((item) => item.communityId);
+    if (!communityIds.length) return new Map();
+
+    const thumbMap = await this.fileService.getSmallestOrderThumbnailByTargetIds(
+      FileTargetType.COMMUNITY,
+      communityIds,
+    );
+
+    return new Map(
+      items.map((item) => [
+        item.communityId,
+        thumbMap.get(item.communityId)?.imgUrl ?? item.file?.imgUrl ?? null,
+      ]),
+    );
   }
 
   private async getLikeCountMap(
@@ -1336,6 +1594,7 @@ export class UserService {
     hasMore: boolean;
   }> {
     const limit = query.limit ?? 20;
+    const likeQ = query.q ? toLikePattern(query.q) : null;
     const qb = this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.major', 'major')
@@ -1358,6 +1617,12 @@ export class UserService {
       qb.andWhere(
         '(user.createdAt < :ca OR (user.createdAt = :ca AND user.userId < :uid))',
         { ca: new Date(ca), uid },
+      );
+    }
+    if (likeQ) {
+      qb.andWhere(
+        '(user.nickname LIKE :likeQ ESCAPE \'\\\\\' OR user.activityName LIKE :likeQ ESCAPE \'\\\\\' OR user.aboutMe LIKE :likeQ ESCAPE \'\\\\\')',
+        { likeQ },
       );
     }
 

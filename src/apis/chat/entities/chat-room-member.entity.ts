@@ -1,4 +1,5 @@
 import {
+  Column,
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
@@ -34,4 +35,8 @@ export class ChatRoomMember {
 
   @DeleteDateColumn({ name: 'deleted_at', type: 'datetime', nullable: true })
   deletedAt: Date | null;
+
+  /** 이 방의 새 메시지 푸시/알림 수신 여부 (false = 알림 받음) */
+  @Column({ name: 'notifications_muted', type: 'boolean', default: false })
+  notificationsMuted: boolean;
 }

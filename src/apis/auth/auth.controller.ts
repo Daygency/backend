@@ -12,6 +12,7 @@ import { NaverLoginDto } from './dto/naver-login.dto';
 import { SocialLoginDto } from './dto/social-login.dto';
 import { SocialSignupDto } from './dto/social-signup.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { AdminWebLoginDto } from './dto/admin-web-login.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -114,6 +115,14 @@ export class AuthController {
       role: body.role,
       confirmReactivation: body.confirmReactivation === true,
     });
+  }
+
+  @Post('admin/login')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiOperation({ summary: '관리자 웹 로그인 (ADMIN_WEB_SECRET + admin 계정)' })
+  @ApiBody({ type: AdminWebLoginDto })
+  async loginAdminWeb(@Body() body: AdminWebLoginDto) {
+    return this.authService.loginAdminWeb(body);
   }
 
   @Post('refresh')

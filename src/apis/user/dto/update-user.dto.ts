@@ -22,12 +22,17 @@ export class UpdateEducationDto {
   @Length(1, 100)
   description: string;
 
+  @IsOptional()
   @IsDateString()
-  startedAt: string;
+  startedAt?: string | null;
 
   @IsOptional()
   @IsDateString()
   endedAt?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  isOngoing?: boolean;
 }
 
 export class UpdateCareerDto {
@@ -39,11 +44,17 @@ export class UpdateCareerDto {
   @Length(1, 100)
   description: string;
 
+  @IsOptional()
   @IsDateString()
-  startedAt: string;
+  startedAt?: string | null;
 
+  @IsOptional()
   @IsDateString()
-  endedAt: string;
+  endedAt?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  isOngoing?: boolean;
 
   @IsOptional()
   @IsString()
@@ -63,6 +74,25 @@ export class UpdateAwardDto {
   @IsOptional()
   @IsDateString()
   awardedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 10)
+  organization?: string | null;
+}
+
+export class UpdateCertificateDto {
+  @IsOptional()
+  @IsUUID()
+  certificateId?: string;
+
+  @IsString()
+  @Length(1, 100)
+  description: string;
+
+  @IsOptional()
+  @IsDateString()
+  obtainedAt?: string | null;
 
   @IsOptional()
   @IsString()
@@ -118,6 +148,10 @@ export class UpdateUserDto {
   isPushEnabled?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isPortfolioPrivate?: boolean;
+
+  @IsOptional()
   @IsEnum(SocialProvider)
   socialProvider?: SocialProvider;
 
@@ -146,4 +180,10 @@ export class UpdateUserDto {
   @ValidateNested({ each: true })
   @Type(() => UpdateAwardDto)
   awards?: UpdateAwardDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateCertificateDto)
+  certificates?: UpdateCertificateDto[];
 }

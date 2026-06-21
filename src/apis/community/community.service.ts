@@ -15,6 +15,7 @@ import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
 import { File, FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
 import { CommunityFileService } from './community-file.service';
+import { toLikePattern } from '../../common/escape-like-pattern.util';
 
 @Injectable()
 export class CommunityService {
@@ -86,14 +87,26 @@ export class CommunityService {
     };
   }
 
-  async findAll(categoryId?: string) {
-    const where = categoryId ? { category: { categoryId } } : {};
+  async findAll(categoryId?: string, q?: string) {
+    const likeQ = q ? toLikePattern(q) : null;
+    const qb = this.communityRepository
+      .createQueryBuilder('community')
+      .leftJoinAndSelect('community.category', 'category')
+      .leftJoinAndSelect('community.user', 'user')
+      .leftJoinAndSelect('community.file', 'file')
+      .orderBy('community.createdAt', 'DESC');
 
-    const communities = await this.communityRepository.find({
-      where,
-      relations: ['category', 'user', 'file'],
-      order: { createdAt: 'DESC' },
-    });
+    if (categoryId) {
+      qb.andWhere('category.categoryId = :categoryId', { categoryId });
+    }
+    if (likeQ) {
+      qb.andWhere(
+        '(community.title LIKE :likeQ ESCAPE \'\\\\\' OR community.content LIKE :likeQ ESCAPE \'\\\\\')',
+        { likeQ },
+      );
+    }
+
+    const communities = await qb.getMany();
 
     const communityIds = communities.map((community) => community.communityId);
     const [likeCounts, commentCounts] = await Promise.all([

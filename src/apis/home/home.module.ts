@@ -9,10 +9,12 @@ import { CommunityCategory } from '../community/entities/community-category.enti
 import { Like } from '../like/entities/like.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { FileModule } from '../file/file.module';
+import { HomeBannerModule } from '../home-banner/home-banner.module';
 
 @Module({
   imports: [
     FileModule,
+    HomeBannerModule,
     TypeOrmModule.forFeature([
       Announcement,
       News,

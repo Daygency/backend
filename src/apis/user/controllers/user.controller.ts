@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import { UserService } from '../services/user.service';
+import { UserDocumentService } from '../services/user-document.service';
 import { CreateUserDto } from '../dto/create-user.dto';
 import {
   Controller,
@@ -15,13 +16,15 @@ import {
   UsePipes,
   ValidationPipe,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
   Delete,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import {
   ApiBearerAuth,
@@ -36,11 +39,17 @@ import { UpdateUserDto } from '../dto/update-user.dto';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { parseAndValidateJsonPayload } from '../../../common/parse-json-payload.util';
+import { ReviewService } from '../../review/review.service';
+import { ListReviewsQueryDto } from '../../review/dto/list-reviews-query.dto';
 
 @ApiTags('users')
 @Controller('users')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly userDocumentService: UserDocumentService,
+    private readonly reviewService: ReviewService,
+  ) {}
 
   @Post()
   create(@Body() createUserDto: CreateUserDto) {
@@ -169,6 +178,57 @@ export class UserController {
     return this.userService.getMyPostHighlights(req.user.id);
   }
 
+  @Get('me/documents')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      '내 자료 보관함 — 보관함 업로드·지원서 첨부·내 게시글 첨부 파일 취합',
+  })
+  @ApiResponse({ status: 200, description: '자료 목록 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyDocuments(@Request() req: { user: { id: string } }) {
+    return this.userDocumentService.listMyDocuments(req.user.id);
+  }
+
+  @Post('me/documents')
+  @UseGuards(AuthGuard('access'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 20 * 1024 * 1024 },
+    }),
+  )
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '내 자료 보관함 — 파일 직접 업로드' })
+  @ApiResponse({ status: 201, description: '업로드 성공' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  uploadMyDocument(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Request() req: { user: { id: string } },
+  ) {
+    if (!file) {
+      throw new BadRequestException('업로드할 file 필드가 필요합니다.');
+    }
+    return this.userDocumentService.uploadMyDocument(req.user.id, file);
+  }
+
+  @Delete('me/documents/:fileId')
+  @UseGuards(AuthGuard('access'))
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내 자료 보관함 — 직접 업로드 파일 삭제' })
+  @ApiResponse({ status: 204, description: '삭제 성공' })
+  @ApiResponse({ status: 403, description: '보관함 직접 업로드만 삭제 가능' })
+  @ApiResponse({ status: 404, description: '파일 없음' })
+  async deleteMyDocument(
+    @Param('fileId', ParseUUIDPipe) fileId: string,
+    @Request() req: { user: { id: string } },
+  ): Promise<void> {
+    await this.userDocumentService.deleteMyDocument(req.user.id, fileId);
+  }
+
   @Get('search')
   @ApiOperation({ summary: '사용자 검색 / 추천 목록' })
   @ApiResponse({
@@ -211,6 +271,20 @@ export class UserController {
     return this.userService.getPublicProfile(id);
   }
 
+  @Get(':id/reviews/received')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @ApiOperation({ summary: '특정 유저가 받은 활동 후기 목록 (공개)' })
+  @ApiResponse({ status: 200, description: '받은 후기 목록 반환' })
+  @ApiResponse({ status: 404, description: '유저 없음' })
+  getUserReceivedReviews(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ListReviewsQueryDto,
+  ) {
+    return this.userService
+      .ensurePortfolioPublic(id)
+      .then(() => this.reviewService.listReceivedByUser(id, query));
+  }
+
   @Delete('me')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(AuthGuard('access'))
@@ -237,9 +311,15 @@ export class UserController {
   @Patch('profile/my')
   @UseGuards(AuthGuard('access'))
   @UseInterceptors(
-    FileInterceptor('profileImage', {
-      storage: memoryStorage(),
-    }),
+    FileFieldsInterceptor(
+      [
+        { name: 'profileImage', maxCount: 1 },
+        { name: 'coverImage', maxCount: 1 },
+      ],
+      {
+        storage: memoryStorage(),
+      },
+    ),
   )
   @ApiConsumes('application/json', 'multipart/form-data')
   @ApiOperation({ summary: '내 프로필 수정' })
@@ -252,13 +332,26 @@ export class UserController {
   async updateMyProfile(
     @Body() updateUserDto: UpdateUserDto,
     @Body('payload') payload: string | undefined,
-    @UploadedFile() profileImage: Express.Multer.File | undefined,
+    @UploadedFiles()
+    files:
+      | {
+          profileImage?: Express.Multer.File[];
+          coverImage?: Express.Multer.File[];
+        }
+      | undefined,
     @Request() req: { user: { id: string } },
   ) {
     const userId = req.user.id;
     const dto = payload
       ? await parseAndValidateJsonPayload(UpdateUserDto, payload)
       : updateUserDto;
-    return this.userService.updateMyProfile(userId, dto, profileImage);
+    const profileImage = files?.profileImage?.[0];
+    const coverImage = files?.coverImage?.[0];
+    return this.userService.updateMyProfile(
+      userId,
+      dto,
+      profileImage,
+      coverImage,
+    );
   }
 }

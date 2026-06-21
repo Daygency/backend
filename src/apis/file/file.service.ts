@@ -174,6 +174,84 @@ export class FileService {
     return out;
   }
 
+  /** 모집공고 게시 시각 — 첨부 파일(`target_id`·`file_id`) 업로드 시각만 사용 */
+  async getAnnouncementPostedAtMap(
+    items: Array<{ postId: string; fileId?: string | null }>,
+  ): Promise<Map<string, Date>> {
+    if (items.length === 0) {
+      return new Map();
+    }
+    const postIds = items.map((item) => item.postId);
+    const byTarget = await this.getEarliestCreatedAtByTargetIds(
+      FileTargetType.ANNOUNCEMENT,
+      postIds,
+    );
+
+    const fileIds = [
+      ...new Set(
+        items
+          .map((item) => item.fileId?.trim())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const primaryFiles =
+      fileIds.length > 0
+        ? await this.fileRepository.find({
+            where: { fileId: In(fileIds) },
+            select: ['fileId', 'createdAt'],
+          })
+        : [];
+
+    const primaryByFileId = new Map(
+      primaryFiles.map((file) => [file.fileId, file.createdAt]),
+    );
+
+    const result = new Map<string, Date>();
+    for (const item of items) {
+      const candidates: Date[] = [];
+      const targetDate = byTarget.get(item.postId);
+      if (targetDate) candidates.push(targetDate);
+      const primaryId = item.fileId?.trim();
+      if (primaryId) {
+        const primaryDate = primaryByFileId.get(primaryId);
+        if (primaryDate) candidates.push(primaryDate);
+      }
+      if (candidates.length > 0) {
+        result.set(
+          item.postId,
+          candidates.reduce((earliest, date) =>
+            date.getTime() < earliest.getTime() ? date : earliest,
+          ),
+        );
+      }
+    }
+    return result;
+  }
+
+  async getEarliestCreatedAtByTargetIds(
+    targetType: FileTargetType,
+    targetIds: string[],
+  ): Promise<Map<string, Date>> {
+    if (targetIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.fileRepository.find({
+      where: { targetType, targetId: In(targetIds) },
+      select: ['targetId', 'createdAt'],
+    });
+    const map = new Map<string, Date>();
+    for (const row of rows) {
+      if (!row.targetId) {
+        continue;
+      }
+      const prev = map.get(row.targetId);
+      if (!prev || row.createdAt < prev) {
+        map.set(row.targetId, row.createdAt);
+      }
+    }
+    return map;
+  }
+
   /**
    * DB 행 삭제 + S3 객체 삭제 (키는 `img_url`에서 추출)
    */
