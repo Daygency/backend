@@ -1,0 +1,48 @@
+services:
+
+  cloudflare_tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: daygency-tunnel
+    restart: always
+    env_file:
+      - .env
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - cloudflare_net
+    depends_on:
+      - backend
+
+  database:
+    image: mysql:8.0
+    container_name: daygency-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATABASE_PASSWORD}
+      MYSQL_DATABASE: ${DATABASE_NAME}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - backend_net
+
+  backend:
+    build: .
+    container_name: daygency
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - database
+    networks:
+      - cloudflare_net
+      - backend_net
+
+networks:
+  cloudflare_net:
+    driver: bridge
+  backend_net:
+    driver: bridge
+
+volumes:
+  mysql_data:
