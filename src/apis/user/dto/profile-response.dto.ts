@@ -19,8 +19,8 @@ export class ProfileResponseDto {
   @ApiProperty({ description: '포트폴리오 배경 이미지 URL' })
   coverImgUrl: string;
 
-  @ApiProperty({ description: '닉네임' })
-  nickname: string;
+  @ApiProperty({ description: '이름 (미설정 시 null)', nullable: true })
+  name: string | null;
 
   @ApiProperty({ description: '활동명' })
   activityName: string;

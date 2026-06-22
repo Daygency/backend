@@ -37,7 +37,7 @@ export type ChatRoomListItemDto = {
   post: { postId: string; title: string } | null;
   peer: {
     userId: string;
-    nickname: string;
+    name: string | null;
     activityName: string;
     profileImgUrl: string;
   };
@@ -670,13 +670,13 @@ export class ChatService {
         peer: peerUser
           ? {
               userId: peerUser.userId,
-              nickname: peerUser.nickname,
+              name: peerUser.name,
               activityName: peerUser.activityName,
               profileImgUrl: peerUser.profileImgUrl,
             }
           : {
               userId: peerId ?? '',
-              nickname: '알 수 없음',
+              name: '알 수 없음',
               activityName: '',
               profileImgUrl: '',
             },

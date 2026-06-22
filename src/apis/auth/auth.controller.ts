@@ -64,10 +64,11 @@ export class AuthController {
       );
     }
     return await this.authService.signupWithKakao(token, {
-      nickname: body.nickname,
+      name: body.name,
       activityName: body.activityName,
       role: body.role,
       confirmReactivation: body.confirmReactivation === true,
+      declineReactivation: body.declineReactivation === true,
     });
   }
 
@@ -85,10 +86,11 @@ export class AuthController {
       );
     }
     return await this.authService.signupWithGoogle(token, {
-      nickname: body.nickname,
+      name: body.name,
       activityName: body.activityName,
       role: body.role,
       confirmReactivation: body.confirmReactivation === true,
+      declineReactivation: body.declineReactivation === true,
     });
   }
 
@@ -110,10 +112,11 @@ export class AuthController {
       );
     }
     return await this.authService.signupWithNaver(token, {
-      nickname: body.nickname,
+      name: body.name,
       activityName: body.activityName,
       role: body.role,
       confirmReactivation: body.confirmReactivation === true,
+      declineReactivation: body.declineReactivation === true,
     });
   }
 

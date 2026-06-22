@@ -137,6 +137,22 @@ export class UserService {
     await this.userRepository.restore({ userId });
   }
 
+  /** 유예 기간 내 탈퇴 계정을 영구 삭제 — 복구 거부 후 동일 소셜로 신규 가입할 때 */
+  async hardDeleteSoftDeletedUser(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { userId },
+      withDeleted: true,
+    });
+    if (!user?.deletedAt) {
+      throw new BadRequestException(
+        '탈퇴 상태의 계정만 영구 삭제할 수 있습니다.',
+      );
+    }
+    await this.dataSource.transaction(async (manager) => {
+      await hardDeleteUserCascade(manager, userId);
+    });
+  }
+
   /**
    * 이메일 미동의 시 쓰는 placeholder(`{provider}_{socialId}@social.placeholder`)로 조회.
    * `social_provider`+`social_id` 조회가 실패해도 UNIQUE 이메일 충돌 나는 레거시/불일치 대응.
@@ -176,20 +192,18 @@ export class UserService {
   async createBySocial(
     provider: SocialProvider,
     profile: SocialProfile,
-    options: { nickname?: string; activityName: string; role?: UserRole },
+    options: { name?: string; activityName: string; role?: UserRole },
   ): Promise<User> {
-    const baseNickname = options.nickname ?? profile.nickname;
-    const nickname = await this.resolveNickname(
-      baseNickname,
-      provider,
-      profile.socialId,
-    );
+    const trimmedName = options.name?.trim();
+    const name = trimmedName
+      ? await this.resolveName(trimmedName, provider, profile.socialId)
+      : null;
     const activityName = options.activityName.trim();
     const email =
       profile.email || `${provider}_${profile.socialId}@social.placeholder`;
 
     const user = this.userRepository.create({
-      nickname,
+      name,
       activityName,
       aboutMe: '',
       email,
@@ -221,25 +235,42 @@ export class UserService {
     return UserRole.USER;
   }
 
-  private async resolveNickname(
+  private async resolveName(
     base: string,
     provider: string,
     socialId: string,
   ): Promise<string> {
-    const fallback = `u_${provider}_${socialId}`.slice(0, 20);
-    if (!base?.trim()) return fallback;
-
     const sanitized = base.replace(/[^a-zA-Z0-9가-힣_]/g, '_').slice(0, 20);
-
-    const existing = await this.userRepository.findOne({
-      where: { nickname: sanitized },
-    });
-    if (existing) {
-      throw new ConflictException(
-        '이미 사용 중인 닉네임입니다. 다른 닉네임을 선택해 주세요.',
-      );
+    if (!sanitized) {
+      throw new BadRequestException('유효한 이름을 입력해 주세요.');
     }
-    return sanitized;
+    const fallback = `u_${provider}_${socialId}`.slice(0, 20);
+    return this.pickAvailableName(sanitized, fallback);
+  }
+
+  /** 표시용 이름 — 다른 활성 계정과 겹치면 숫자 접미사로 자동 조정 */
+  private async pickAvailableName(
+    preferred: string,
+    fallback: string,
+  ): Promise<string> {
+    const maxLen = 20;
+
+    const isTaken = async (nick: string) =>
+      Boolean(await this.userRepository.findOne({ where: { name: nick } }));
+
+    if (!(await isTaken(preferred))) {
+      return preferred;
+    }
+
+    for (let i = 2; i <= 99; i++) {
+      const suffix = `_${i}`;
+      const candidate = `${preferred.slice(0, maxLen - suffix.length)}${suffix}`;
+      if (!(await isTaken(candidate))) {
+        return candidate;
+      }
+    }
+
+    return fallback;
   }
 
   create(createUserDto: CreateUserDto) {
@@ -262,7 +293,7 @@ export class UserService {
       where: { activity: UserActivity.BAN },
       select: [
         'userId',
-        'nickname',
+        'name',
         'activityName',
         'email',
         'activity',
@@ -275,7 +306,7 @@ export class UserService {
 
     return rows.map((user) => ({
       userId: user.userId,
-      nickname: user.nickname,
+      name: user.name,
       activityName: user.activityName,
       email: user.email,
       reportBannedUntil: user.reportBannedUntil?.toISOString() ?? null,
@@ -302,7 +333,7 @@ export class UserService {
     return {
       ok: true,
       userId: user.userId,
-      nickname: user.nickname,
+      name: user.name,
       activityName: user.activityName,
     };
   }
@@ -389,7 +420,7 @@ export class UserService {
         'profileImgUrl',
         'coverImgUrl',
         'activityName',
-        'nickname',
+        'name',
         'role',
         'aboutMe',
         'selfIntroduction',
@@ -411,7 +442,7 @@ export class UserService {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
       coverImgUrl: user.coverImgUrl ?? '',
-      nickname: user.nickname,
+      name: user.name,
       activityName: user.activityName,
       role: user.role,
       aboutMe: user.aboutMe,
@@ -462,7 +493,7 @@ export class UserService {
         'profileImgUrl',
         'coverImgUrl',
         'activityName',
-        'nickname',
+        'name',
         'role',
         'aboutMe',
         'selfIntroduction',
@@ -481,7 +512,7 @@ export class UserService {
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
       coverImgUrl: user.coverImgUrl ?? '',
-      nickname: user.nickname,
+      name: user.name,
       activityName: user.activityName,
       role: user.role,
       aboutMe: user.aboutMe,
@@ -822,7 +853,7 @@ export class UserService {
     return users.map((user) => ({
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
-      nickname: user.nickname,
+      name: user.name,
       activityName: user.activityName,
     }));
   }
@@ -837,7 +868,7 @@ export class UserService {
       .select([
         'user.userId',
         'user.profileImgUrl',
-        'user.nickname',
+        'user.name',
         'user.activityName',
       ])
       .orderBy('RAND()')
@@ -847,7 +878,7 @@ export class UserService {
     return users.map((user) => ({
       userId: user.userId,
       profileImgUrl: user.profileImgUrl,
-      nickname: user.nickname,
+      name: user.name,
       activityName: user.activityName,
     }));
   }
@@ -1583,7 +1614,7 @@ export class UserService {
   async findList(query: ListUsersQueryDto): Promise<{
     items: Array<{
       userId: string;
-      nickname: string;
+      name: string | null;
       activityName: string;
       profileImgUrl: string;
       aboutMe: string | null;
@@ -1621,7 +1652,7 @@ export class UserService {
     }
     if (likeQ) {
       qb.andWhere(
-        '(user.nickname LIKE :likeQ ESCAPE \'\\\\\' OR user.activityName LIKE :likeQ ESCAPE \'\\\\\' OR user.aboutMe LIKE :likeQ ESCAPE \'\\\\\')',
+        '(user.name LIKE :likeQ ESCAPE \'\\\\\' OR user.activityName LIKE :likeQ ESCAPE \'\\\\\' OR user.aboutMe LIKE :likeQ ESCAPE \'\\\\\')',
         { likeQ },
       );
     }
@@ -1632,7 +1663,7 @@ export class UserService {
 
     const items = slice.map((u) => ({
       userId: u.userId,
-      nickname: u.nickname,
+      name: u.name,
       activityName: u.activityName,
       profileImgUrl: u.profileImgUrl,
       aboutMe: u.aboutMe,

@@ -161,7 +161,7 @@ export class NoticeService {
           actor: nr.notice.actorUser
             ? {
                 userId: nr.notice.actorUser.userId,
-                nickname: nr.notice.actorUser.nickname,
+                name: nr.notice.actorUser.name,
                 activityName: nr.notice.actorUser.activityName,
                 profileImgUrl: nr.notice.actorUser.profileImgUrl,
               }

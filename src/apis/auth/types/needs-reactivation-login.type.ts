@@ -11,14 +11,14 @@ export interface NeedsReactivationLoginResponse {
   /** 소셜 프로필 (표시용) */
   profile: {
     socialId: string;
-    nickname: string;
+    name: string | null;
     email: string;
     profileImgUrl: string;
   };
   /** DB에 저장된 표시용 필드 */
   user: {
     userId: string;
-    nickname: string;
+    name: string | null;
     activityName: string;
     profileImgUrl: string;
   };

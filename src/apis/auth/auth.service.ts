@@ -95,6 +95,7 @@ export class AuthService {
     accessToken?: string;
     access_token?: string;
     confirmReactivation?: boolean;
+    declineReactivation?: boolean;
   }) {
     const token = dto.accessToken?.trim() || dto.access_token?.trim();
     if (!token) {
@@ -105,6 +106,7 @@ export class AuthService {
     const profile = await this.validateKakaoToken(token);
     return this.issueTokens(profile, SocialProvider.KAKAO, {
       confirmReactivation: dto.confirmReactivation === true,
+      declineReactivation: dto.declineReactivation === true,
     });
   }
 
@@ -119,12 +121,13 @@ export class AuthService {
     redirect_uri?: string;
     state?: string;
     confirmReactivation?: boolean;
+    declineReactivation?: boolean;
   }) {
-    const confirmReactivation = dto.confirmReactivation === true;
+    const reactivationOptions = this.parseReactivationOptions(dto);
     const token =
       dto.accessToken?.trim() || dto.access_token?.trim() || undefined;
     if (token) {
-      return this.loginWithNaverAccessToken(token, { confirmReactivation });
+      return this.loginWithNaverAccessToken(token, reactivationOptions);
     }
 
     const code = dto.code?.trim();
@@ -136,7 +139,7 @@ export class AuthService {
         redirectUri: redirectForCode,
         redirect_uri: dto.redirect_uri,
         state: dto.state,
-        confirmReactivation,
+        ...reactivationOptions,
       });
     }
 
@@ -150,7 +153,10 @@ export class AuthService {
    */
   async loginWithNaverAccessToken(
     naverAccessToken: string,
-    options?: { confirmReactivation?: boolean },
+    options?: {
+      confirmReactivation?: boolean;
+      declineReactivation?: boolean;
+    },
   ) {
     const profile = await this.validateNaverToken(naverAccessToken);
     const result = await this.issueTokens(
@@ -185,6 +191,7 @@ export class AuthService {
     redirect_uri?: string;
     state?: string;
     confirmReactivation?: boolean;
+    declineReactivation?: boolean;
   }) {
     const redirectUri = this.resolveNaverRedirectUri(dto);
     const naverAccessToken = await this.exchangeNaverAuthorizationCode(
@@ -192,15 +199,17 @@ export class AuthService {
       redirectUri,
       dto.state,
     );
-    return this.loginWithNaverAccessToken(naverAccessToken, {
-      confirmReactivation: dto.confirmReactivation === true,
-    });
+    return this.loginWithNaverAccessToken(
+      naverAccessToken,
+      this.parseReactivationOptions(dto),
+    );
   }
 
   async loginWithGoogle(dto: {
     accessToken?: string;
     access_token?: string;
     confirmReactivation?: boolean;
+    declineReactivation?: boolean;
   }) {
     const token = dto.accessToken?.trim() || dto.access_token?.trim();
     if (!token) {
@@ -211,7 +220,22 @@ export class AuthService {
     const profile = await this.validateGoogleToken(token);
     return this.issueTokens(profile, SocialProvider.GOOGLE, {
       confirmReactivation: dto.confirmReactivation === true,
+      declineReactivation: dto.declineReactivation === true,
     });
+  }
+
+  private parseReactivationOptions(dto: {
+    confirmReactivation?: boolean;
+    declineReactivation?: boolean;
+  }) {
+    const confirmReactivation = dto.confirmReactivation === true;
+    const declineReactivation = dto.declineReactivation === true;
+    if (confirmReactivation && declineReactivation) {
+      throw new BadRequestException(
+        'confirmReactivation과 declineReactivation은 동시에 보낼 수 없습니다.',
+      );
+    }
+    return { confirmReactivation, declineReactivation };
   }
 
   private async validateKakaoToken(
@@ -242,7 +266,7 @@ export class AuthService {
 
     const socialProfile = {
       socialId: String(data.id),
-      nickname: profile?.nickname ?? '',
+      name: profile?.nickname ?? '',
       email: data.kakao_account?.email ?? '',
       profileImgUrl: profileImg ?? '',
     };
@@ -270,7 +294,7 @@ export class AuthService {
     const r = data.response;
     const socialProfile = {
       socialId: r.id,
-      nickname: (r.nickname ?? r.name ?? '').trim(),
+      name: (r.nickname ?? r.name ?? '').trim(),
       email: r.email ?? '',
       profileImgUrl: r.profile_image ?? '',
     };
@@ -380,7 +404,7 @@ export class AuthService {
 
     return {
       socialId: data.id,
-      nickname: data.name ?? '',
+      name: data.name ?? '',
       email: data.email ?? '',
       profileImgUrl: data.picture ?? '',
     };
@@ -419,13 +443,13 @@ export class AuthService {
         computeReactivationDeadline(deletedAt).toISOString(),
       profile: {
         socialId: profile.socialId,
-        nickname: profile.nickname,
+        name: profile.name,
         email: profile.email,
         profileImgUrl: profile.profileImgUrl,
       },
       user: {
         userId: user.userId,
-        nickname: user.nickname,
+        name: user.name,
         activityName: user.activityName,
         profileImgUrl: user.profileImgUrl,
       },
@@ -435,7 +459,10 @@ export class AuthService {
   private async issueTokens(
     profile: SocialProfile,
     provider: SocialProvider,
-    options?: { confirmReactivation?: boolean },
+    options?: {
+      confirmReactivation?: boolean;
+      declineReactivation?: boolean;
+    },
   ) {
     let user = await this.loadSocialUser(profile, provider);
 
@@ -445,11 +472,15 @@ export class AuthService {
           '계정 복구 유예 기간이 지났습니다. 다시 가입해 주세요.',
         );
       }
-      if (!options?.confirmReactivation) {
+      if (options?.declineReactivation) {
+        await this.userService.hardDeleteSoftDeletedUser(user.userId);
+        user = null;
+      } else if (!options?.confirmReactivation) {
         return this.buildNeedsReactivationResponse(user, profile);
+      } else {
+        await this.userService.reactivateUser(user.userId);
+        user = await this.loadSocialUser(profile, provider);
       }
-      await this.userService.reactivateUser(user.userId);
-      user = await this.loadSocialUser(profile, provider);
     }
 
     if (!user) {
@@ -457,7 +488,7 @@ export class AuthService {
         needsSignup: true,
         profile: {
           socialId: profile.socialId,
-          nickname: profile.nickname,
+          name: profile.name,
           email: profile.email,
           profileImgUrl: profile.profileImgUrl,
         },
@@ -480,7 +511,7 @@ export class AuthService {
   /** access(1h) + refresh(30d) 토큰 쌍 발급 */
   private issueAccessAndRefreshTokens(user: {
     userId: string;
-    nickname: string;
+    name: string | null;
     email: string;
     profileImgUrl: string;
   }) {
@@ -504,7 +535,7 @@ export class AuthService {
       refreshToken,
       user: {
         userId: user.userId,
-        nickname: user.nickname,
+        name: user.name,
         email: user.email,
         profileImgUrl: user.profileImgUrl,
       },
@@ -548,10 +579,11 @@ export class AuthService {
   async signupWithKakao(
     accessToken: string,
     options?: {
-      nickname?: string;
+      name?: string;
       activityName?: string;
       role?: UserRole;
       confirmReactivation?: boolean;
+      declineReactivation?: boolean;
     },
   ) {
     const profile = await this.validateKakaoToken(accessToken);
@@ -561,10 +593,11 @@ export class AuthService {
   async signupWithNaver(
     accessToken: string,
     options?: {
-      nickname?: string;
+      name?: string;
       activityName?: string;
       role?: UserRole;
       confirmReactivation?: boolean;
+      declineReactivation?: boolean;
     },
   ) {
     const profile = await this.validateNaverToken(accessToken);
@@ -574,10 +607,11 @@ export class AuthService {
   async signupWithGoogle(
     accessToken: string,
     options?: {
-      nickname?: string;
+      name?: string;
       activityName?: string;
       role?: UserRole;
       confirmReactivation?: boolean;
+      declineReactivation?: boolean;
     },
   ) {
     const profile = await this.validateGoogleToken(accessToken);
@@ -588,10 +622,11 @@ export class AuthService {
     provider: SocialProvider,
     profile: SocialProfile,
     options?: {
-      nickname?: string;
+      name?: string;
       activityName?: string;
       role?: UserRole;
       confirmReactivation?: boolean;
+      declineReactivation?: boolean;
     },
   ) {
     let existing = await this.loadSocialUser(profile, provider);
@@ -602,20 +637,23 @@ export class AuthService {
             '계정 복구 유예 기간이 지났습니다. 다시 가입해 주세요.',
           );
         }
-        if (!options?.confirmReactivation) {
+        if (options?.declineReactivation) {
+          await this.userService.hardDeleteSoftDeletedUser(existing.userId);
+          existing = null;
+        } else if (!options?.confirmReactivation) {
           return this.buildNeedsReactivationResponse(existing, profile);
+        } else {
+          await this.userService.reactivateUser(existing.userId);
+          existing = await this.loadSocialUser(profile, provider);
         }
-        await this.userService.reactivateUser(existing.userId);
-        existing = await this.loadSocialUser(profile, provider);
       }
-      if (!existing) {
-        throw new UnauthorizedException('계정 복구에 실패했습니다.');
+      if (existing) {
+        const result = this.issueAccessAndRefreshTokens(existing);
+        this.logger.log(
+          `[Signup login existing] provider=${provider}, userId=${existing.userId}`,
+        );
+        return result;
       }
-      const result = this.issueAccessAndRefreshTokens(existing);
-      this.logger.log(
-        `[Signup login existing] provider=${provider}, userId=${existing.userId}`,
-      );
-      return result;
     }
 
     if (!options?.activityName?.trim()) {
@@ -623,7 +661,7 @@ export class AuthService {
     }
 
     const user = await this.userService.createBySocial(provider, profile, {
-      nickname: options.nickname,
+      name: options.name,
       activityName: options.activityName,
       role: options.role,
     });

@@ -296,7 +296,7 @@ export class ReviewService {
         reviewer: r.reviewer
           ? {
               userId: r.reviewer.userId,
-              nickname: r.reviewer.nickname,
+              name: r.reviewer.name,
               activityName: r.reviewer.activityName,
               profileImgUrl: r.reviewer.profileImgUrl,
             }
@@ -304,7 +304,7 @@ export class ReviewService {
         reviewee: r.reviewee
           ? {
               userId: r.reviewee.userId,
-              nickname: r.reviewee.nickname,
+              name: r.reviewee.name,
               activityName: r.reviewee.activityName,
               profileImgUrl: r.reviewee.profileImgUrl,
             }
@@ -434,9 +434,9 @@ export class ReviewService {
   ): Promise<void> {
     const applicant = await this.userRepo.findOne({
       where: { userId: actorUserId },
-      select: ['nickname', 'activityName'],
+      select: ['name', 'activityName'],
     });
-    const name = applicant?.activityName ?? applicant?.nickname ?? '회원';
+    const name = applicant?.activityName ?? applicant?.name ?? '회원';
     const titleCut =
       announcement.title.length > 80
         ? `${announcement.title.slice(0, 80)}…`

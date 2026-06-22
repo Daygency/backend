@@ -263,7 +263,7 @@ export class ReportService {
       userIds.size > 0
         ? await this.userRepository.find({
             where: { userId: In([...userIds]) },
-            select: ['userId', 'nickname', 'activityName', 'activity'],
+            select: ['userId', 'name', 'activityName', 'activity'],
           })
         : [];
     const userById = new Map(users.map((u) => [u.userId, u]));
@@ -278,10 +278,10 @@ export class ReportService {
         return {
           reportId: row.reportId,
           reporterId: row.reporterId,
-          reporterNickname: reporter?.nickname ?? '(알 수 없음)',
+          reporterName: reporter?.name ?? '(알 수 없음)',
           reporterActivityName: reporter?.activityName ?? '',
           reportedUserId: row.reportedUserId,
-          reportedNickname: reported?.nickname ?? '(알 수 없음)',
+          reportedName: reported?.name ?? '(알 수 없음)',
           reportedActivityName: reported?.activityName ?? '',
           reportedActivity: reported?.activity ?? null,
           category: row.category,

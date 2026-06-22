@@ -25,7 +25,7 @@ export type InquiryDto = {
   createdAt: string;
   answeredAt: string | null;
   userId?: string;
-  userNickname?: string;
+  userName?: string | null;
   userActivityName?: string;
 };
 
@@ -174,7 +174,7 @@ export class InquiryService {
       createdAt: row.createdAt.toISOString(),
       answeredAt: row.answeredAt ? row.answeredAt.toISOString() : null,
       userId: row.user?.userId ?? viewerUserId,
-      userNickname: row.user?.nickname,
+      userName: row.user?.name,
       userActivityName: row.user?.activityName,
     };
   }

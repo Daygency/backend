@@ -182,9 +182,9 @@ export class ApplicationService {
     try {
       const applicant = await this.userRepo.findOne({
         where: { userId: applicantUserId },
-        select: ['nickname', 'activityName'],
+        select: ['name', 'activityName'],
       });
-      const name = applicant?.activityName ?? applicant?.nickname ?? '회원';
+      const name = applicant?.activityName ?? applicant?.name ?? '회원';
       const titleCut =
         announcement.title.length > 80
           ? `${announcement.title.slice(0, 80)}…`

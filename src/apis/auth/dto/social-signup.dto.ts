@@ -5,10 +5,10 @@ import { UserRole } from 'src/apis/user/entities/user.entity';
 
 export class SocialSignupDto extends SocialLoginDto {
   @ApiPropertyOptional({
-    description: '사용자 지정 닉네임 (미입력 시 소셜 프로필 값 사용)',
-    example: '내닉네임',
+    description: '사용자 지정 이름 (미입력 시 null)',
+    example: '홍길동',
   })
-  nickname?: string;
+  name?: string;
 
   @ApiPropertyOptional({
     description:

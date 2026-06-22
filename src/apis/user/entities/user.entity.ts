@@ -38,8 +38,8 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   userId: string;
 
-  @Column({ length: 20 })
-  nickname: string;
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  name: string | null;
 
   @Column({ unique: true, length: 20 })
   activityName: string;

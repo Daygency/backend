@@ -16,6 +16,26 @@ function mapQueryIds(raw: unknown): string[] {
   return ids;
 }
 
+async function deleteChatRoomsByIds(
+  manager: EntityManager,
+  roomIds: string[],
+): Promise<void> {
+  if (roomIds.length === 0) return;
+  const placeholders = roomIds.map(() => '?').join(',');
+  await manager.query(
+    `DELETE FROM message WHERE chat_room_id IN (${placeholders})`,
+    roomIds,
+  );
+  await manager.query(
+    `DELETE FROM chat_room_member WHERE chat_room_id IN (${placeholders})`,
+    roomIds,
+  );
+  await manager.query(
+    `DELETE FROM chat_room WHERE id IN (${placeholders})`,
+    roomIds,
+  );
+}
+
 /**
  * 탈퇴(소프트 삭제)된 사용자 행을 물리 삭제하기 전,
  * FK를 참조하는 자식 행을 순서대로 제거한다.
@@ -36,6 +56,13 @@ export async function hardDeleteUserCascade(
     userId,
   ]);
 
+  const postIds = mapQueryIds(
+    await manager.query(
+      `SELECT post_id AS id FROM announcement WHERE user_id = ?`,
+      [userId],
+    ),
+  );
+
   const appIds = [
     ...new Set(
       mapQueryIds(
@@ -47,32 +74,36 @@ export async function hardDeleteUserCascade(
     ),
   ];
 
+  const chatRoomIds = new Set<string>();
+
+  if (appIds.length > 0) {
+    const appPlaceholders = appIds.map(() => '?').join(',');
+    for (const id of mapQueryIds(
+      await manager.query(
+        `SELECT id FROM chat_room WHERE form_id IN (${appPlaceholders})`,
+        appIds,
+      ),
+    )) {
+      chatRoomIds.add(id);
+    }
+  }
+
+  if (postIds.length > 0) {
+    const postPlaceholders = postIds.map(() => '?').join(',');
+    for (const id of mapQueryIds(
+      await manager.query(
+        `SELECT id FROM chat_room WHERE post_id IN (${postPlaceholders})`,
+        postIds,
+      ),
+    )) {
+      chatRoomIds.add(id);
+    }
+  }
+
+  await deleteChatRoomsByIds(manager, [...chatRoomIds]);
+
   if (appIds.length > 0) {
     const placeholders = appIds.map(() => '?').join(',');
-    const roomIds = [
-      ...new Set(
-        mapQueryIds(
-          await manager.query(
-            `SELECT id FROM chat_room WHERE form_id IN (${placeholders})`,
-            appIds,
-          ),
-        ),
-      ),
-    ];
-
-    if (roomIds.length > 0) {
-      const rp = roomIds.map(() => '?').join(',');
-      await manager.query(
-        `DELETE FROM message WHERE chat_room_id IN (${rp})`,
-        roomIds,
-      );
-      await manager.query(
-        `DELETE FROM chat_room_member WHERE chat_room_id IN (${rp})`,
-        roomIds,
-      );
-      await manager.query(`DELETE FROM chat_room WHERE id IN (${rp})`, roomIds);
-    }
-
     await manager.query(
       `DELETE FROM application WHERE id IN (${placeholders})`,
       appIds,
@@ -88,6 +119,28 @@ export async function hardDeleteUserCascade(
   await manager.query(`DELETE FROM scrap WHERE user_id = ?`, [userId]);
   await manager.query(`DELETE FROM news WHERE user_id = ?`, [userId]);
   await manager.query(`DELETE FROM community WHERE user_id = ?`, [userId]);
+
+  if (postIds.length > 0) {
+    const postPlaceholders = postIds.map(() => '?').join(',');
+    await manager.query(
+      `DELETE FROM review WHERE post_id IN (${postPlaceholders}) OR reviewer_user_id = ? OR reviewee_user_id = ?`,
+      [...postIds, userId, userId],
+    );
+    await manager.query(
+      `DELETE FROM application_config WHERE post_id IN (${postPlaceholders})`,
+      postIds,
+    );
+    await manager.query(
+      `DELETE FROM announcement_major WHERE post_id IN (${postPlaceholders})`,
+      postIds,
+    );
+  } else {
+    await manager.query(
+      `DELETE FROM review WHERE reviewer_user_id = ? OR reviewee_user_id = ?`,
+      [userId, userId],
+    );
+  }
+
   await manager.query(`DELETE FROM announcement WHERE user_id = ?`, [userId]);
   await manager.query(
     `DELETE FROM follow WHERE sender_id = ? OR receiver_id = ?`,

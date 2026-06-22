@@ -1,6 +1,6 @@
 export interface SocialProfile {
   socialId: string;
-  nickname: string;
+  name: string;
   email: string;
   profileImgUrl: string;
 }

@@ -164,9 +164,9 @@ export class CommentService {
 
       const commenter = await this.userRepository.findOne({
         where: { userId: commenterUserId },
-        select: ['nickname', 'activityName'],
+        select: ['name', 'activityName'],
       });
-      const name = commenter?.activityName ?? commenter?.nickname ?? '회원';
+      const name = commenter?.activityName ?? commenter?.name ?? '회원';
       const preview =
         comment.content.length > 200
           ? `${comment.content.slice(0, 200)}…`

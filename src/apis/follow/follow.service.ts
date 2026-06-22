@@ -17,7 +17,7 @@ import { ListFollowQueryDto } from './dto/list-follow-query.dto';
 
 export type FollowListItemDto = {
   userId: string;
-  nickname: string;
+  name: string;
   activityName: string;
   profileImgUrl: string;
   followedAt: Date;
@@ -75,9 +75,9 @@ export class FollowService {
     try {
       const sender = await this.userRepo.findOne({
         where: { userId: senderId },
-        select: ['nickname', 'activityName'],
+        select: ['name', 'activityName'],
       });
-      const name = sender?.activityName ?? sender?.nickname ?? '회원';
+      const name = sender?.activityName ?? sender?.name ?? '회원';
       await this.noticeService.createAndDispatchPush({
         actorUserId: senderId,
         targetType: NoticeTargetType.FOLLOW,
@@ -193,7 +193,7 @@ export class FollowService {
     );
     const users = await this.userRepo.find({
       where: { userId: In(peerIds) },
-      select: ['userId', 'nickname', 'activityName', 'profileImgUrl'],
+      select: ['userId', 'name', 'activityName', 'profileImgUrl'],
     });
     const userMap = new Map(users.map((u) => [u.userId, u]));
 
@@ -202,7 +202,7 @@ export class FollowService {
       const u = userMap.get(peerId);
       return {
         userId: peerId,
-        nickname: u?.nickname ?? '알 수 없음',
+        name: u?.name ?? '알 수 없음',
         activityName: u?.activityName ?? '',
         profileImgUrl: u?.profileImgUrl ?? '',
         followedAt: f.createdAt,

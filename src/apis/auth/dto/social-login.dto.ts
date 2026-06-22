@@ -24,4 +24,12 @@ export class SocialLoginDto {
   @IsOptional()
   @IsBoolean()
   confirmReactivation?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      '탈퇴 유예 중 복구 대신 새 계정으로 가입할 때 true. 기존 탈퇴 계정을 영구 삭제한 뒤 needsSignup 을 반환한다.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  declineReactivation?: boolean;
 }

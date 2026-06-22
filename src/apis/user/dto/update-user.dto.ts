@@ -104,7 +104,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   @Length(1, 20)
-  nickname?: string;
+  name?: string;
 
   @IsOptional()
   @IsString()

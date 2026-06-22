@@ -126,9 +126,9 @@ export class LikeService {
 
       const liker = await this.userRepository.findOne({
         where: { userId: likerUserId },
-        select: ['nickname', 'activityName'],
+        select: ['name', 'activityName'],
       });
-      const name = liker?.activityName ?? liker?.nickname ?? '회원';
+      const name = liker?.activityName ?? liker?.name ?? '회원';
       const label = this.likeTargetLabel(like.likeType);
       const content = `${name}님이 내 ${label}에 좋아요를 눌렀습니다.`.slice(
         0,
