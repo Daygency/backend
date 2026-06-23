@@ -8,8 +8,9 @@ import {
   Min,
   MaxLength,
 } from 'class-validator';
+import { OptionalLocationFieldsDto } from '../../../common/dto/optional-location-fields.dto';
 
-export class CreateNewsDto {
+export class CreateNewsDto extends OptionalLocationFieldsDto {
   @ApiProperty({ description: '제목', maxLength: 100 })
   @IsString()
   @MaxLength(100)

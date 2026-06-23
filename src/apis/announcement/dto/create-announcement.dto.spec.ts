@@ -4,6 +4,7 @@ import { CreateAnnouncementDto } from './create-announcement.dto';
 import {
   AnnouncementPriceType,
   AnnouncementStatus,
+  ANNOUNCEMENT_PRICE_MAX,
 } from '../entities/announcement.entity';
 
 describe('CreateAnnouncementDto', () => {
@@ -83,6 +84,13 @@ describe('CreateAnnouncementDto', () => {
 
   it('price가 0 미만이면 실패한다', async () => {
     const invalid = { ...validDto, price: -1 };
+    const dto = plainToInstance(CreateAnnouncementDto, invalid);
+    const errors = await validate(dto);
+    expect(errors.find((e) => e.property === 'price')).toBeDefined();
+  });
+
+  it('price가 상한을 초과하면 실패한다', async () => {
+    const invalid = { ...validDto, price: ANNOUNCEMENT_PRICE_MAX + 1 };
     const dto = plainToInstance(CreateAnnouncementDto, invalid);
     const errors = await validate(dto);
     expect(errors.find((e) => e.property === 'price')).toBeDefined();

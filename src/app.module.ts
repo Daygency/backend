@@ -27,12 +27,16 @@ import { MajorModule } from './apis/major/major.module';
 import { HomeBannerModule } from './apis/home-banner/home-banner.module';
 import { ReviewModule } from './apis/review/review.module';
 import { InquiryModule } from './apis/inquiry/inquiry.module';
+import { KakaoModule } from './apis/kakao/kakao.module';
 
 @Module({
   imports: [
     UserModule, //
     AuthModule,
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env', '../.env'],
+    }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRoot({
       type: process.env.DATABASE_TYPE as 'mysql',
@@ -65,6 +69,7 @@ import { InquiryModule } from './apis/inquiry/inquiry.module';
     MajorModule,
     ReviewModule,
     InquiryModule,
+    KakaoModule,
   ],
   providers: [DatabaseSeedService],
 })

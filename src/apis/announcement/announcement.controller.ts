@@ -12,6 +12,8 @@ import {
   UploadedFiles,
   UseGuards,
   UseInterceptors,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -30,6 +32,7 @@ import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { ListAnnouncementQueryDto } from './dto/list-announcement-query.dto';
 
 @ApiTags('announcements')
+@UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 @Controller('announcement')
 export class AnnouncementController {
   constructor(private readonly announcementService: AnnouncementService) {}

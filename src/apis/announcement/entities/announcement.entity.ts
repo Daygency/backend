@@ -21,7 +21,9 @@ export enum AnnouncementStatus {
   CLOSED = 'CLOSED',
 }
 
-/** 금액 구분 — `price`(원)와 함께 사용 */
+/** MySQL `announcement.price` (signed INT) 상한 */
+export const ANNOUNCEMENT_PRICE_MAX = 2_147_483_647;
+
 export enum AnnouncementPriceType {
   /** 지출 */
   EXPENSE = 'EXPENSE',
@@ -62,6 +64,12 @@ export class Announcement {
 
   @Column()
   address: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  latitude: number | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  longitude: number | null;
 
   /** 기본값: 협의(`PENDING`) */
   @Column({

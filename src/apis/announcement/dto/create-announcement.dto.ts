@@ -10,15 +10,18 @@ import {
   ValidateNested,
   IsInt,
   Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
   AnnouncementPriceType,
   AnnouncementStatus,
+  ANNOUNCEMENT_PRICE_MAX,
 } from '../entities/announcement.entity';
 import { ApplicationConfigDto } from './application-config.dto';
+import { OptionalLocationFieldsDto } from '../../../common/dto/optional-location-fields.dto';
 
-export class CreateAnnouncementDto {
+export class CreateAnnouncementDto extends OptionalLocationFieldsDto {
   @ApiProperty({ description: '제목' })
   @IsString()
   title: string;
@@ -71,6 +74,9 @@ export class CreateAnnouncementDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(ANNOUNCEMENT_PRICE_MAX, {
+    message: `금액은 ${ANNOUNCEMENT_PRICE_MAX.toLocaleString('ko-KR')}원 이하로 입력해주세요.`,
+  })
   price?: number;
 
   @ApiPropertyOptional({ description: '대표 파일 ID (썸네일)', nullable: true })
