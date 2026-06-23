@@ -138,6 +138,13 @@ function toListItem(a: Announcement) {
     price: a.price,
     viewCount: Number(a.viewCount ?? 0),
     fileId: a.fileId,
+    user: a.user
+      ? {
+          activityName: a.user.activityName ?? null,
+          profileImgUrl: a.user.profileImgUrl ?? null,
+          name: a.user.name ?? null,
+        }
+      : null,
   };
 }
 
@@ -432,7 +439,8 @@ export class AnnouncementService {
   ): Promise<AnnouncementListResponse> {
     const qb = this.announcementRepository
       .createQueryBuilder('announcement')
-      .leftJoinAndSelect('announcement.category', 'category');
+      .leftJoinAndSelect('announcement.category', 'category')
+      .leftJoinAndSelect('announcement.user', 'user');
 
     this.applyAnnouncementListFilters(qb, query);
 
@@ -450,6 +458,7 @@ export class AnnouncementService {
     const qb = this.announcementRepository
       .createQueryBuilder('announcement')
       .leftJoinAndSelect('announcement.category', 'category')
+      .leftJoinAndSelect('announcement.user', 'user')
       .where('announcement.userId = :userId', { userId });
 
     this.applyAnnouncementListFilters(qb, query);
@@ -482,6 +491,7 @@ export class AnnouncementService {
     const qb = this.announcementRepository
       .createQueryBuilder('announcement')
       .leftJoinAndSelect('announcement.category', 'category')
+      .leftJoinAndSelect('announcement.user', 'user')
       .innerJoin(
         Application,
         'app',

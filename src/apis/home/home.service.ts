@@ -50,7 +50,7 @@ export class HomeService {
     const [latestAnnouncements, recentNews, categories, banners] =
       await Promise.all([
       this.announcementRepository.find({
-        relations: ['category'],
+        relations: ['category', 'user'],
         order: { postId: 'DESC' },
         take: 3,
       }),
@@ -163,9 +163,18 @@ export class HomeService {
         priceType: item.priceType,
         price: item.price,
         viewCount: Number(item.viewCount ?? 0),
+        address: item.address,
+        deadlineAt: item.deadlineAt,
         createdAt: resolveAnnouncementPostedAt(
           announcementPostedAtMap.get(item.postId),
         ),
+        user: item.user
+          ? {
+              activityName: item.user.activityName ?? null,
+              profileImgUrl: item.user.profileImgUrl ?? null,
+              name: item.user.name ?? null,
+            }
+          : null,
       })),
       recentNews: recentNews.map((item) => ({
         newsId: item.newsId,
