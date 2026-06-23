@@ -1,6 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
+
+export const NEWS_LIST_SORT_VALUES = ['created', 'imminent'] as const;
+export type NewsListSort = (typeof NEWS_LIST_SORT_VALUES)[number];
 
 /**
  * 공연소식 목록 조회 Query DTO (무한스크롤)
@@ -32,4 +35,14 @@ export class ListNewsQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '정렬 — created: 등록순(기본), imminent: 임박순(시작일 오름차순, 종료된 공연 제외)',
+    enum: NEWS_LIST_SORT_VALUES,
+    default: 'created',
+  })
+  @IsOptional()
+  @IsIn(NEWS_LIST_SORT_VALUES)
+  sort?: NewsListSort = 'created';
 }

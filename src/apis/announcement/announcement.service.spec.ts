@@ -397,23 +397,28 @@ describe('AnnouncementService', () => {
       );
     });
 
-    it('cursor가 전달되면 andWhere에 cursor 조건이 포함되어야 한다', async () => {
+    it('cursor가 전달되면 등록순 정렬에서 andWhere에 cursor 조건이 포함되어야 한다', async () => {
       const andWhereMock = jest.fn().mockReturnThis();
       (announcementRepository.createQueryBuilder as jest.Mock).mockReturnValue({
         leftJoinAndSelect: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         andWhere: andWhereMock,
         getMany: jest.fn().mockResolvedValue([]),
       });
 
-      await service.findList({ cursor: 'some-post-id' });
+      await service.findList({
+        cursor: '2024-01-01T00:00:00.000Z|some-post-id',
+        sort: 'created',
+      });
 
       expect(andWhereMock).toHaveBeenCalledWith(
-        'announcement.postId < :cursor',
-        {
-          cursor: 'some-post-id',
-        },
+        expect.stringContaining('announcement.createdAt'),
+        expect.objectContaining({
+          cursorPrimary: expect.any(Date),
+          cursorPostId: 'some-post-id',
+        }),
       );
     });
   });

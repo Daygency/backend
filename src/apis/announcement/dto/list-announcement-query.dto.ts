@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -12,6 +13,10 @@ import {
   AnnouncementPriceType,
   AnnouncementStatus,
 } from '../entities/announcement.entity';
+
+export const ANNOUNCEMENT_LIST_SORT_VALUES = ['created', 'imminent'] as const;
+export type AnnouncementListSort =
+  (typeof ANNOUNCEMENT_LIST_SORT_VALUES)[number];
 
 /**
  * 공고 목록 조회 Query DTO (무한스크롤 + 필터)
@@ -84,4 +89,14 @@ export class ListAnnouncementQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '정렬 — created: 등록순(기본), imminent: 임박순(마감일 오름차순, 마감 지난 공고 제외)',
+    enum: ANNOUNCEMENT_LIST_SORT_VALUES,
+    default: 'created',
+  })
+  @IsOptional()
+  @IsIn(ANNOUNCEMENT_LIST_SORT_VALUES)
+  sort?: AnnouncementListSort = 'created';
 }

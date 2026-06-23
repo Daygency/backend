@@ -172,6 +172,7 @@ export class HomeService {
         title: item.title,
         place: item.place,
         startedAt: item.startedAt,
+        endedAt: item.endedAt ?? null,
         createdAt: item.createdAt,
         thumbnailUrl:
           newsThumbMap.get(item.newsId)?.imgUrl ?? item.file?.imgUrl ?? null,

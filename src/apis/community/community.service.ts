@@ -159,7 +159,7 @@ export class CommunityService {
     }));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, currentUserId?: string) {
     const community = await this.communityRepository.findOne({
       where: { communityId: id },
       relations: ['category', 'user', 'file'],
@@ -168,6 +168,10 @@ export class CommunityService {
     if (!community) {
       throw new NotFoundException('존재하지 않는 커뮤니티 게시글입니다.');
     }
+
+    const authorId = (community.user?.userId ?? '').trim().toLowerCase();
+    const requestUserId = (currentUserId ?? '').trim().toLowerCase();
+    const isMine = requestUserId.length > 0 && authorId === requestUserId;
 
     await this.communityRepository.increment({ communityId: id }, 'viewCount', 1);
     community.viewCount += 1;
@@ -189,6 +193,7 @@ export class CommunityService {
 
     return {
       ...community,
+      isMine,
       likeCount,
       commentCount,
     };

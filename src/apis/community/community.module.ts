@@ -8,11 +8,13 @@ import { Like } from '../like/entities/like.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { FileModule } from '../file/file.module';
 import { CommunityFileService } from './community-file.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Community, CommunityCategory, Like, Comment]),
     FileModule,
+    AuthModule,
   ],
   controllers: [CommunityController],
   providers: [CommunityService, CommunityFileService],

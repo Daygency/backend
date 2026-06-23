@@ -12,7 +12,10 @@ import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import type { ApplicationConfigDto } from './dto/application-config.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { resolveAnnouncementPostedAt } from './announcement-created-at.util';
-import { ListAnnouncementQueryDto } from './dto/list-announcement-query.dto';
+import {
+  AnnouncementListSort,
+  ListAnnouncementQueryDto,
+} from './dto/list-announcement-query.dto';
 import { toLikePattern } from '../../common/escape-like-pattern.util';
 import {
   Announcement,
@@ -101,6 +104,21 @@ export interface AnnouncementListResponse {
   }>;
   nextCursor: string | null;
   hasMore: boolean;
+}
+
+function parseCompositeCursor(
+  cursor: string,
+): { primary: Date; postId: string } | null {
+  const sep = cursor.lastIndexOf('|');
+  if (sep <= 0) return null;
+  const primary = new Date(cursor.slice(0, sep));
+  const postId = cursor.slice(sep + 1).trim();
+  if (Number.isNaN(primary.getTime()) || !postId) return null;
+  return { primary, postId };
+}
+
+function buildCompositeCursor(primary: Date, postId: string): string {
+  return `${primary.toISOString()}|${postId}`;
 }
 
 /** 공고 → 목록 아이템 형태로 변환 */
@@ -402,10 +420,60 @@ export class AnnouncementService {
    * - cursor: 마지막 postId (없으면 첫 페이지)
    * - limit: 페이지 크기 (기본 20, 최대 50)
    * - status, categoryId, majorIds, priceType: 필터 파라미터
+   * - sort: created(등록순) | imminent(임박순)
    */
   async findList(
     query: ListAnnouncementQueryDto,
   ): Promise<AnnouncementListResponse> {
+    const qb = this.announcementRepository
+      .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category');
+
+    this.applyAnnouncementListFilters(qb, query);
+
+    const rows = await qb.getMany();
+    return this.buildAnnouncementListResponse(rows, query.limit ?? 20, query.sort);
+  }
+
+  /**
+   * 내가 작성한 모집공고 목록 (무한스크롤 + 필터, findList와 동일한 쿼리 파라미터)
+   */
+  async findMyList(
+    userId: string,
+    query: ListAnnouncementQueryDto,
+  ): Promise<AnnouncementListResponse> {
+    const qb = this.announcementRepository
+      .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category')
+      .where('announcement.userId = :userId', { userId });
+
+    this.applyAnnouncementListFilters(qb, query);
+
+    const rows = await qb.getMany();
+    const limit = query.limit ?? 20;
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const roomCounts = await this.loadChatRoomCountsByPostIds(
+      slice.map((row) => row.postId),
+    );
+    const items = await this.attachCreatedAtToListItems(
+      slice.map((row) => ({
+        ...toListItem(row),
+        chatRoomCount: roomCounts.get(row.postId) ?? 0,
+      })),
+    );
+
+    const nextCursor = hasMore
+      ? this.buildAnnouncementListCursor(query.sort, slice[limit - 1])
+      : null;
+
+    return { items, nextCursor, hasMore };
+  }
+
+  private applyAnnouncementListFilters(
+    qb: ReturnType<Repository<Announcement>['createQueryBuilder']>,
+    query: ListAnnouncementQueryDto,
+  ): void {
     const {
       cursor,
       limit = 20,
@@ -414,18 +482,54 @@ export class AnnouncementService {
       majorIds: majorIdsStr,
       priceType,
       q,
+      sort = 'created',
     } = query;
     const likeQ = q ? toLikePattern(q) : null;
+    const now = new Date();
 
-    const qb = this.announcementRepository
-      .createQueryBuilder('announcement')
-      .leftJoinAndSelect('announcement.category', 'category')
-      .orderBy('announcement.postId', 'DESC')
-      .take(limit + 1); // 다음 페이지 존재 여부 확인용 +1
+    qb.take(limit + 1);
 
-    if (cursor) {
-      qb.andWhere('announcement.postId < :cursor', { cursor });
+    if (sort === 'imminent') {
+      qb.andWhere('announcement.deadlineAt >= :now', { now });
+      qb.orderBy('announcement.deadlineAt', 'ASC').addOrderBy(
+        'announcement.postId',
+        'ASC',
+      );
+
+      if (cursor) {
+        const parsed = parseCompositeCursor(cursor);
+        if (parsed) {
+          qb.andWhere(
+            `(announcement.deadlineAt > :cursorPrimary)
+             OR (announcement.deadlineAt = :cursorPrimary AND announcement.postId > :cursorPostId)`,
+            {
+              cursorPrimary: parsed.primary,
+              cursorPostId: parsed.postId,
+            },
+          );
+        }
+      }
+    } else {
+      qb.orderBy('announcement.createdAt', 'DESC').addOrderBy(
+        'announcement.postId',
+        'DESC',
+      );
+
+      if (cursor) {
+        const parsed = parseCompositeCursor(cursor);
+        if (parsed) {
+          qb.andWhere(
+            `(announcement.createdAt < :cursorPrimary)
+             OR (announcement.createdAt = :cursorPrimary AND announcement.postId < :cursorPostId)`,
+            {
+              cursorPrimary: parsed.primary,
+              cursorPostId: parsed.postId,
+            },
+          );
+        }
+      }
     }
+
     if (status) {
       qb.andWhere('announcement.status = :status', { status });
     }
@@ -455,86 +559,34 @@ export class AnnouncementService {
         { likeQ },
       );
     }
+  }
 
-    const rows = await qb.getMany();
-
+  private async buildAnnouncementListResponse(
+    rows: Announcement[],
+    limit: number,
+    sort: AnnouncementListSort = 'created',
+  ): Promise<AnnouncementListResponse> {
     const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
     const items = await this.attachCreatedAtToListItems(
-      (hasMore ? rows.slice(0, limit) : rows).map(toListItem),
+      slice.map(toListItem),
     );
 
-    const nextCursor = hasMore ? items[items.length - 1].postId : null;
+    const nextCursor = hasMore
+      ? this.buildAnnouncementListCursor(sort, slice[limit - 1])
+      : null;
 
     return { items, nextCursor, hasMore };
   }
 
-  /**
-   * 내가 작성한 모집공고 목록 (무한스크롤 + 필터, findList와 동일한 쿼리 파라미터)
-   */
-  async findMyList(
-    userId: string,
-    query: ListAnnouncementQueryDto,
-  ): Promise<AnnouncementListResponse> {
-    const {
-      cursor,
-      limit = 20,
-      status,
-      categoryId,
-      majorIds: majorIdsStr,
-      priceType,
-    } = query;
-
-    const qb = this.announcementRepository
-      .createQueryBuilder('announcement')
-      .leftJoinAndSelect('announcement.category', 'category')
-      .where('announcement.userId = :userId', { userId })
-      .orderBy('announcement.postId', 'DESC')
-      .take(limit + 1);
-
-    if (cursor) {
-      qb.andWhere('announcement.postId < :cursor', { cursor });
+  private buildAnnouncementListCursor(
+    sort: AnnouncementListSort = 'created',
+    row: Announcement,
+  ): string {
+    if (sort === 'imminent') {
+      return buildCompositeCursor(row.deadlineAt, row.postId);
     }
-    if (status) {
-      qb.andWhere('announcement.status = :status', { status });
-    }
-    if (categoryId) {
-      qb.andWhere('category.categoryId = :categoryId', {
-        categoryId: categoryId,
-      });
-    }
-    if (priceType) {
-      qb.andWhere('announcement.priceType = :priceType', { priceType });
-    }
-    if (majorIdsStr) {
-      const str = majorIdsStr;
-      const majorIds: string[] = str
-        .split(',')
-        .map((m) => m.trim())
-        .filter((m) => m.length > 0);
-      if (majorIds.length > 0) {
-        qb.innerJoin('announcement.majors', 'am')
-          .andWhere('am.majorId IN (:...majorIds)', { majorIds })
-          .distinct(true);
-      }
-    }
-
-    const rows = await qb.getMany();
-
-    const hasMore = rows.length > limit;
-    const slice = hasMore ? rows.slice(0, limit) : rows;
-    const roomCounts = await this.loadChatRoomCountsByPostIds(
-      slice.map((row) => row.postId),
-    );
-    const items = await this.attachCreatedAtToListItems(
-      slice.map((row) => ({
-        ...toListItem(row),
-        chatRoomCount: roomCounts.get(row.postId) ?? 0,
-      })),
-    );
-
-    const nextCursor = hasMore ? items[items.length - 1].postId : null;
-
-    return { items, nextCursor, hasMore };
+    return buildCompositeCursor(row.createdAt, row.postId);
   }
 
   findAll() {

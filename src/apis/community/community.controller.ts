@@ -14,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiConsumes, ApiOperation } from '@nestjs/swagger';
@@ -74,8 +75,12 @@ export class CommunityController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.communityService.findOne(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  findOne(
+    @Param('id') id: string,
+    @Request() req: { user?: { id: string } },
+  ) {
+    return this.communityService.findOne(id, req.user?.id);
   }
 
   @Patch(':id')

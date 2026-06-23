@@ -23,14 +23,31 @@ export interface NewsListResponse {
     title: string;
     place: string;
     startedAt: Date;
+    endedAt: Date | null;
     likeCount: number;
     commentCount: number;
     /** `file.type`+`news_id` 첨부 중 `order` 최소 1장, 없으면 글의 `file_id` 대표 이미지 */
     thumbnailUrl: string | null;
+    ticketPrice: number | null;
     createdAt: Date;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
+}
+
+function parseImminentCursor(
+  cursor: string,
+): { startedAt: Date; newsId: string } | null {
+  const sep = cursor.lastIndexOf('|');
+  if (sep <= 0) return null;
+  const startedAt = new Date(cursor.slice(0, sep));
+  const newsId = cursor.slice(sep + 1).trim();
+  if (Number.isNaN(startedAt.getTime()) || !newsId) return null;
+  return { startedAt, newsId };
+}
+
+function buildImminentCursor(startedAt: Date, newsId: string): string {
+  return `${startedAt.toISOString()}|${newsId}`;
 }
 
 @Injectable()
@@ -118,18 +135,45 @@ export class NewsService {
    * 공연소식 목록 조회 (무한스크롤)
    */
   async findList(query: ListNewsQueryDto): Promise<NewsListResponse> {
-    const { cursor, limit = 20, q } = query;
+    const { cursor, limit = 20, q, sort = 'created' } = query;
     const likeQ = q ? toLikePattern(q) : null;
+    const now = new Date();
 
     const qb = this.newsRepository
       .createQueryBuilder('news')
       .leftJoinAndSelect('news.file', 'file')
-      .orderBy('news.newsId', 'DESC')
       .take(limit + 1);
 
-    if (cursor) {
-      qb.andWhere('news.newsId < :cursor', { cursor });
+    if (sort === 'imminent') {
+      qb.andWhere(
+        `(
+          (news.endedAt IS NOT NULL AND news.endedAt >= :now)
+          OR (news.endedAt IS NULL AND news.startedAt >= :now)
+        )`,
+        { now },
+      );
+      qb.orderBy('news.startedAt', 'ASC').addOrderBy('news.newsId', 'ASC');
+
+      if (cursor) {
+        const parsed = parseImminentCursor(cursor);
+        if (parsed) {
+          qb.andWhere(
+            `(news.startedAt > :cursorStartedAt)
+             OR (news.startedAt = :cursorStartedAt AND news.newsId > :cursorNewsId)`,
+            {
+              cursorStartedAt: parsed.startedAt,
+              cursorNewsId: parsed.newsId,
+            },
+          );
+        }
+      }
+    } else {
+      qb.orderBy('news.newsId', 'DESC');
+      if (cursor) {
+        qb.andWhere('news.newsId < :cursor', { cursor });
+      }
     }
+
     if (likeQ) {
       qb.andWhere(
         '(news.title LIKE :likeQ ESCAPE \'\\\\\' OR news.place LIKE :likeQ ESCAPE \'\\\\\')',
@@ -186,14 +230,23 @@ export class NewsService {
       title: n.title,
       place: n.place,
       startedAt: n.startedAt,
+      endedAt: n.endedAt ?? null,
       likeCount: likeCountMap.get(n.newsId) ?? 0,
       commentCount: commentCountMap.get(n.newsId) ?? 0,
       thumbnailUrl:
         thumbMap.get(n.newsId)?.imgUrl ?? n.file?.imgUrl ?? null,
+      ticketPrice: n.ticketPrice ?? null,
       createdAt: n.createdAt,
     }));
 
-    const nextCursor = hasMore ? items[items.length - 1].newsId : null;
+    const nextCursor = hasMore
+      ? sort === 'imminent'
+        ? buildImminentCursor(
+            items[items.length - 1].startedAt,
+            items[items.length - 1].newsId,
+          )
+        : items[items.length - 1].newsId
+      : null;
 
     return { items, nextCursor, hasMore };
   }
