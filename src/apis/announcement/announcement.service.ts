@@ -39,6 +39,8 @@ import {
   ChatRoomKind,
 } from '../chat/entities/chat-room.entity';
 
+const MAX_ANNOUNCEMENT_IMAGES = 5;
+
 function calcDDay(deadlineAt: Date): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -353,10 +355,13 @@ export class AnnouncementService {
     await this.applicationConfigRepository.save(applicationConfig);
 
     let uploaded: File[] = [];
-    if (files?.length) {
+    const fileSlice = (files ?? [])
+      .filter((f) => f?.buffer?.length)
+      .slice(0, MAX_ANNOUNCEMENT_IMAGES);
+    if (fileSlice.length) {
       uploaded = await this.announcementFileService.attachFilesToPost(
         saved.postId,
-        files.map((f, i) => ({
+        fileSlice.map((f, i) => ({
           buffer: f.buffer,
           originalName: f.originalname,
           contentType: f.mimetype,
@@ -468,6 +473,31 @@ export class AnnouncementService {
       : null;
 
     return { items, nextCursor, hasMore };
+  }
+
+  async findAppliedList(
+    userId: string,
+    query: ListAnnouncementQueryDto,
+  ): Promise<AnnouncementListResponse> {
+    const qb = this.announcementRepository
+      .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category')
+      .innerJoin(
+        Application,
+        'app',
+        'app.postId = announcement.postId AND app.userId = :userId',
+        { userId },
+      )
+      .andWhere('app.deletedAt IS NULL');
+
+    this.applyAnnouncementListFilters(qb, query);
+
+    const rows = await qb.getMany();
+    return this.buildAnnouncementListResponse(
+      rows,
+      query.limit ?? 20,
+      query.sort,
+    );
   }
 
   private applyAnnouncementListFilters(

@@ -40,7 +40,7 @@ export class CommunityController {
   @Post()
   @UseGuards(AuthGuard('access'))
   @UseInterceptors(
-    FilesInterceptor('files', 20, {
+    FilesInterceptor('files', 5, {
       storage: memoryStorage(),
     }),
   )

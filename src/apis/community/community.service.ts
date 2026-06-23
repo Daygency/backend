@@ -17,6 +17,8 @@ import { FileService } from '../file/file.service';
 import { CommunityFileService } from './community-file.service';
 import { toLikePattern } from '../../common/escape-like-pattern.util';
 
+const MAX_COMMUNITY_IMAGES = 5;
+
 @Injectable()
 export class CommunityService {
   constructor(
@@ -56,10 +58,13 @@ export class CommunityService {
     const saved = await this.communityRepository.save(community);
 
     let uploaded: File[] = [];
-    if (files?.length) {
+    const fileSlice = (files ?? [])
+      .filter((f) => f?.buffer?.length)
+      .slice(0, MAX_COMMUNITY_IMAGES);
+    if (fileSlice.length) {
       uploaded = await this.communityFileService.attachFilesToPost(
         saved.communityId,
-        files.map((f, i) => ({
+        fileSlice.map((f, i) => ({
           buffer: f.buffer,
           originalName: f.originalname,
           contentType: f.mimetype,

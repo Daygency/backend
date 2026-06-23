@@ -56,7 +56,7 @@ export class AnnouncementController {
   @Post()
   @UseGuards(AuthGuard('access'))
   @UseInterceptors(
-    FilesInterceptor('files', 20, {
+    FilesInterceptor('files', 5, {
       storage: memoryStorage(),
     }),
   )
@@ -102,6 +102,19 @@ export class AnnouncementController {
     @Request() req: { user: { id: string } },
   ) {
     return this.announcementService.findMyList(req.user.id, query);
+  }
+
+  @Get('applied')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({
+    summary: '내가 지원한 공고 목록 (무한스크롤 + 필터, 전체 목록과 동일 쿼리)',
+  })
+  @ApiResponse({ status: 200, description: '지원 공고 목록 반환' })
+  findApplied(
+    @Query() query: ListAnnouncementQueryDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.announcementService.findAppliedList(req.user.id, query);
   }
 
   @Get('categories')
