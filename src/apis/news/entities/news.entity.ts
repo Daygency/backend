@@ -38,8 +38,8 @@ export class News {
   @Column({ name: 'ended_at', type: 'datetime', nullable: true })
   endedAt: Date | null;
 
-  @Column({ length: 30 })
-  contact: string;
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  contact: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -47,10 +47,11 @@ export class CreateNewsDto extends OptionalLocationFieldsDto {
   @IsDateString()
   endedAt?: string | null;
 
-  @ApiProperty({ description: '문의처', maxLength: 30 })
+  @ApiPropertyOptional({ description: '문의처', maxLength: 30, nullable: true })
+  @IsOptional()
   @IsString()
   @MaxLength(30)
-  contact: string;
+  contact?: string | null;
 
   @ApiPropertyOptional({
     description: '대표 파일 ID (썸네일). 없으면 프론트에서 default 이미지 사용',

@@ -90,7 +90,7 @@ export class NewsService {
       ticketPrice: dto.ticketPrice ?? null,
       startedAt: new Date(dto.startedAt),
       endedAt: dto.endedAt ? new Date(dto.endedAt) : null,
-      contact: dto.contact,
+      contact: dto.contact?.trim() || null,
       user: { userId },
       file: dto.fileId ? { fileId: dto.fileId } : null,
     });
@@ -326,7 +326,8 @@ export class NewsService {
       news.startedAt = new Date(dto.startedAt);
     if (dto.endedAt !== undefined)
       news.endedAt = dto.endedAt ? new Date(dto.endedAt) : null;
-    if (dto.contact !== undefined) news.contact = dto.contact;
+    if (dto.contact !== undefined)
+      news.contact = dto.contact?.trim() || null;
     if (dto.fileId !== undefined) news.file = { fileId: dto.fileId } as any;
 
     await this.newsRepository.save(news);
