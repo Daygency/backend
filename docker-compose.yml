@@ -5,7 +5,7 @@ services:
     container_name: daygency-tunnel
     restart: always
     env_file:
-      - .env.stage
+      - .env
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     networks:
       - cloudflare_net
