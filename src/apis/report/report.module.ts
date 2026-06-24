@@ -8,6 +8,7 @@ import { ChatRoom } from '../chat/entities/chat-room.entity';
 import { Comment } from '../comment/entities/comment.entity';
 import { Community } from '../community/entities/community.entity';
 import { News } from '../news/entities/news.entity';
+import { Review } from '../review/entities/review.entity';
 import { User } from '../user/entities/user.entity';
 import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
 import { Report } from './entities/report.entity';
@@ -27,6 +28,7 @@ import { ReportService } from './report.service';
       Announcement,
       ChatRoom,
       ChatRoomMember,
+      Review,
     ]),
     AuthModule,
   ],

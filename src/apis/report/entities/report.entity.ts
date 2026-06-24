@@ -13,6 +13,7 @@ export enum ReportTargetType {
   COMMENT = 'COMMENT',
   ANNOUNCEMENT = 'ANNOUNCEMENT',
   CHAT = 'CHAT',
+  REVIEW = 'REVIEW',
 }
 
 /**

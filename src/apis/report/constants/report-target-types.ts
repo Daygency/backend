@@ -6,6 +6,7 @@ const REPORT_TARGET_TYPE_LABEL_KO: Record<ReportTargetType, string> = {
   [ReportTargetType.COMMENT]: '댓글',
   [ReportTargetType.ANNOUNCEMENT]: '모집공고',
   [ReportTargetType.CHAT]: '채팅',
+  [ReportTargetType.REVIEW]: '활동 후기',
 };
 
 export function getReportTargetTypeLabelKo(

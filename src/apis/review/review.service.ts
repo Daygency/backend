@@ -173,6 +173,44 @@ export class ReviewService {
     return this.listByRole('receiver', userId, query);
   }
 
+  async hideFromProfile(
+    revieweeUserId: string,
+    reviewId: string,
+  ): Promise<{ hidden: boolean }> {
+    const row = await this.reviewRepo.findOne({ where: { id: reviewId } });
+    if (!row) {
+      throw new NotFoundException('후기를 찾을 수 없습니다.');
+    }
+    if (row.revieweeUserId !== revieweeUserId) {
+      throw new ForbiddenException('본인이 받은 후기만 숨길 수 있습니다.');
+    }
+    if (row.hiddenFromProfileAt) {
+      return { hidden: true };
+    }
+    row.hiddenFromProfileAt = new Date();
+    await this.reviewRepo.save(row);
+    return { hidden: true };
+  }
+
+  async unhideFromProfile(
+    revieweeUserId: string,
+    reviewId: string,
+  ): Promise<{ hidden: boolean }> {
+    const row = await this.reviewRepo.findOne({ where: { id: reviewId } });
+    if (!row) {
+      throw new NotFoundException('후기를 찾을 수 없습니다.');
+    }
+    if (row.revieweeUserId !== revieweeUserId) {
+      throw new ForbiddenException('본인이 받은 후기만 다시 표시할 수 있습니다.');
+    }
+    if (!row.hiddenFromProfileAt) {
+      return { hidden: false };
+    }
+    row.hiddenFromProfileAt = null;
+    await this.reviewRepo.save(row);
+    return { hidden: false };
+  }
+
   async update(
     reviewerUserId: string,
     reviewId: string,
@@ -258,6 +296,11 @@ export class ReviewService {
       qb.where('r.reviewer_user_id = :userId', { userId });
     } else {
       qb.where('r.reviewee_user_id = :userId', { userId });
+      if (query.hiddenOnly) {
+        qb.andWhere('r.hidden_from_profile_at IS NOT NULL');
+      } else {
+        qb.andWhere('r.hidden_from_profile_at IS NULL');
+      }
     }
 
     if (query.cursor) {
@@ -280,12 +323,15 @@ export class ReviewService {
       items: slice.map((r) => ({
         id: r.id,
         postId: r.postId,
+        reviewerUserId: r.reviewerUserId,
+        revieweeUserId: r.revieweeUserId,
         rating: r.rating,
         disappointmentReasonCodes: r.disappointmentReasonCodes,
         positiveReasonCodes: r.positiveReasonCodes,
         publicNote: r.publicNote,
         privateNoteToOps: r.privateNoteToOps,
         createdAt: r.createdAt,
+        hiddenFromProfileAt: r.hiddenFromProfileAt,
         announcement: r.announcement
           ? {
               postId: r.announcement.postId,

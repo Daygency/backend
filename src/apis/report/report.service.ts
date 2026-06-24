@@ -14,6 +14,7 @@ import { ChatRoomMember } from '../chat/entities/chat-room-member.entity';
 import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
 import { Community } from '../community/entities/community.entity';
 import { News } from '../news/entities/news.entity';
+import { Review } from '../review/entities/review.entity';
 import { User, UserActivity } from '../user/entities/user.entity';
 import {
   getReportCategoryLabelKo,
@@ -52,6 +53,8 @@ export class ReportService {
     private readonly chatRoomRepository: Repository<ChatRoom>,
     @InjectRepository(ChatRoomMember)
     private readonly chatRoomMemberRepository: Repository<ChatRoomMember>,
+    @InjectRepository(Review)
+    private readonly reviewRepository: Repository<Review>,
   ) {}
 
   getReportCategories() {
@@ -239,6 +242,20 @@ export class ReportService {
         }
         return;
       }
+      case ReportTargetType.REVIEW: {
+        const row = await this.reviewRepository.findOne({
+          where: { id: targetId },
+        });
+        if (!row) {
+          throw new NotFoundException('후기를 찾을 수 없습니다.');
+        }
+        if (row.reviewerUserId !== reportedUserId) {
+          throw new BadRequestException(
+            '신고 대상 사용자와 후기 작성자가 일치하지 않습니다.',
+          );
+        }
+        return;
+      }
     }
   }
 
@@ -397,6 +414,23 @@ export class ReportService {
         } else {
           result.set(`${ReportTargetType.CHAT}:${row.id}`, '채팅방');
         }
+      }
+    }
+
+    const reviewIds = [...(idsByType.get(ReportTargetType.REVIEW) ?? [])];
+    if (reviewIds.length) {
+      const rows = await this.reviewRepository.find({
+        where: { id: In(reviewIds) },
+        relations: ['announcement'],
+      });
+      for (const row of rows) {
+        const title = row.announcement?.title?.trim();
+        result.set(
+          `${ReportTargetType.REVIEW}:${row.id}`,
+          title
+            ? `활동 후기 · ${this.truncateText(title, 60)}`
+            : '활동 후기',
+        );
       }
     }
 

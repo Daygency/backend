@@ -75,6 +75,15 @@ export class Review {
   @Column({ name: 'public_note', type: 'text', nullable: true })
   publicNote: string | null;
 
+  /** 수신자가 프로필에서 숨긴 시각 (null이면 노출) */
+  @Column({
+    name: 'hidden_from_profile_at',
+    type: 'datetime',
+    precision: 6,
+    nullable: true,
+  })
+  hiddenFromProfileAt: Date | null;
+
   @CreateDateColumn({
     name: 'created_at',
     type: 'datetime',

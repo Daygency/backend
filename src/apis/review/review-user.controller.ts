@@ -52,6 +52,30 @@ export class ReviewUserController {
     return this.reviewService.listReceivedByUser(req.user.id, query);
   }
 
+  @Patch(':reviewId/hide-from-profile')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내 프로필에서 받은 후기 숨김' })
+  @ApiResponse({ status: 200, description: '숨김 처리 완료' })
+  hideFromProfile(
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.reviewService.hideFromProfile(req.user.id, reviewId);
+  }
+
+  @Patch(':reviewId/unhide-from-profile')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내 프로필에서 숨긴 받은 후기 다시 표시' })
+  @ApiResponse({ status: 200, description: '다시 표시 완료' })
+  unhideFromProfile(
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.reviewService.unhideFromProfile(req.user.id, reviewId);
+  }
+
   @Patch(':reviewId')
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
