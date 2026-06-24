@@ -135,6 +135,7 @@ function mapAnnouncementAttachments(files: File[]) {
 
 /** 공고 → 목록 아이템 형태로 변환 */
 function toListItem(a: Announcement) {
+  const majorRows = a.majors ?? [];
   return {
     postId: a.postId,
     title: a.title,
@@ -155,6 +156,15 @@ function toListItem(a: Announcement) {
           name: a.user.name ?? null,
         }
       : null,
+    ...(majorRows.length > 0
+      ? {
+          majorIds: majorRows.map((m) => m.majorId),
+          majors: majorRows.map((m) => ({
+            majorId: m.majorId,
+            name: m.name,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -441,7 +451,8 @@ export class AnnouncementService {
     const qb = this.announcementRepository
       .createQueryBuilder('announcement')
       .leftJoinAndSelect('announcement.category', 'category')
-      .leftJoinAndSelect('announcement.user', 'user');
+      .leftJoinAndSelect('announcement.user', 'user')
+      .leftJoinAndSelect('announcement.majors', 'majors');
 
     this.applyAnnouncementListFilters(qb, query);
 
@@ -460,6 +471,7 @@ export class AnnouncementService {
       .createQueryBuilder('announcement')
       .leftJoinAndSelect('announcement.category', 'category')
       .leftJoinAndSelect('announcement.user', 'user')
+      .leftJoinAndSelect('announcement.majors', 'majors')
       .where('announcement.userId = :userId', { userId });
 
     this.applyAnnouncementListFilters(qb, query);
@@ -493,6 +505,7 @@ export class AnnouncementService {
       .createQueryBuilder('announcement')
       .leftJoinAndSelect('announcement.category', 'category')
       .leftJoinAndSelect('announcement.user', 'user')
+      .leftJoinAndSelect('announcement.majors', 'majors')
       .innerJoin(
         Application,
         'app',

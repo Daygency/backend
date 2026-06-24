@@ -50,7 +50,7 @@ export class HomeService {
     const [latestAnnouncements, recentNews, categories, banners] =
       await Promise.all([
       this.announcementRepository.find({
-        relations: ['category', 'user'],
+        relations: ['category', 'user', 'majors'],
         order: { postId: 'DESC' },
         take: 3,
       }),
@@ -175,6 +175,15 @@ export class HomeService {
               name: item.user.name ?? null,
             }
           : null,
+        ...(item.majors?.length
+          ? {
+              majorIds: item.majors.map((m) => m.majorId),
+              majors: item.majors.map((m) => ({
+                majorId: m.majorId,
+                name: m.name,
+              })),
+            }
+          : {}),
       })),
       recentNews: recentNews.map((item) => ({
         newsId: item.newsId,
