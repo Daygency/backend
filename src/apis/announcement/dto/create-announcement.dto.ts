@@ -51,7 +51,7 @@ export class CreateAnnouncementDto extends OptionalLocationFieldsDto {
   })
   @IsOptional()
   @IsEnum(AnnouncementStatus)
-  status?: AnnouncementStatus = AnnouncementStatus.OPEN;
+  status?: AnnouncementStatus;
 
   @ApiProperty({ description: '공연위치' })
   @IsString()

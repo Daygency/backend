@@ -123,6 +123,16 @@ function buildCompositeCursor(primary: Date, postId: string): string {
   return `${primary.toISOString()}|${postId}`;
 }
 
+/** 공고 첨부 파일 → 상세 API `attachments` */
+function mapAnnouncementAttachments(files: File[]) {
+  return files.map((f) => ({
+    fileId: f.fileId,
+    imgUrl: f.imgUrl,
+    originalName: f.originalName,
+    sortOrder: f.sortOrder,
+  }));
+}
+
 /** 공고 → 목록 아이템 형태로 변환 */
 function toListItem(a: Announcement) {
   return {
@@ -148,27 +158,29 @@ function toListItem(a: Announcement) {
   };
 }
 
+/** PATCH 본문에 실제로 포함된 필드 키 (PartialType 기본값·transform 잔여 필드 대응) */
+function definedUpdateKeys(
+  dto: UpdateAnnouncementDto,
+): (keyof UpdateAnnouncementDto)[] {
+  return (Object.keys(dto) as (keyof UpdateAnnouncementDto)[]).filter(
+    (key) => dto[key] !== undefined,
+  );
+}
+
+function hasOnlyAllowedPatchFields(
+  dto: UpdateAnnouncementDto,
+  allowed: (keyof UpdateAnnouncementDto)[],
+): boolean {
+  const keys = definedUpdateKeys(dto);
+  return keys.length > 0 && keys.every((key) => allowed.includes(key));
+}
+
 /** 지원자가 있더라도 허용되는 수정: `status`만 `CLOSED`(조기마감) */
 function isEarlyCloseOnlyUpdate(dto: UpdateAnnouncementDto): boolean {
   if (dto.status !== AnnouncementStatus.CLOSED) {
     return false;
   }
-  return (
-    dto.completed === undefined &&
-    dto.title === undefined &&
-    dto.content === undefined &&
-    dto.deadlineAt === undefined &&
-    dto.scheduledAt === undefined &&
-    dto.address === undefined &&
-    dto.latitude === undefined &&
-    dto.longitude === undefined &&
-    dto.priceType === undefined &&
-    dto.price === undefined &&
-    dto.fileId === undefined &&
-    dto.categoryId === undefined &&
-    dto.majorIds === undefined &&
-    dto.applicationConfig === undefined
-  );
+  return hasOnlyAllowedPatchFields(dto, ['status']);
 }
 
 /** 지원자가 있어도 `completed`만 바꾸는 수정 허용 */
@@ -176,22 +188,11 @@ function isCompletedOnlyUpdate(dto: UpdateAnnouncementDto): boolean {
   if (dto.completed === undefined) {
     return false;
   }
-  return (
-    dto.status === undefined &&
-    dto.title === undefined &&
-    dto.content === undefined &&
-    dto.deadlineAt === undefined &&
-    dto.scheduledAt === undefined &&
-    dto.address === undefined &&
-    dto.latitude === undefined &&
-    dto.longitude === undefined &&
-    dto.priceType === undefined &&
-    dto.price === undefined &&
-    dto.fileId === undefined &&
-    dto.categoryId === undefined &&
-    dto.majorIds === undefined &&
-    dto.applicationConfig === undefined
-  );
+  if (!hasOnlyAllowedPatchFields(dto, ['completed', 'status'])) {
+    return false;
+  }
+  // `UpdateAnnouncementDto` PartialType 기본값으로 status=OPEN 이 붙는 경우 허용
+  return dto.status === undefined || dto.status === AnnouncementStatus.OPEN;
 }
 
 @Injectable()
@@ -640,7 +641,7 @@ export class AnnouncementService {
   async findOne(id: string, currentUserId?: string) {
     const announcement = await this.announcementRepository.findOne({
       where: { postId: id },
-      relations: ['category', 'majors', 'applicationConfig'],
+      relations: ['category', 'majors', 'applicationConfig', 'file'],
     });
     if (!announcement) {
       throw new NotFoundException('공고를 찾을 수 없습니다.');
@@ -656,12 +657,20 @@ export class AnnouncementService {
     await this.announcementRepository.increment({ postId: id }, 'viewCount', 1);
     announcement.viewCount = Number(announcement.viewCount ?? 0) + 1;
 
-    const postedAtMap = await this.fileService.getAnnouncementPostedAtMap([
-      { postId: id, fileId: announcement.fileId },
+    const [postedAtMap, files] = await Promise.all([
+      this.fileService.getAnnouncementPostedAtMap([
+        { postId: id, fileId: announcement.fileId },
+      ]),
+      this.announcementFileService.listFilesForPost(id),
     ]);
+    const attachments = mapAnnouncementAttachments(files);
 
     return {
       ...announcement,
+      type: announcement.category?.name ?? '기타',
+      isRecruiting: announcement.status === AnnouncementStatus.OPEN,
+      dDay: calcDDay(announcement.deadlineAt),
+      attachments,
       createdAt: resolveAnnouncementPostedAt(postedAtMap.get(id)),
       completed: effectiveCompleted(announcement),
       isMine,

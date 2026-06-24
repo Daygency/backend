@@ -28,6 +28,8 @@ import type {
   ApplicationEducationSnapshot,
   ApplicationFileSnapshot,
 } from './types/application-snapshot.types';
+import { toApplicationDetailResponse } from './utils/application-response.util';
+import type { ApplicationDetailResponse } from './utils/application-response.util';
 
 /** JSON 배열 컬럼에 1개 이상 항목이 있는지 */
 function hasJsonArrayContent(value: unknown): boolean {
@@ -208,7 +210,7 @@ export class ApplicationService {
   async findOneById(
     applicationId: string,
     requestUserId: string,
-  ): Promise<Application> {
+  ): Promise<ApplicationDetailResponse> {
     const app = await this.applicationRepo.findOne({
       where: { id: applicationId },
       relations: { announcement: true, user: true },
@@ -221,7 +223,7 @@ export class ApplicationService {
     if (!isApplicant && !isAuthor) {
       throw new ForbiddenException('이 지원서를 조회할 권한이 없습니다.');
     }
-    return app;
+    return toApplicationDetailResponse(app);
   }
 
   async update(
@@ -328,7 +330,7 @@ export class ApplicationService {
     recruiterUserId: string,
     applicationId: string,
     dto: UpdateApplicationStatusDto,
-  ): Promise<Application> {
+  ): Promise<ApplicationDetailResponse> {
     const existing = await this.applicationRepo.findOne({
       where: { id: applicationId },
       relations: { announcement: true },
@@ -342,7 +344,8 @@ export class ApplicationService {
       );
     }
     existing.status = dto.status;
-    return this.applicationRepo.save(existing);
+    await this.applicationRepo.save(existing);
+    return this.findOneById(applicationId, recruiterUserId);
   }
 
   /**
@@ -373,7 +376,7 @@ export class ApplicationService {
   async findAllForPost(
     postId: string,
     requestUserId: string,
-  ): Promise<Application[]> {
+  ): Promise<ApplicationDetailResponse[]> {
     const announcement = await this.announcementRepo.findOne({
       where: { postId },
     });
@@ -383,11 +386,13 @@ export class ApplicationService {
     if (announcement.userId !== requestUserId) {
       throw new ForbiddenException('공고 작성자만 지원 목록을 볼 수 있습니다.');
     }
-    return this.applicationRepo.find({
-      where: { postId },
-      relations: { user: true },
-      order: { createdAt: 'DESC' },
-    });
+    return this.applicationRepo
+      .find({
+        where: { postId },
+        relations: { user: true },
+        order: { createdAt: 'DESC' },
+      })
+      .then((rows) => rows.map(toApplicationDetailResponse));
   }
 
   private mergeForValidation(

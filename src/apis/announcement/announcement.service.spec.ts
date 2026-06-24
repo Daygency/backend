@@ -142,6 +142,7 @@ describe('AnnouncementService', () => {
           provide: AnnouncementFileService,
           useValue: {
             attachFilesToPost: jest.fn().mockResolvedValue([]),
+            listFilesForPost: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -477,6 +478,28 @@ describe('AnnouncementService', () => {
 
       const result = await service.update(mockUserId, mockSavedAnnouncement.postId!, {
         completed: true,
+      });
+
+      expect(announcementRepository.save).toHaveBeenCalled();
+      expect(result).toEqual({
+        postId: mockSavedAnnouncement.postId,
+        completed: true,
+      });
+    });
+
+    it('PartialType 기본값으로 status=OPEN 이 붙어도 completed 변경을 허용한다', async () => {
+      const base = {
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        category: mockCategory,
+        majors: [{ majorId: mockMajorId, name: '테스트전공' }],
+      };
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue(base);
+      mockApplicationRepo.count.mockResolvedValue(1);
+
+      const result = await service.update(mockUserId, mockSavedAnnouncement.postId!, {
+        completed: true,
+        status: AnnouncementStatus.OPEN,
       });
 
       expect(announcementRepository.save).toHaveBeenCalled();
