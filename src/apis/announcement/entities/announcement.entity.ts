@@ -25,15 +25,22 @@ export enum AnnouncementStatus {
 export const ANNOUNCEMENT_PRICE_MAX = 2_147_483_647;
 
 export enum AnnouncementPriceType {
-  /** 지출 */
+  /** @deprecated 레거시(참가비). 신규 작성·수정에서는 사용 불가 */
   EXPENSE = 'EXPENSE',
-  /** 수입 */
+  /** 페이 */
   INCOME = 'INCOME',
   /** 무료 */
   FREE = 'FREE',
-  /** 협의 가능 */
+  /** 비용 협의 */
   PENDING = 'PENDING',
 }
+
+/** 공고 작성·수정 시 선택 가능한 금액 유형 */
+export const ANNOUNCEMENT_SELECTABLE_PRICE_TYPES = [
+  AnnouncementPriceType.FREE,
+  AnnouncementPriceType.INCOME,
+  AnnouncementPriceType.PENDING,
+] as const;
 
 @Entity('announcement')
 export class Announcement {

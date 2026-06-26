@@ -67,7 +67,7 @@ export class ListAnnouncementQueryDto {
   @ApiPropertyOptional({
     enum: AnnouncementPriceType,
     description:
-      '금액 구분 필터. 지정 시 해당 `price_type`과 일치하는 공고만 (EXPENSE, INCOME, FREE, PENDING)',
+      '금액 구분 필터. FREE, INCOME(페이), PENDING(비용협의). EXPENSE는 레거시 데이터 조회용',
   })
   @IsOptional()
   @IsEnum(AnnouncementPriceType)

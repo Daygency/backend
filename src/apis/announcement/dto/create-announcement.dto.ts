@@ -11,12 +11,14 @@ import {
   IsInt,
   Min,
   Max,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
   AnnouncementPriceType,
   AnnouncementStatus,
   ANNOUNCEMENT_PRICE_MAX,
+  ANNOUNCEMENT_SELECTABLE_PRICE_TYPES,
 } from '../entities/announcement.entity';
 import { ApplicationConfigDto } from './application-config.dto';
 import { OptionalLocationFieldsDto } from '../../../common/dto/optional-location-fields.dto';
@@ -59,12 +61,12 @@ export class CreateAnnouncementDto extends OptionalLocationFieldsDto {
 
   @ApiPropertyOptional({
     description:
-      '금액 구분. 생략 시 PENDING(협의). EXPENSE=지출, INCOME=수입, FREE=무료, PENDING=협의 가능',
-    enum: AnnouncementPriceType,
+      '금액 구분. 생략 시 PENDING(비용협의). FREE=무료, INCOME=페이, PENDING=비용협의',
+    enum: ANNOUNCEMENT_SELECTABLE_PRICE_TYPES,
     default: AnnouncementPriceType.PENDING,
   })
   @IsOptional()
-  @IsEnum(AnnouncementPriceType)
+  @IsIn(ANNOUNCEMENT_SELECTABLE_PRICE_TYPES)
   priceType?: AnnouncementPriceType;
 
   @ApiPropertyOptional({

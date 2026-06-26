@@ -107,14 +107,29 @@ describe('CreateAnnouncementDto', () => {
     }
   });
 
-  it('priceType이 유효한 enum이면 통과한다', async () => {
+  it('priceType이 선택 가능한 값이면 통과한다', async () => {
+    for (const priceType of [
+      AnnouncementPriceType.PENDING,
+      AnnouncementPriceType.FREE,
+      AnnouncementPriceType.INCOME,
+    ]) {
+      const dto = plainToInstance(CreateAnnouncementDto, {
+        ...validDto,
+        priceType,
+        price: 0,
+      });
+      const errors = await validate(dto);
+      expect(errors).toHaveLength(0);
+    }
+  });
+
+  it('priceType이 EXPENSE(레거시)이면 실패한다', async () => {
     const dto = plainToInstance(CreateAnnouncementDto, {
       ...validDto,
-      priceType: AnnouncementPriceType.PENDING,
-      price: 0,
+      priceType: AnnouncementPriceType.EXPENSE,
     });
     const errors = await validate(dto);
-    expect(errors).toHaveLength(0);
+    expect(errors.find((e) => e.property === 'priceType')).toBeDefined();
   });
 
   it('priceType이 잘못된 값이면 실패한다', async () => {
