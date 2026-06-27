@@ -652,10 +652,15 @@ export class AnnouncementService {
    * currentUserId가 있으면 isMine 필드 반환 (내가 쓴 글인지 여부)
    */
   async findOne(id: string, currentUserId?: string) {
-    const announcement = await this.announcementRepository.findOne({
-      where: { postId: id },
-      relations: ['category', 'majors', 'applicationConfig', 'file'],
-    });
+    const announcement = await this.announcementRepository
+      .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category')
+      .leftJoinAndSelect('announcement.majors', 'majors')
+      .leftJoinAndSelect('announcement.applicationConfig', 'applicationConfig')
+      .leftJoinAndSelect('announcement.file', 'file')
+      .leftJoinAndSelect('announcement.user', 'user')
+      .where('announcement.postId = :id', { id })
+      .getOne();
     if (!announcement) {
       throw new NotFoundException('공고를 찾을 수 없습니다.');
     }
@@ -677,9 +682,18 @@ export class AnnouncementService {
       this.announcementFileService.listFilesForPost(id),
     ]);
     const attachments = mapAnnouncementAttachments(files);
+    const authorUser = announcement.user;
 
     return {
       ...announcement,
+      user: authorUser
+        ? {
+            userId: authorUser.userId,
+            activityName: authorUser.activityName,
+            name: authorUser.name,
+            profileImgUrl: authorUser.profileImgUrl ?? '',
+          }
+        : null,
       type: announcement.category?.name ?? '기타',
       isRecruiting: announcement.status === AnnouncementStatus.OPEN,
       dDay: calcDDay(announcement.deadlineAt),

@@ -269,6 +269,8 @@ export class NewsService {
     await this.newsRepository.increment({ newsId }, 'viewCount', 1);
     news.viewCount += 1;
 
+    const authorUser = news.user;
+
     const [likeCount, commentCount] = await Promise.all([
       this.likeRepository.count({
         where: {
@@ -286,6 +288,14 @@ export class NewsService {
 
     return {
       ...news,
+      user: authorUser
+        ? {
+            userId: authorUser.userId,
+            activityName: authorUser.activityName,
+            name: authorUser.name,
+            profileImgUrl: authorUser.profileImgUrl ?? '',
+          }
+        : null,
       isMine,
       likeCount,
       commentCount,
