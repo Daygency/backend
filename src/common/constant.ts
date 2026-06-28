@@ -14,6 +14,7 @@ export const COMMUNITY_CATEGORY_OPTIONS = [
   '자유게시판',
   '구인',
   '입시정보',
+  '유학정보',
   '학원운용',
   '학원/연습실 매매',
 ] as const;

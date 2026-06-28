@@ -1,5 +1,6 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ListHomeBannersQueryDto } from './dto/list-home-banners-query.dto';
 import { HomeBannerService } from './home-banner.service';
 
 @ApiTags('home-banners')
@@ -17,6 +18,12 @@ export class HomeBannerController {
   @ApiOperation({ summary: '홈 배너 전체 목록 (이전 배너 포함)' })
   findAll() {
     return this.homeBannerService.findAllPublic();
+  }
+
+  @Get('feed')
+  @ApiOperation({ summary: '큐레이션 피드 (무한스크롤)' })
+  findFeed(@Query() query: ListHomeBannersQueryDto) {
+    return this.homeBannerService.findFeedPublic(query);
   }
 
   @Get(':bannerId')

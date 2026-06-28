@@ -40,10 +40,15 @@ export class DatabaseSeedService implements OnModuleInit {
   }
 
   private async seedCommunityCategories() {
-    const existing = await this.communityCategoryRepo.count();
-    if (existing > 0) return;
+    const existing = await this.communityCategoryRepo.find();
+    const existingNames = new Set(existing.map((category) => category.name));
 
-    const categories = COMMUNITY_CATEGORY_OPTIONS.map((name) => {
+    const toAdd = COMMUNITY_CATEGORY_OPTIONS.filter(
+      (name) => !existingNames.has(name),
+    );
+    if (toAdd.length === 0) return;
+
+    const categories = toAdd.map((name) => {
       const category = new CommunityCategory();
       category.name = name;
       return category;

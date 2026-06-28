@@ -509,6 +509,25 @@ describe('AnnouncementService', () => {
       });
     });
 
+    it('종료된 공고의 본문 수정은 ForbiddenException을 던진다', async () => {
+      (announcementRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockSavedAnnouncement,
+        userId: mockUserId,
+        completedManually: true,
+        category: mockCategory,
+        majors: [],
+      });
+      mockApplicationRepo.count.mockResolvedValue(0);
+
+      await expect(
+        service.update(mockUserId, mockSavedAnnouncement.postId!, {
+          title: '변경',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(announcementRepository.save).not.toHaveBeenCalled();
+    });
+
     it('completed=true 전환 시 합격 지원자 전원에게 notice를 생성한다', async () => {
       const base = {
         ...mockSavedAnnouncement,

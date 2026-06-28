@@ -136,13 +136,15 @@ function mapAnnouncementAttachments(files: File[]) {
 /** 공고 → 목록 아이템 형태로 변환 */
 function toListItem(a: Announcement) {
   const majorRows = a.majors ?? [];
+  const recruitingOpen =
+    a.status === AnnouncementStatus.OPEN && !effectiveCompleted(a);
   return {
     postId: a.postId,
     title: a.title,
     address: a.address,
     type: a.category?.name ?? '기타',
-    isRecruiting: a.status === AnnouncementStatus.OPEN,
-    dDay: calcDDay(a.deadlineAt),
+    isRecruiting: recruitingOpen,
+    dDay: recruitingOpen ? calcDDay(a.deadlineAt) : '마감',
     deadlineAt: a.deadlineAt,
     completed: effectiveCompleted(a),
     priceType: a.priceType,
@@ -684,6 +686,10 @@ export class AnnouncementService {
     const attachments = mapAnnouncementAttachments(files);
     const authorUser = announcement.user;
 
+    const recruitingOpen =
+      announcement.status === AnnouncementStatus.OPEN &&
+      !effectiveCompleted(announcement);
+
     return {
       ...announcement,
       user: authorUser
@@ -695,8 +701,8 @@ export class AnnouncementService {
           }
         : null,
       type: announcement.category?.name ?? '기타',
-      isRecruiting: announcement.status === AnnouncementStatus.OPEN,
-      dDay: calcDDay(announcement.deadlineAt),
+      isRecruiting: recruitingOpen,
+      dDay: recruitingOpen ? calcDDay(announcement.deadlineAt) : '마감',
       attachments,
       createdAt: resolveAnnouncementPostedAt(postedAtMap.get(id)),
       completed: effectiveCompleted(announcement),
@@ -751,6 +757,10 @@ export class AnnouncementService {
         postId: id,
         completed: isCompleted,
       };
+    }
+
+    if (effectiveCompleted(announcement)) {
+      throw new ForbiddenException('종료된 공고는 수정할 수 없습니다.');
     }
 
     if (applicationCount > 0) {

@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
 import { CreateHomeBannerDto } from './dto/create-home-banner.dto';
+import { ListHomeBannersQueryDto } from './dto/list-home-banners-query.dto';
 import { UpdateHomeBannerDto } from './dto/update-home-banner.dto';
 import { HomeBanner } from './entities/home-banner.entity';
 
@@ -96,6 +97,54 @@ export class HomeBannerService {
         createdAt: row.createdAt,
       };
     });
+  }
+
+  async findFeedPublic(query: ListHomeBannersQueryDto) {
+    const limit = query.limit ?? 20;
+    const qb = this.bannerRepository
+      .createQueryBuilder('banner')
+      .orderBy('banner.sortOrder', 'DESC')
+      .addOrderBy('banner.createdAt', 'DESC')
+      .addOrderBy('banner.bannerId', 'DESC');
+
+    if (query.cursor) {
+      const cursorBanner = await this.bannerRepository.findOne({
+        where: { bannerId: query.cursor },
+      });
+      if (cursorBanner) {
+        qb.andWhere(
+          `(banner.sortOrder < :sortOrder)
+           OR (banner.sortOrder = :sortOrder AND banner.createdAt < :createdAt)
+           OR (banner.sortOrder = :sortOrder AND banner.createdAt = :createdAt AND banner.bannerId < :bannerId)`,
+          {
+            sortOrder: cursorBanner.sortOrder,
+            createdAt: cursorBanner.createdAt,
+            bannerId: cursorBanner.bannerId,
+          },
+        );
+      }
+    }
+
+    const rows = await qb.take(limit + 1).getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+
+    const items = slice.map((row) => {
+      const imageUrls = resolveImageUrls(row);
+      return {
+        bannerId: row.bannerId,
+        title: row.title,
+        imageUrl: imageUrls[0] ?? row.imageUrl,
+        isCurrent: isBannerVisibleNow(row),
+        createdAt: row.createdAt,
+      };
+    });
+
+    const nextCursor = hasMore
+      ? items[items.length - 1]?.bannerId ?? null
+      : null;
+
+    return { items, nextCursor, hasMore };
   }
 
   async findOnePublic(bannerId: string) {
