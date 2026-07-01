@@ -12,6 +12,7 @@ import {
   Min,
   Max,
   IsIn,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -32,12 +33,16 @@ export class CreateAnnouncementDto extends OptionalLocationFieldsDto {
   @IsString()
   content: string;
 
-  @ApiProperty({
-    description: '마감일 (ISO 8601)',
+  @ApiPropertyOptional({
+    description:
+      '마감일 (ISO 8601). null 또는 생략 시 상시 모집',
     example: '2025-04-01T23:59:59.000Z',
+    nullable: true,
   })
+  @IsOptional()
+  @ValidateIf((_, value) => value != null && value !== '')
   @IsDateString()
-  deadlineAt: string;
+  deadlineAt?: string | null;
 
   @ApiProperty({
     description: '예정일 (ISO 8601)',

@@ -166,6 +166,53 @@ export class UserController {
     return this.userService.getMyScrappedPostHighlights(req.user.id);
   }
 
+  @Get('posts/my/likes/community')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '내가 좋아요한 커뮤니티글 목록 조회 (무한스크롤)' })
+  @ApiResponse({ status: 200, description: '내 좋아요 커뮤니티 목록 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyLikedCommunityPosts(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListMyScrapQueryDto,
+  ) {
+    return this.userService.getMyLikedCommunityPosts(req.user.id, query);
+  }
+
+  @Get('posts/my/likes/news')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '내가 좋아요한 공연소식 목록 조회 (무한스크롤)' })
+  @ApiResponse({ status: 200, description: '내 좋아요 공연소식 목록 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyLikedNewsPosts(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListMyScrapQueryDto,
+  ) {
+    return this.userService.getMyLikedNewsPosts(req.user.id, query);
+  }
+
+  @Get('posts/my/likes/comments')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '내가 좋아요한 댓글 목록 조회 (무한스크롤)' })
+  @ApiResponse({ status: 200, description: '내 좋아요 댓글 목록 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyLikedCommentPosts(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListMyScrapQueryDto,
+  ) {
+    return this.userService.getMyLikedCommentPosts(req.user.id, query);
+  }
+
+  @Get('posts/my/likes/highlights')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({
+    summary: '내 좋아요 최신 묶음 조회 (커뮤니티 1개 + 공연소식 5개)',
+  })
+  @ApiResponse({ status: 200, description: '내 좋아요 최신 묶음 반환' })
+  @ApiResponse({ status: 401, description: '인증 필요' })
+  getMyLikedPostHighlights(@Request() req: { user: { id: string } }) {
+    return this.userService.getMyLikedPostHighlights(req.user.id);
+  }
+
   @Get('posts/my/highlights')
   @UseGuards(AuthGuard('access'))
   @ApiOperation({

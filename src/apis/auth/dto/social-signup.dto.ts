@@ -8,6 +8,8 @@ export class SocialSignupDto extends SocialLoginDto {
     description: '사용자 지정 이름 (미입력 시 null)',
     example: '홍길동',
   })
+  @IsOptional()
+  @IsString()
   name?: string;
 
   @ApiPropertyOptional({

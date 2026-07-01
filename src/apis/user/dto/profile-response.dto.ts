@@ -49,6 +49,9 @@ export class ProfileResponseDto {
   @ApiProperty({ description: '전공', type: Major })
   major: Major;
 
+  @ApiProperty({ description: '세부 전공', nullable: true })
+  majorDetail: string | null;
+
   @ApiProperty({ description: '연락처 (이메일, 전화번호)' })
   contact: {
     email: string;

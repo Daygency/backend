@@ -18,7 +18,7 @@ import type {
 } from '../types/application-snapshot.types';
 
 /**
- * 지원폼 제출 DTO — application_config에서 true인 항목만 서비스에서 필수 검증
+ * 지원폼 제출 DTO — application_config에서 include_* 가 true인 항목은 모두 필수 검증
  * file / education / career / award / certificate 는 스냅샷 JSON 배열 (항목 타입은 types 참고)
  */
 export class CreateApplicationDto {

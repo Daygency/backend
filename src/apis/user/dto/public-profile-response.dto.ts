@@ -50,6 +50,9 @@ export class PublicProfileResponseDto {
   @ApiProperty({ description: '전공', type: Major })
   major: Major | null;
 
+  @ApiProperty({ description: '세부 전공', nullable: true })
+  majorDetail: string | null;
+
   @ApiProperty({ description: '팔로잉 수 (해당 유저가 팔로우한 사람 수)' })
   followingCount: number;
 

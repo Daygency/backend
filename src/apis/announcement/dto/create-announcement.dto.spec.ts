@@ -52,6 +52,17 @@ describe('CreateAnnouncementDto', () => {
     expect(errors.find((e) => e.property === 'deadlineAt')).toBeDefined();
   });
 
+  it('deadlineAt을 생략하거나 null이면 상시 모집으로 통과한다', async () => {
+    for (const deadlineAt of [undefined, null]) {
+      const dto = plainToInstance(CreateAnnouncementDto, {
+        ...validDto,
+        deadlineAt,
+      });
+      const errors = await validate(dto);
+      expect(errors).toHaveLength(0);
+    }
+  });
+
   it('fileId가 UUID 형식이 아니면 실패한다', async () => {
     const invalid = { ...validDto, fileId: 'not-uuid' };
     const dto = plainToInstance(CreateAnnouncementDto, invalid);

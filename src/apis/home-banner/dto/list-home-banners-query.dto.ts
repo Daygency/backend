@@ -3,7 +3,7 @@ import { Transform } from 'class-transformer';
 import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 /**
- * 큐레이션 피드 무한스크롤 Query DTO
+ * 매거진 피드 무한스크롤 Query DTO
  */
 export class ListHomeBannersQueryDto {
   @ApiPropertyOptional({

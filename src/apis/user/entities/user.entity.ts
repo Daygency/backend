@@ -47,6 +47,14 @@ export class User {
   @Column({ length: 100, nullable: true })
   aboutMe: string;
 
+  @Column({
+    name: 'major_detail',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  majorDetail: string | null;
+
   @Column({ length: 300, nullable: true })
   selfIntroduction: string;
 

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -484,6 +485,20 @@ export class AuthService {
     }
 
     if (!user) {
+      const email = profile.email?.trim();
+      if (email) {
+        const existingByEmail = await this.userService.findByEmail(email, {
+          withDeleted: true,
+        });
+        if (
+          existingByEmail &&
+          existingByEmail.socialProvider !== provider
+        ) {
+          throw new ConflictException(
+            '이미 다른 소셜 계정으로 가입된 이메일입니다.',
+          );
+        }
+      }
       return {
         needsSignup: true,
         profile: {

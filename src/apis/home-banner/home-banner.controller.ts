@@ -21,7 +21,7 @@ export class HomeBannerController {
   }
 
   @Get('feed')
-  @ApiOperation({ summary: '큐레이션 피드 (무한스크롤)' })
+  @ApiOperation({ summary: '매거진 피드 (무한스크롤)' })
   findFeed(@Query() query: ListHomeBannersQueryDto) {
     return this.homeBannerService.findFeedPublic(query);
   }

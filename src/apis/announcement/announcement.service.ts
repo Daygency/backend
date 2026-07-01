@@ -41,7 +41,8 @@ import {
 
 const MAX_ANNOUNCEMENT_IMAGES = 5;
 
-function calcDDay(deadlineAt: Date): string {
+function calcDDay(deadlineAt: Date | null | undefined): string {
+  if (!deadlineAt) return '상시';
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const deadline = new Date(deadlineAt);
@@ -94,7 +95,7 @@ export interface AnnouncementListResponse {
     type: string;
     isRecruiting: boolean;
     dDay: string;
-    deadlineAt: Date;
+    deadlineAt: Date | null;
     /** 공연·계약 종료 여부(수동 완료 또는 `scheduledAt` 경과) */
     completed: boolean;
     priceType: AnnouncementPriceType;
@@ -324,7 +325,7 @@ export class AnnouncementService {
     type: string;
     isRecruiting: boolean;
     dDay: string;
-    deadlineAt: Date;
+    deadlineAt: Date | null;
     completed: boolean;
     priceType: AnnouncementPriceType;
     price: number;
@@ -352,7 +353,10 @@ export class AnnouncementService {
       userId,
       title: dto.title,
       content: dto.content,
-      deadlineAt: new Date(dto.deadlineAt),
+      deadlineAt:
+        dto.deadlineAt != null && String(dto.deadlineAt).trim() !== ''
+          ? new Date(dto.deadlineAt)
+          : null,
       scheduledAt: new Date(dto.scheduledAt),
       status: dto.status ?? AnnouncementStatus.OPEN,
       address: dto.address,
@@ -546,8 +550,14 @@ export class AnnouncementService {
     qb.take(limit + 1);
 
     if (sort === 'imminent') {
-      qb.andWhere('announcement.deadlineAt >= :now', { now });
-      qb.orderBy('announcement.deadlineAt', 'ASC').addOrderBy(
+      qb.andWhere(
+        '(announcement.deadlineAt IS NULL OR announcement.deadlineAt >= :now)',
+        { now },
+      );
+      qb.orderBy('announcement.deadlineAt IS NULL', 'ASC').addOrderBy(
+        'announcement.deadlineAt',
+        'ASC',
+      ).addOrderBy(
         'announcement.postId',
         'ASC',
       );
@@ -557,7 +567,8 @@ export class AnnouncementService {
         if (parsed) {
           qb.andWhere(
             `(announcement.deadlineAt > :cursorPrimary)
-             OR (announcement.deadlineAt = :cursorPrimary AND announcement.postId > :cursorPostId)`,
+             OR (announcement.deadlineAt = :cursorPrimary AND announcement.postId > :cursorPostId)
+             OR (announcement.deadlineAt IS NULL AND announcement.postId > :cursorPostId)`,
             {
               cursorPrimary: parsed.primary,
               cursorPostId: parsed.postId,
@@ -640,7 +651,8 @@ export class AnnouncementService {
     row: Announcement,
   ): string {
     if (sort === 'imminent') {
-      return buildCompositeCursor(row.deadlineAt, row.postId);
+      const primary = row.deadlineAt ?? row.createdAt;
+      return buildCompositeCursor(primary, row.postId);
     }
     return buildCompositeCursor(row.createdAt, row.postId);
   }
@@ -771,8 +783,12 @@ export class AnnouncementService {
 
     if (dto.title !== undefined) announcement.title = dto.title;
     if (dto.content !== undefined) announcement.content = dto.content;
-    if (dto.deadlineAt !== undefined)
-      announcement.deadlineAt = new Date(dto.deadlineAt);
+    if (dto.deadlineAt !== undefined) {
+      announcement.deadlineAt =
+        dto.deadlineAt != null && String(dto.deadlineAt).trim() !== ''
+          ? new Date(dto.deadlineAt)
+          : null;
+    }
     if (dto.scheduledAt !== undefined)
       announcement.scheduledAt = new Date(dto.scheduledAt);
     if (dto.status !== undefined) announcement.status = dto.status;

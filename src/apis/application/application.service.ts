@@ -71,8 +71,10 @@ export class ApplicationService {
     if (announcement.status !== AnnouncementStatus.OPEN) {
       throw new BadRequestException('모집이 마감된 공고입니다.');
     }
-    const deadline = new Date(announcement.deadlineAt);
-    if (deadline.getTime() < Date.now()) {
+    const deadlinePassed =
+      announcement.deadlineAt != null &&
+      new Date(announcement.deadlineAt).getTime() < Date.now();
+    if (deadlinePassed) {
       throw new BadRequestException('지원 마감일이 지났습니다.');
     }
 
@@ -251,8 +253,10 @@ export class ApplicationService {
     if (announcement.status !== AnnouncementStatus.OPEN) {
       throw new BadRequestException('모집이 마감된 공고입니다.');
     }
-    const deadline = new Date(announcement.deadlineAt);
-    if (deadline.getTime() < Date.now()) {
+    const deadlinePassed =
+      announcement.deadlineAt != null &&
+      new Date(announcement.deadlineAt).getTime() < Date.now();
+    if (deadlinePassed) {
       throw new BadRequestException('지원 마감일이 지났습니다.');
     }
 

@@ -15,7 +15,8 @@ import { FileService } from '../file/file.service';
 import { HomeBannerService } from '../home-banner/home-banner.service';
 import { resolveAnnouncementPostedAt } from '../announcement/announcement-created-at.util';
 
-function calcDDay(deadlineAt: Date): string {
+function calcDDay(deadlineAt: Date | null | undefined): string {
+  if (!deadlineAt) return '상시';
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const deadline = new Date(deadlineAt);

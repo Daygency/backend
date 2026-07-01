@@ -140,6 +140,10 @@ export class UpdateUserDto {
   profileImgUrl?: string;
 
   @IsOptional()
+  @IsString()
+  coverImgUrl?: string;
+
+  @IsOptional()
   @IsBoolean()
   isEmailSubscribed?: boolean;
 
@@ -162,6 +166,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsUUID()
   majorId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 100)
+  majorDetail?: string;
 
   @IsOptional()
   @IsArray()

@@ -64,7 +64,8 @@ function decodeUserListCursor(cursor: string): { ca: string; uid: string } {
   }
 }
 
-function calcDDay(deadlineAt: Date): string {
+function calcDDay(deadlineAt: Date | null | undefined): string {
+  if (!deadlineAt) return '상시';
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const deadline = new Date(deadlineAt);
@@ -121,6 +122,58 @@ export class UserService {
       withDeleted: options?.withDeleted ?? false,
     });
     if (!user) return null;
+    return this.alignSocialUserWithProfile(user, provider, profile);
+  }
+
+  async findByEmail(
+    email: string,
+    options?: { withDeleted?: boolean },
+  ): Promise<User | null> {
+    const trimmed = email?.trim();
+    if (!trimmed) return null;
+    return this.userRepository.findOne({
+      where: { email: trimmed },
+      withDeleted: options?.withDeleted ?? false,
+    });
+  }
+
+  /**
+   * 실제 이메일로 조회. `social_provider`+`social_id` 불일치(레거시·탈퇴 계정) 시
+   * 동일 provider 이면 socialId 를 정규화해 반환.
+   */
+  async findByEmailForSocialAuth(
+    provider: SocialProvider,
+    profile: SocialProfile,
+    options?: { withDeleted?: boolean },
+  ): Promise<User | null> {
+    const trimmed = profile.email?.trim();
+    if (!trimmed) return null;
+    const user = await this.userRepository.findOne({
+      where: { email: trimmed },
+      withDeleted: options?.withDeleted ?? false,
+    });
+    if (!user) return null;
+    if (user.socialProvider !== provider) return null;
+    return this.alignSocialUserWithProfile(user, provider, profile);
+  }
+
+  private async alignSocialUserWithProfile(
+    user: User,
+    provider: SocialProvider,
+    profile: SocialProfile,
+  ): Promise<User> {
+    if (user.socialProvider !== provider) {
+      return user;
+    }
+    const profileSocialId = String(profile.socialId).trim();
+    const userSocialId = String(user.socialId).trim();
+    if (userSocialId !== profileSocialId) {
+      this.logger.warn(
+        `socialId mismatch on userId=${user.userId}, normalizing from ${userSocialId} to ${profileSocialId}`,
+      );
+      user.socialId = profile.socialId;
+      await this.userRepository.save(user);
+    }
     if (
       !user.deletedAt &&
       profile.profileImgUrl &&
@@ -171,22 +224,7 @@ export class UserService {
     });
     if (!user) return null;
     if (user.socialProvider !== provider) return null;
-    if (String(user.socialId).trim() !== String(socialId).trim()) {
-      this.logger.warn(
-        `socialId mismatch on placeholder row userId=${user.userId}, normalizing`,
-      );
-      user.socialId = socialId;
-      await this.userRepository.save(user);
-    }
-    if (
-      !user.deletedAt &&
-      profile.profileImgUrl &&
-      profile.profileImgUrl !== user.profileImgUrl
-    ) {
-      user.profileImgUrl = profile.profileImgUrl;
-      await this.userRepository.save(user);
-    }
-    return user;
+    return this.alignSocialUserWithProfile(user, provider, profile);
   }
 
   async createBySocial(
@@ -201,6 +239,18 @@ export class UserService {
     const activityName = options.activityName.trim();
     const email =
       profile.email || `${provider}_${profile.socialId}@social.placeholder`;
+
+    const existingByEmail = await this.userRepository.findOne({
+      where: { email },
+      withDeleted: true,
+    });
+    if (existingByEmail) {
+      throw new ConflictException(
+        existingByEmail.deletedAt
+          ? '탈퇴한 계정이 있습니다. 로그인 후 계정 복구를 진행해 주세요.'
+          : '이미 가입된 이메일입니다. 로그인을 시도해 주세요.',
+      );
+    }
 
     const user = this.userRepository.create({
       name,
@@ -423,6 +473,7 @@ export class UserService {
         'name',
         'role',
         'aboutMe',
+        'majorDetail',
         'selfIntroduction',
         'email',
         'phoneNumber',
@@ -446,6 +497,7 @@ export class UserService {
       activityName: user.activityName,
       role: user.role,
       aboutMe: user.aboutMe,
+      majorDetail: user.majorDetail,
       selfIntroduction: user.selfIntroduction,
       educations: user.educations ?? null,
       careers: user.careers ?? null,
@@ -496,6 +548,7 @@ export class UserService {
         'name',
         'role',
         'aboutMe',
+        'majorDetail',
         'selfIntroduction',
       ],
     });
@@ -516,6 +569,7 @@ export class UserService {
       activityName: user.activityName,
       role: user.role,
       aboutMe: user.aboutMe,
+      majorDetail: user.majorDetail,
       selfIntroduction: user.selfIntroduction,
       educations: user.educations ?? null,
       careers: user.careers ?? null,
@@ -566,6 +620,13 @@ export class UserService {
         sortOrder: 0,
       });
       user.profileImgUrl = uploaded.imgUrl;
+    } else if (updateUserDto.profileImgUrl === '') {
+      user.profileImgUrl = '';
+    }
+
+    if (updateUserDto.majorDetail !== undefined) {
+      const trimmed = updateUserDto.majorDetail?.trim() ?? '';
+      user.majorDetail = trimmed || null;
     }
 
     if (coverImage) {
@@ -578,6 +639,8 @@ export class UserService {
         sortOrder: 0,
       });
       user.coverImgUrl = uploaded.imgUrl;
+    } else if (updateUserDto.coverImgUrl === '') {
+      user.coverImgUrl = '';
     }
 
     const savedUser = await this.userRepository.save(user);
@@ -1414,6 +1477,351 @@ export class UserService {
       latestScrappedNews: recentNewsRows.map((row) => ({
         scrapId: row.scrapId,
         scrappedAt: row.scrappedAt,
+        newsId: row.newsId,
+        title: row.title,
+        place: row.place,
+        createdAt: row.createdAt,
+        likeCount: newsLikeCountMap.get(row.newsId) ?? 0,
+        viewCount: Number(row.viewCount ?? 0),
+        commentCount: newsCommentCountMap.get(row.newsId) ?? 0,
+      })),
+    };
+  }
+
+  async getMyLikedCommunityPosts(userId: string, query: ListMyScrapQueryDto) {
+    const { cursor, limit = 20 } = query;
+
+    const qb = this.likeRepository
+      .createQueryBuilder('like')
+      .innerJoin(
+        Community,
+        'community',
+        'community.communityId = like.targetId',
+      )
+      .leftJoin('community.category', 'category')
+      .select([
+        'like.id AS likeId',
+        'like.createdAt AS likedAt',
+        'community.communityId AS communityId',
+        'community.title AS title',
+        'community.createdAt AS createdAt',
+        'community.viewCount AS viewCount',
+        'category.name AS categoryName',
+      ])
+      .where('like.user_id = :userId', { userId })
+      .andWhere('like.like_type = :likeType', {
+        likeType: LikeType.COMMUNITY,
+      })
+      .orderBy('like.createdAt', 'DESC')
+      .addOrderBy('like.id', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      const cursorDate = new Date(cursor);
+      if (!Number.isNaN(cursorDate.getTime())) {
+        qb.andWhere('like.createdAt < :cursorDate', { cursorDate });
+      }
+    }
+
+    const rows = await qb.getRawMany<{
+      likeId: string;
+      likedAt: Date;
+      communityId: string;
+      title: string;
+      createdAt: Date;
+      viewCount: number;
+      categoryName: string | null;
+    }>();
+
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+    const communityIds = sliced.map((row) => row.communityId);
+
+    const [likeCountMap, commentCountMap] = await Promise.all([
+      this.getLikeCountMap(LikeType.COMMUNITY, communityIds),
+      this.getCommentCountMap(CommentTargetType.COMMUNITY, communityIds),
+    ]);
+
+    const items = sliced.map((row) => ({
+      likeId: row.likeId,
+      likedAt: row.likedAt,
+      communityId: row.communityId,
+      title: row.title,
+      category: row.categoryName ?? null,
+      createdAt: row.createdAt,
+      likeCount: likeCountMap.get(row.communityId) ?? 0,
+      viewCount: Number(row.viewCount ?? 0),
+      commentCount: commentCountMap.get(row.communityId) ?? 0,
+    }));
+
+    const nextCursor = hasMore
+      ? new Date(items[items.length - 1].likedAt).toISOString()
+      : null;
+
+    return { items, nextCursor, hasMore };
+  }
+
+  async getMyLikedNewsPosts(userId: string, query: ListMyScrapQueryDto) {
+    const { cursor, limit = 20 } = query;
+
+    const qb = this.likeRepository
+      .createQueryBuilder('like')
+      .innerJoin(News, 'news', 'news.newsId = like.targetId')
+      .select([
+        'like.id AS likeId',
+        'like.createdAt AS likedAt',
+        'news.newsId AS newsId',
+        'news.title AS title',
+        'news.place AS place',
+        'news.createdAt AS createdAt',
+        'news.viewCount AS viewCount',
+      ])
+      .where('like.user_id = :userId', { userId })
+      .andWhere('like.like_type = :likeType', { likeType: LikeType.NEWS })
+      .orderBy('like.createdAt', 'DESC')
+      .addOrderBy('like.id', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      const cursorDate = new Date(cursor);
+      if (!Number.isNaN(cursorDate.getTime())) {
+        qb.andWhere('like.createdAt < :cursorDate', { cursorDate });
+      }
+    }
+
+    const rows = await qb.getRawMany<{
+      likeId: string;
+      likedAt: Date;
+      newsId: string;
+      title: string;
+      place: string;
+      createdAt: Date;
+      viewCount: number;
+    }>();
+
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+    const newsIds = sliced.map((row) => row.newsId);
+
+    const [likeCountMap, commentCountMap] = await Promise.all([
+      this.getLikeCountMap(LikeType.NEWS, newsIds),
+      this.getCommentCountMap(CommentTargetType.NEWS, newsIds),
+    ]);
+
+    const items = sliced.map((row) => ({
+      likeId: row.likeId,
+      likedAt: row.likedAt,
+      newsId: row.newsId,
+      title: row.title,
+      place: row.place,
+      createdAt: row.createdAt,
+      likeCount: likeCountMap.get(row.newsId) ?? 0,
+      viewCount: Number(row.viewCount ?? 0),
+      commentCount: commentCountMap.get(row.newsId) ?? 0,
+    }));
+
+    const nextCursor = hasMore
+      ? new Date(items[items.length - 1].likedAt).toISOString()
+      : null;
+
+    return { items, nextCursor, hasMore };
+  }
+
+  async getMyLikedCommentPosts(userId: string, query: ListMyScrapQueryDto) {
+    const { cursor, limit = 20 } = query;
+
+    const qb = this.likeRepository
+      .createQueryBuilder('like')
+      .innerJoin(Comment, 'comment', 'comment.id = like.targetId')
+      .select([
+        'like.id AS likeId',
+        'like.createdAt AS likedAt',
+        'comment.id AS commentId',
+        'comment.content AS content',
+        'comment.targetType AS targetType',
+        'comment.targetId AS targetId',
+        'comment.createdAt AS createdAt',
+      ])
+      .where('like.user_id = :userId', { userId })
+      .andWhere('like.like_type = :likeType', { likeType: LikeType.COMMENT })
+      .andWhere('comment.deleted_at IS NULL')
+      .orderBy('like.createdAt', 'DESC')
+      .addOrderBy('like.id', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      const cursorDate = new Date(cursor);
+      if (!Number.isNaN(cursorDate.getTime())) {
+        qb.andWhere('like.createdAt < :cursorDate', { cursorDate });
+      }
+    }
+
+    const rows = await qb.getRawMany<{
+      likeId: string;
+      likedAt: Date;
+      commentId: string;
+      content: string;
+      targetType: CommentTargetType;
+      targetId: string;
+      createdAt: Date;
+    }>();
+
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+
+    const newsIds = [
+      ...new Set(
+        sliced
+          .filter((row) => row.targetType === CommentTargetType.NEWS)
+          .map((row) => row.targetId),
+      ),
+    ];
+    const communityIds = [
+      ...new Set(
+        sliced
+          .filter((row) => row.targetType === CommentTargetType.COMMUNITY)
+          .map((row) => row.targetId),
+      ),
+    ];
+
+    const [newsRows, communityRows] = await Promise.all([
+      newsIds.length
+        ? this.newsRepository.find({
+            where: { newsId: In(newsIds) },
+            select: ['newsId', 'title'],
+          })
+        : Promise.resolve([]),
+      communityIds.length
+        ? this.communityRepository.find({
+            where: { communityId: In(communityIds) },
+            select: ['communityId', 'title'],
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const newsTitleMap = new Map(newsRows.map((row) => [row.newsId, row.title]));
+    const communityTitleMap = new Map(
+      communityRows.map((row) => [row.communityId, row.title]),
+    );
+
+    const items = sliced.map((row) => ({
+      likeId: row.likeId,
+      likedAt: row.likedAt,
+      commentId: row.commentId,
+      content: row.content,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      createdAt: row.createdAt,
+      postTitle:
+        row.targetType === CommentTargetType.NEWS
+          ? (newsTitleMap.get(row.targetId) ?? null)
+          : (communityTitleMap.get(row.targetId) ?? null),
+    }));
+
+    const nextCursor = hasMore
+      ? new Date(items[items.length - 1].likedAt).toISOString()
+      : null;
+
+    return { items, nextCursor, hasMore };
+  }
+
+  async getMyLikedPostHighlights(userId: string) {
+    const [latestCommunityRows, recentNewsRows] = await Promise.all([
+      this.likeRepository
+        .createQueryBuilder('like')
+        .innerJoin(
+          Community,
+          'community',
+          'community.communityId = like.targetId',
+        )
+        .leftJoin('community.category', 'category')
+        .select([
+          'like.id AS likeId',
+          'like.createdAt AS likedAt',
+          'community.communityId AS communityId',
+          'community.title AS title',
+          'community.createdAt AS createdAt',
+          'community.viewCount AS viewCount',
+          'category.name AS categoryName',
+        ])
+        .where('like.user_id = :userId', { userId })
+        .andWhere('like.like_type = :likeType', {
+          likeType: LikeType.COMMUNITY,
+        })
+        .orderBy('like.createdAt', 'DESC')
+        .addOrderBy('like.id', 'DESC')
+        .take(1)
+        .getRawMany<{
+          likeId: string;
+          likedAt: Date;
+          communityId: string;
+          title: string;
+          createdAt: Date;
+          viewCount: number;
+          categoryName: string | null;
+        }>(),
+      this.likeRepository
+        .createQueryBuilder('like')
+        .innerJoin(News, 'news', 'news.newsId = like.targetId')
+        .select([
+          'like.id AS likeId',
+          'like.createdAt AS likedAt',
+          'news.newsId AS newsId',
+          'news.title AS title',
+          'news.place AS place',
+          'news.createdAt AS createdAt',
+          'news.viewCount AS viewCount',
+        ])
+        .where('like.user_id = :userId', { userId })
+        .andWhere('like.like_type = :likeType', { likeType: LikeType.NEWS })
+        .orderBy('like.createdAt', 'DESC')
+        .addOrderBy('like.id', 'DESC')
+        .take(5)
+        .getRawMany<{
+          likeId: string;
+          likedAt: Date;
+          newsId: string;
+          title: string;
+          place: string;
+          createdAt: Date;
+          viewCount: number;
+        }>(),
+    ]);
+
+    const latestCommunity = latestCommunityRows[0] ?? null;
+    const communityIds = latestCommunity ? [latestCommunity.communityId] : [];
+    const newsIds = recentNewsRows.map((row) => row.newsId);
+
+    const [communityLikeCountMap, communityCommentCountMap] = await Promise.all(
+      [
+        this.getLikeCountMap(LikeType.COMMUNITY, communityIds),
+        this.getCommentCountMap(CommentTargetType.COMMUNITY, communityIds),
+      ],
+    );
+    const [newsLikeCountMap, newsCommentCountMap] = await Promise.all([
+      this.getLikeCountMap(LikeType.NEWS, newsIds),
+      this.getCommentCountMap(CommentTargetType.NEWS, newsIds),
+    ]);
+
+    return {
+      latestLikedCommunity: latestCommunity
+        ? {
+            likeId: latestCommunity.likeId,
+            likedAt: latestCommunity.likedAt,
+            communityId: latestCommunity.communityId,
+            title: latestCommunity.title,
+            category: latestCommunity.categoryName ?? null,
+            createdAt: latestCommunity.createdAt,
+            likeCount:
+              communityLikeCountMap.get(latestCommunity.communityId) ?? 0,
+            viewCount: Number(latestCommunity.viewCount ?? 0),
+            commentCount:
+              communityCommentCountMap.get(latestCommunity.communityId) ?? 0,
+          }
+        : null,
+      latestLikedNews: recentNewsRows.map((row) => ({
+        likeId: row.likeId,
+        likedAt: row.likedAt,
         newsId: row.newsId,
         title: row.title,
         place: row.place,

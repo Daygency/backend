@@ -4,7 +4,7 @@ import { Transform } from 'class-transformer';
 
 /**
  * 지원서 양식 입력 DTO
- * 각 항목 포함 여부
+ * 각 항목 포함 여부 (포함된 항목은 지원 시 모두 필수 입력)
  */
 export class ApplicationConfigDto {
   @ApiProperty({ description: '이름 포함 여부', default: false })

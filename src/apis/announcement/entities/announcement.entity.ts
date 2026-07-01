@@ -56,8 +56,8 @@ export class Announcement {
   @Column({ type: 'text' })
   content: string;
 
-  @Column({ name: 'deadline_at', type: 'datetime' })
-  deadlineAt: Date;
+  @Column({ name: 'deadline_at', type: 'datetime', nullable: true })
+  deadlineAt: Date | null;
 
   @Column({ name: 'scheduled_at', type: 'datetime' })
   scheduledAt: Date;

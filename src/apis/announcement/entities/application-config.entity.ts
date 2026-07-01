@@ -3,7 +3,8 @@ import { Announcement } from './announcement.entity';
 
 /**
  * 지원서 양식 (application_config)
- * 모집공고와 1:1 관계 - 각 공고당 하나의 지원서 양식 설정
+ * 모집공고와 1:1 관계 - 각 공고당 하나의 지원서 양식 설정.
+ * include_* 가 true 인 항목은 지원 시 모두 필수 입력으로 검증된다.
  */
 @Entity('application_config')
 export class ApplicationConfig {
