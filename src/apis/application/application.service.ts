@@ -501,17 +501,11 @@ export class ApplicationService {
     if (config.includeMusic) {
       missing('참가곡', !!dto.music?.trim());
     }
-    if (config.includeAddress) {
-      missing('주소', !!dto.address?.trim());
-    }
     if (config.includeFile) {
       missing('파일', hasJsonArrayContent(dto.file));
     }
     if (config.includeLink) {
       missing('링크', !!dto.link?.trim());
-    }
-    if (config.includeDepartment) {
-      missing('소속학부', !!dto.department?.trim());
     }
     if (config.includeCareer) {
       missing('경력', hasJsonArrayContent(dto.career));

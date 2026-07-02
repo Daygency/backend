@@ -33,6 +33,19 @@ import {
   ApplicationStatus,
 } from '../application/entities/application.entity';
 import { NoticeTargetType } from '../notice/entities/notice.entity';
+
+/** 지원서 양식에서 제거된 항목은 항상 false 로 저장 */
+function sanitizeApplicationConfig(
+  ac: ApplicationConfigDto | undefined,
+): Record<string, boolean> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(ac ?? {}).map(([k, v]) => [k, v ?? false]),
+    ),
+    includeAddress: false,
+    includeDepartment: false,
+  };
+}
 import { NoticeService } from '../notice/notice.service';
 import {
   ChatRoom,
@@ -372,9 +385,7 @@ export class AnnouncementService {
 
     const applicationConfig = this.applicationConfigRepository.create({
       postId: saved.postId,
-      ...Object.fromEntries(
-        Object.entries(ac ?? {}).map(([k, v]) => [k, v ?? false]),
-      ),
+      ...sanitizeApplicationConfig(ac),
     });
     await this.applicationConfigRepository.save(applicationConfig);
 
@@ -829,9 +840,7 @@ export class AnnouncementService {
         where: { postId: id },
       });
       const ac = dto.applicationConfig;
-      const merged = Object.fromEntries(
-        Object.entries(ac).map(([k, v]) => [k, v ?? false]),
-      );
+      const merged = sanitizeApplicationConfig(ac);
       if (config) {
         Object.assign(config, merged);
         await this.applicationConfigRepository.save(config);

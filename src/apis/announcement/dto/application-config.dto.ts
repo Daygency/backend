@@ -55,15 +55,6 @@ export class ApplicationConfigDto {
   @IsBoolean()
   includeMusic?: boolean = false;
 
-  @ApiProperty({
-    description: '상장/트로피 배송 주소 포함 여부',
-    default: false,
-  })
-  @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true')
-  @IsBoolean()
-  includeAddress?: boolean = false;
-
   @ApiProperty({ description: '사진/영상/파일 포함 여부', default: false })
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
@@ -75,12 +66,6 @@ export class ApplicationConfigDto {
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   includeLink?: boolean = false;
-
-  @ApiProperty({ description: '소속학부 포함 여부', default: false })
-  @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true')
-  @IsBoolean()
-  includeDepartment?: boolean = false;
 
   @ApiProperty({ description: '경력 포함 여부', default: false })
   @IsOptional()
