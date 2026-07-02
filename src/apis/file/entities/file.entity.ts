@@ -11,6 +11,7 @@ import {
  */
 export enum FileTargetType {
   ANNOUNCEMENT = 'announcement',
+  ANNOUNCEMENT_PICK = 'announcement_pick',
   NEWS = 'news',
   COMMUNITY = 'community',
   /** 내 자료 보관함 직접 업로드 — `target_id` = userId */

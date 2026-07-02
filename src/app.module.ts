@@ -28,6 +28,7 @@ import { HomeBannerModule } from './apis/home-banner/home-banner.module';
 import { ReviewModule } from './apis/review/review.module';
 import { InquiryModule } from './apis/inquiry/inquiry.module';
 import { KakaoModule } from './apis/kakao/kakao.module';
+import { AnnouncementPickModule } from './apis/announcement-pick/announcement-pick.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { KakaoModule } from './apis/kakao/kakao.module';
     ReviewModule,
     InquiryModule,
     KakaoModule,
+    AnnouncementPickModule,
   ],
   providers: [DatabaseSeedService],
 })
