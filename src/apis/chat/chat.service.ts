@@ -41,7 +41,13 @@ export type ChatRoomListItemDto = {
     activityName: string;
     profileImgUrl: string;
   };
-  lastMessage: { content: string | null; createdAt: Date } | null;
+  lastMessage: {
+    content: string | null;
+    fileUrl?: string | null;
+    fileName?: string | null;
+    fileMime?: string | null;
+    createdAt: Date;
+  } | null;
   createdAt: Date;
 };
 
@@ -70,6 +76,60 @@ export class ChatService {
     private readonly chatGateway: ChatGateway,
     private readonly fileService: FileService,
   ) {}
+
+  private decodeRepeatedly(value: string): string {
+    let decoded = value;
+    for (let i = 0; i < 5; i += 1) {
+      try {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) break;
+        decoded = next;
+      } catch {
+        break;
+      }
+    }
+    return decoded;
+  }
+
+  private normalizeFileName(value: string): string {
+    const decoded = this.decodeRepeatedly(value);
+    const withoutQuery = decoded.split('?')[0]?.split('#')[0] ?? decoded;
+    const baseName =
+      withoutQuery.split(/[\\/]/).filter(Boolean).pop() ?? withoutQuery;
+    return baseName.normalize('NFC').trim();
+  }
+
+  private recoverMulterOriginalName(value: string): string {
+    const normalized = this.normalizeFileName(value);
+    const looksMojibake = /[ÃÂâ€áÅìíë]/.test(normalized);
+    if (!looksMojibake) return normalized;
+
+    try {
+      const recovered = Buffer.from(normalized, 'latin1')
+        .toString('utf8')
+        .normalize('NFC')
+        .trim();
+      if (recovered && !recovered.includes('�')) {
+        return this.normalizeFileName(recovered);
+      }
+    } catch {
+      // Keep the original normalized value if latin1 recovery is not applicable.
+    }
+
+    return normalized;
+  }
+
+  private pickDisplayFileName(input: {
+    fileName?: string | null;
+    content?: string | null;
+  }): string | null {
+    const raw =
+      input.fileName ??
+      (input.content?.startsWith('[파일]')
+        ? input.content.replace(/^\[파일\]\s*/, '')
+        : null);
+    return raw ? this.recoverMulterOriginalName(raw) : null;
+  }
 
   /** COFFEE: 정확히 2명(삭제되지 않은 멤버)만 있는 방 중 두 사용자를 모두 포함하는 방 */
   private async findCoffeeRoomBetweenUsers(
@@ -410,17 +470,21 @@ export class ChatService {
     if (!file.buffer?.length) {
       throw new BadRequestException('업로드할 파일이 필요합니다.');
     }
+    const originalFileName = this.recoverMulterOriginalName(
+      file.originalName || 'file',
+    );
 
     const uploaded = await this.fileService.uploadAndSave({
       buffer: file.buffer,
-      originalName: file.originalName || 'file',
+      originalName: originalFileName || 'file',
       contentType: file.contentType || 'application/octet-stream',
       targetType: null,
       targetId: null,
       sortOrder: 0,
     });
 
-    const fileName = uploaded.originalName || file.originalName || 'file';
+    const fileName =
+      originalFileName || uploaded.originalName || file.originalName || 'file';
     const message = await this.messageRepo.save(
       this.messageRepo.create({
         content: `[파일] ${fileName}`,
@@ -697,19 +761,45 @@ export class ChatService {
 
   private async loadLastMessageByRoomIds(
     roomIds: string[],
-  ): Promise<Map<string, { content: string | null; createdAt: Date }>> {
+  ): Promise<
+    Map<
+      string,
+      {
+        content: string | null;
+        fileUrl: string | null;
+        fileName: string | null;
+        fileMime: string | null;
+        createdAt: Date;
+      }
+    >
+  > {
     const result = new Map<
       string,
-      { content: string | null; createdAt: Date }
+      {
+        content: string | null;
+        fileUrl: string | null;
+        fileName: string | null;
+        fileMime: string | null;
+        createdAt: Date;
+      }
     >();
     if (roomIds.length === 0) return result;
     const placeholders = roomIds.map(() => '?').join(',');
     const rows: Array<{
       roomId: string;
       content: string | null;
+      fileUrl: string | null;
+      fileName: string | null;
+      fileMime: string | null;
       createdAt: Date | string;
     }> = await this.messageRepo.query(
-      `SELECT m.chat_room_id AS roomId, m.content AS content, m.created_at AS createdAt
+      `SELECT
+         m.chat_room_id AS roomId,
+         m.content AS content,
+         m.file_url AS fileUrl,
+         m.file_name AS fileName,
+         m.file_mime AS fileMime,
+         m.created_at AS createdAt
        FROM message m
        INNER JOIN (
          SELECT chat_room_id, MAX(created_at) AS max_c
@@ -722,8 +812,18 @@ export class ChatService {
       roomIds,
     );
     for (const row of rows) {
-      result.set(row.roomId, {
+      const fileName = this.pickDisplayFileName({
+        fileName: row.fileName,
         content: row.content,
+      });
+      result.set(row.roomId, {
+        content:
+          row.content?.startsWith('[파일]') && fileName
+            ? `[파일] ${fileName}`
+            : row.content,
+        fileUrl: row.fileUrl,
+        fileName,
+        fileMime: row.fileMime,
         createdAt:
           row.createdAt instanceof Date
             ? row.createdAt
@@ -734,13 +834,20 @@ export class ChatService {
   }
 
   private toMessagePayload(message: Message): MessagePayload {
+    const fileName = this.pickDisplayFileName({
+      fileName: message.fileName,
+      content: message.content,
+    });
     return {
       id: message.id,
       chatRoomId: message.chatRoom.id,
       userId: message.user.userId,
-      content: message.content,
+      content:
+        message.content?.startsWith('[파일]') && fileName
+          ? `[파일] ${fileName}`
+          : message.content,
       fileUrl: message.fileUrl,
-      fileName: message.fileName,
+      fileName,
       fileMime: message.fileMime,
       createdAt: message.createdAt,
     };
