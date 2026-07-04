@@ -51,6 +51,19 @@ export class ChatGateway implements OnGatewayConnection {
     this.server.to(chatRoomId).emit('message', payload);
   }
 
+  /** 새 메시지로 안읽음 수가 바뀐 사용자들에게 (탭바 배지/목록 갱신용) 알림 */
+  emitUnreadChanged(chatRoomId: string, memberUserIds: string[]): void {
+    for (const userId of memberUserIds) {
+      this.server.to(this.userRoom(userId)).emit('chatUnreadChanged', {
+        chatRoomId,
+      });
+    }
+  }
+
+  private userRoom(userId: string): string {
+    return `user:${userId}`;
+  }
+
   async handleConnection(client: Socket) {
     try {
       const token = this.extractToken(client);
@@ -65,6 +78,7 @@ export class ChatGateway implements OnGatewayConnection {
         },
       );
       this.getSocketData(client).userId = payload.sub;
+      await client.join(this.userRoom(payload.sub));
     } catch {
       client.disconnect(true);
     }

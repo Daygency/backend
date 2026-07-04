@@ -9,13 +9,14 @@ import {
   Query,
   Request,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Express } from 'express';
@@ -24,6 +25,7 @@ import { CreateAnnouncementChatRoomDto } from './dto/create-announcement-chat-ro
 import { CreateCoffeeRoomDto } from './dto/create-coffee-room.dto';
 import { ListChatRoomsQueryDto } from './dto/list-chat-rooms-query.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
+import { MarkChatRoomReadDto } from './dto/mark-chat-room-read.dto';
 import { SetChatNotificationsMutedDto } from './dto/set-chat-notifications-muted.dto';
 
 @ApiTags('chat')
@@ -31,6 +33,17 @@ import { SetChatNotificationsMutedDto } from './dto/set-chat-notifications-muted
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
+
+  @Get('unread-count')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내가 속한 모든 채팅방의 안 읽은 메시지 총합 (탭바 배지용)' })
+  async getUnreadCount(@Request() req: { user: { id: string } }) {
+    const unreadCount = await this.chatService.getTotalUnreadCount(
+      req.user.id,
+    );
+    return { unreadCount };
+  }
 
   @Get('rooms/coffee')
   @UseGuards(AuthGuard('access'))
@@ -131,6 +144,45 @@ export class ChatController {
       originalName: file?.originalname ?? 'file',
       contentType: file?.mimetype ?? 'application/octet-stream',
     });
+  }
+
+  @Post('rooms/:roomId/messages/files')
+  @UseGuards(AuthGuard('access'))
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: memoryStorage(),
+      limits: { fileSize: 20 * 1024 * 1024 },
+    }),
+  )
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '채팅방 다중 파일 메시지 전송' })
+  sendFilesMessage(
+    @Request() req: { user: { id: string } },
+    @Param('roomId', ParseUUIDPipe) roomId: string,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
+  ) {
+    return this.chatService.createFilesMessage(
+      roomId,
+      req.user.id,
+      (files ?? []).map((file) => ({
+        buffer: file.buffer,
+        originalName: file.originalname ?? 'file',
+        contentType: file.mimetype ?? 'application/octet-stream',
+      })),
+    );
+  }
+
+  @Patch('rooms/:roomId/read')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '채팅방 읽음 처리 (lastMessageId 생략 시 최신 메시지 기준)' })
+  markRoomRead(
+    @Request() req: { user: { id: string } },
+    @Param('roomId', ParseUUIDPipe) roomId: string,
+    @Body() dto: MarkChatRoomReadDto,
+  ) {
+    return this.chatService.markRoomRead(roomId, req.user.id, dto);
   }
 
   @Get('rooms/:roomId/member-settings')

@@ -39,4 +39,16 @@ export class ChatRoomMember {
   /** 이 방의 새 메시지 푸시/알림 수신 여부 (false = 알림 받음) */
   @Column({ name: 'notifications_muted', type: 'boolean', default: false })
   notificationsMuted: boolean;
+
+  /**
+   * 이 방에서 내가 마지막으로 읽은 메시지의 createdAt (읽음 커서).
+   * 그룹 채팅 확장 시에도 멤버 1인당 1개 커서로 그대로 사용 가능.
+   */
+  @Column({
+    name: 'last_read_at',
+    type: 'datetime',
+    precision: 6,
+    nullable: true,
+  })
+  lastReadAt: Date | null;
 }

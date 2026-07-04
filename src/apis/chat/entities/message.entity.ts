@@ -10,6 +10,12 @@ import {
 import { User } from '../../user/entities/user.entity';
 import { ChatRoom } from './chat-room.entity';
 
+export type MessageFileItem = {
+  fileUrl: string;
+  fileName: string;
+  fileMime: string | null;
+};
+
 @Entity('message')
 export class Message {
   @PrimaryGeneratedColumn('uuid')
@@ -34,6 +40,9 @@ export class Message {
 
   @Column({ name: 'file_mime', type: 'varchar', length: 100, nullable: true })
   fileMime: string | null;
+
+  @Column({ name: 'file_items', type: 'simple-json', nullable: true })
+  fileItems: MessageFileItem[] | null;
 
   @CreateDateColumn({
     name: 'created_at',

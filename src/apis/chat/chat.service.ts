@@ -15,10 +15,11 @@ import { User } from '../user/entities/user.entity';
 import { CreateAnnouncementChatRoomDto } from './dto/create-announcement-chat-room.dto';
 import { ListChatRoomsQueryDto } from './dto/list-chat-rooms-query.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
+import { MarkChatRoomReadDto } from './dto/mark-chat-room-read.dto';
 import { ChatRoomMember } from './entities/chat-room-member.entity';
 import { ChatRoom, ChatRoomKind } from './entities/chat-room.entity';
 import { FileService } from '../file/file.service';
-import { Message } from './entities/message.entity';
+import { Message, MessageFileItem } from './entities/message.entity';
 
 export type MessagePayload = {
   id: string;
@@ -28,6 +29,7 @@ export type MessagePayload = {
   fileUrl?: string | null;
   fileName?: string | null;
   fileMime?: string | null;
+  fileItems?: MessageFileItem[] | null;
   createdAt: Date;
 };
 
@@ -46,8 +48,11 @@ export type ChatRoomListItemDto = {
     fileUrl?: string | null;
     fileName?: string | null;
     fileMime?: string | null;
+    fileItems?: MessageFileItem[] | null;
     createdAt: Date;
   } | null;
+  /** 이 방에서 내가 아직 안 읽은 메시지 수 (그룹 확장 시에도 멤버별 커서 기반이라 동일하게 동작) */
+  unreadCount: number;
   createdAt: Date;
 };
 
@@ -129,6 +134,19 @@ export class ChatService {
         ? input.content.replace(/^\[파일\]\s*/, '')
         : null);
     return raw ? this.recoverMulterOriginalName(raw) : null;
+  }
+
+  private parseMessageFileItems(
+    value: MessageFileItem[] | string | null,
+  ): MessageFileItem[] | null {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? (parsed as MessageFileItem[]) : null;
+    } catch {
+      return null;
+    }
   }
 
   /** COFFEE: 정확히 2명(삭제되지 않은 멤버)만 있는 방 중 두 사용자를 모두 포함하는 방 */
@@ -458,6 +476,7 @@ export class ChatService {
       createdAt: message.createdAt,
     };
     this.chatGateway.emitMessageToRoom(chatRoomId, payload);
+    void this.notifyUnreadChanged(chatRoomId, userId);
     return payload;
   }
 
@@ -507,6 +526,71 @@ export class ChatService {
       createdAt: message.createdAt,
     };
     this.chatGateway.emitMessageToRoom(chatRoomId, payload);
+    void this.notifyUnreadChanged(chatRoomId, userId);
+    return payload;
+  }
+
+  async createFilesMessage(
+    chatRoomId: string,
+    userId: string,
+    files: Array<{ buffer: Buffer; originalName: string; contentType: string }>,
+  ): Promise<MessagePayload> {
+    await this.findRoomForUserOrThrow(chatRoomId, userId);
+    const validFiles = files.filter((file) => file.buffer?.length);
+    if (validFiles.length === 0) {
+      throw new BadRequestException('업로드할 파일이 필요합니다.');
+    }
+
+    const uploadedItems: MessageFileItem[] = [];
+    for (const [index, file] of validFiles.entries()) {
+      const originalFileName = this.recoverMulterOriginalName(
+        file.originalName || `image_${index + 1}`,
+      );
+      const uploaded = await this.fileService.uploadAndSave({
+        buffer: file.buffer,
+        originalName: originalFileName || `image_${index + 1}`,
+        contentType: file.contentType || 'application/octet-stream',
+        targetType: null,
+        targetId: null,
+        sortOrder: index,
+      });
+      uploadedItems.push({
+        fileUrl: uploaded.imgUrl,
+        fileName:
+          originalFileName || uploaded.originalName || `image_${index + 1}`,
+        fileMime: file.contentType || null,
+      });
+    }
+
+    const firstFile = uploadedItems[0];
+    const message = await this.messageRepo.save(
+      this.messageRepo.create({
+        content:
+          uploadedItems.length === 1
+            ? `[파일] ${firstFile.fileName}`
+            : `[사진] ${uploadedItems.length}장`,
+        fileUrl: firstFile.fileUrl,
+        fileName: firstFile.fileName,
+        fileMime: firstFile.fileMime,
+        fileItems: uploadedItems,
+        chatRoom: { id: chatRoomId },
+        user: { userId } as User,
+      }),
+    );
+
+    const payload: MessagePayload = {
+      id: message.id,
+      chatRoomId,
+      userId,
+      content: message.content,
+      fileUrl: message.fileUrl,
+      fileName: message.fileName,
+      fileMime: message.fileMime,
+      fileItems: message.fileItems,
+      createdAt: message.createdAt,
+    };
+    this.chatGateway.emitMessageToRoom(chatRoomId, payload);
+    void this.notifyUnreadChanged(chatRoomId, userId);
     return payload;
   }
 
@@ -564,6 +648,77 @@ export class ChatService {
     const member = await this.findActiveMemberOrThrow(roomId, userId);
     await this.chatRoomMemberRepo.softRemove(member);
     return { ok: true };
+  }
+
+  /**
+   * 방을 "여기까지 읽음" 처리. `lastMessageId` 미지정 시 방의 최신 메시지 기준.
+   * 커서가 뒤로 가지 않도록 기존 값보다 최신일 때만 갱신.
+   */
+  async markRoomRead(
+    roomId: string,
+    userId: string,
+    dto: MarkChatRoomReadDto,
+  ): Promise<{ lastReadAt: Date | null }> {
+    const member = await this.findActiveMemberOrThrow(roomId, userId);
+
+    let targetAt: Date | null;
+    if (dto.lastMessageId) {
+      const message = await this.messageRepo.findOne({
+        where: { id: dto.lastMessageId, chatRoom: { id: roomId } },
+      });
+      if (!message) {
+        throw new NotFoundException('메시지를 찾을 수 없습니다.');
+      }
+      targetAt = message.createdAt;
+    } else {
+      const latest = await this.messageRepo.findOne({
+        where: { chatRoom: { id: roomId } },
+        order: { createdAt: 'DESC' },
+      });
+      targetAt = latest?.createdAt ?? new Date();
+    }
+
+    if (!member.lastReadAt || targetAt > member.lastReadAt) {
+      member.lastReadAt = targetAt;
+      await this.chatRoomMemberRepo.save(member);
+    }
+    return { lastReadAt: member.lastReadAt };
+  }
+
+  /** 하단 탭바 배지 등에 쓰는, 내가 속한 모든 방의 안 읽은 메시지 총합 */
+  async getTotalUnreadCount(userId: string): Promise<number> {
+    const row = await this.messageRepo.manager.query(
+      `SELECT COUNT(*) AS cnt
+       FROM message m
+       INNER JOIN chat_room_member mb
+         ON mb.chat_room_id = m.chat_room_id
+         AND mb.user_id = ?
+         AND mb.deleted_at IS NULL
+       INNER JOIN chat_room r
+         ON r.id = m.chat_room_id
+         AND r.deleted_at IS NULL
+       WHERE m.deleted_at IS NULL
+         AND m.user_id != ?
+         AND (mb.last_read_at IS NULL OR m.created_at > mb.last_read_at)`,
+      [userId, userId],
+    );
+    return Number(row?.[0]?.cnt ?? 0);
+  }
+
+  /** 새 메시지 저장 후 발신자를 제외한 방 멤버들에게 안읽음 변경 알림 전파 */
+  private async notifyUnreadChanged(
+    chatRoomId: string,
+    senderUserId: string,
+  ): Promise<void> {
+    const members = await this.chatRoomMemberRepo.find({
+      where: { chatRoom: { id: chatRoomId } },
+      relations: { user: true },
+    });
+    const memberUserIds = members
+      .map((m) => m.user.userId)
+      .filter((uid) => uid !== senderUserId);
+    if (memberUserIds.length === 0) return;
+    this.chatGateway.emitUnreadChanged(chatRoomId, memberUserIds);
   }
 
   private async findActiveMemberOrThrow(
@@ -695,6 +850,35 @@ export class ChatService {
     return map;
   }
 
+  /** 방 목록에 표시할, 방별 안 읽은 메시지 수 (로그인 사용자 기준) */
+  private async loadUnreadCountsByRoomIds(
+    roomIds: string[],
+    userId: string,
+  ): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (roomIds.length === 0) return result;
+    const placeholders = roomIds.map(() => '?').join(',');
+    const rows: Array<{ roomId: string; cnt: number | string }> =
+      await this.messageRepo.query(
+        `SELECT m.chat_room_id AS roomId, COUNT(*) AS cnt
+         FROM message m
+         INNER JOIN chat_room_member mb
+           ON mb.chat_room_id = m.chat_room_id
+           AND mb.user_id = ?
+           AND mb.deleted_at IS NULL
+         WHERE m.chat_room_id IN (${placeholders})
+           AND m.deleted_at IS NULL
+           AND m.user_id != ?
+           AND (mb.last_read_at IS NULL OR m.created_at > mb.last_read_at)
+         GROUP BY m.chat_room_id`,
+        [userId, ...roomIds, userId],
+      );
+    for (const row of rows) {
+      result.set(row.roomId, Number(row.cnt));
+    }
+    return result;
+  }
+
   private async mapRoomsToListItems(
     rooms: ChatRoom[],
     currentUserId: string,
@@ -703,6 +887,10 @@ export class ChatService {
     const roomIds = rooms.map((r) => r.id);
     const lastByRoom = await this.loadLastMessageByRoomIds(roomIds);
     const membersByRoom = await this.loadMembersByRoomIds(roomIds);
+    const unreadByRoom = await this.loadUnreadCountsByRoomIds(
+      roomIds,
+      currentUserId,
+    );
 
     const peerIds = new Set<string>();
     for (const room of rooms) {
@@ -745,6 +933,7 @@ export class ChatService {
               profileImgUrl: '',
             },
         lastMessage: lastByRoom.get(room.id) ?? null,
+        unreadCount: unreadByRoom.get(room.id) ?? 0,
         createdAt: room.createdAt,
       };
     });
@@ -769,6 +958,7 @@ export class ChatService {
         fileUrl: string | null;
         fileName: string | null;
         fileMime: string | null;
+        fileItems: MessageFileItem[] | null;
         createdAt: Date;
       }
     >
@@ -780,6 +970,7 @@ export class ChatService {
         fileUrl: string | null;
         fileName: string | null;
         fileMime: string | null;
+        fileItems: MessageFileItem[] | null;
         createdAt: Date;
       }
     >();
@@ -791,6 +982,7 @@ export class ChatService {
       fileUrl: string | null;
       fileName: string | null;
       fileMime: string | null;
+      fileItems: MessageFileItem[] | string | null;
       createdAt: Date | string;
     }> = await this.messageRepo.query(
       `SELECT
@@ -799,6 +991,7 @@ export class ChatService {
          m.file_url AS fileUrl,
          m.file_name AS fileName,
          m.file_mime AS fileMime,
+         m.file_items AS fileItems,
          m.created_at AS createdAt
        FROM message m
        INNER JOIN (
@@ -824,6 +1017,7 @@ export class ChatService {
         fileUrl: row.fileUrl,
         fileName,
         fileMime: row.fileMime,
+        fileItems: this.parseMessageFileItems(row.fileItems),
         createdAt:
           row.createdAt instanceof Date
             ? row.createdAt
@@ -849,6 +1043,7 @@ export class ChatService {
       fileUrl: message.fileUrl,
       fileName,
       fileMime: message.fileMime,
+      fileItems: message.fileItems,
       createdAt: message.createdAt,
     };
   }
