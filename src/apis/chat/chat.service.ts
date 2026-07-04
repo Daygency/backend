@@ -347,7 +347,7 @@ export class ChatService {
       }
     }
     return this.chatRoomRepo.findOneOrFail({
-      where: { id: room!.id },
+      where: { id: room.id },
       relations: { members: true },
     });
   }
@@ -687,22 +687,23 @@ export class ChatService {
 
   /** 하단 탭바 배지 등에 쓰는, 내가 속한 모든 방의 안 읽은 메시지 총합 */
   async getTotalUnreadCount(userId: string): Promise<number> {
-    const row = await this.messageRepo.manager.query(
-      `SELECT COUNT(*) AS cnt
-       FROM message m
-       INNER JOIN chat_room_member mb
-         ON mb.chat_room_id = m.chat_room_id
-         AND mb.user_id = ?
-         AND mb.deleted_at IS NULL
-       INNER JOIN chat_room r
-         ON r.id = m.chat_room_id
-         AND r.deleted_at IS NULL
-       WHERE m.deleted_at IS NULL
-         AND m.user_id != ?
-         AND (mb.last_read_at IS NULL OR m.created_at > mb.last_read_at)`,
-      [userId, userId],
-    );
-    return Number(row?.[0]?.cnt ?? 0);
+    const rows: Array<{ cnt: number | string }> =
+      await this.messageRepo.manager.query(
+        `SELECT COUNT(*) AS cnt
+         FROM message m
+         INNER JOIN chat_room_member mb
+           ON mb.chat_room_id = m.chat_room_id
+           AND mb.user_id = ?
+           AND mb.deleted_at IS NULL
+         INNER JOIN chat_room r
+           ON r.id = m.chat_room_id
+           AND r.deleted_at IS NULL
+         WHERE m.deleted_at IS NULL
+           AND m.user_id != ?
+           AND (mb.last_read_at IS NULL OR m.created_at > mb.last_read_at)`,
+        [userId, userId],
+      );
+    return Number(rows[0]?.cnt ?? 0);
   }
 
   /** 새 메시지 저장 후 발신자를 제외한 방 멤버들에게 안읽음 변경 알림 전파 */
@@ -948,9 +949,7 @@ export class ChatService {
     return others[0]?.user.userId ?? null;
   }
 
-  private async loadLastMessageByRoomIds(
-    roomIds: string[],
-  ): Promise<
+  private async loadLastMessageByRoomIds(roomIds: string[]): Promise<
     Map<
       string,
       {
