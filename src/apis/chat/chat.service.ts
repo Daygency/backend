@@ -476,7 +476,7 @@ export class ChatService {
       createdAt: message.createdAt,
     };
     this.chatGateway.emitMessageToRoom(chatRoomId, payload);
-    void this.notifyUnreadChanged(chatRoomId, userId);
+    void this.notifyUnreadChanged(chatRoomId, userId, payload);
     return payload;
   }
 
@@ -526,7 +526,7 @@ export class ChatService {
       createdAt: message.createdAt,
     };
     this.chatGateway.emitMessageToRoom(chatRoomId, payload);
-    void this.notifyUnreadChanged(chatRoomId, userId);
+    void this.notifyUnreadChanged(chatRoomId, userId, payload);
     return payload;
   }
 
@@ -590,7 +590,7 @@ export class ChatService {
       createdAt: message.createdAt,
     };
     this.chatGateway.emitMessageToRoom(chatRoomId, payload);
-    void this.notifyUnreadChanged(chatRoomId, userId);
+    void this.notifyUnreadChanged(chatRoomId, userId, payload);
     return payload;
   }
 
@@ -725,6 +725,7 @@ export class ChatService {
   private async notifyUnreadChanged(
     chatRoomId: string,
     senderUserId: string,
+    message: MessagePayload,
   ): Promise<void> {
     const members = await this.chatRoomMemberRepo.find({
       where: { chatRoom: { id: chatRoomId } },
@@ -734,7 +735,7 @@ export class ChatService {
       .map((m) => m.user.userId)
       .filter((uid) => uid !== senderUserId);
     if (memberUserIds.length === 0) return;
-    this.chatGateway.emitUnreadChanged(chatRoomId, memberUserIds);
+    this.chatGateway.emitUnreadChanged(chatRoomId, memberUserIds, message);
   }
 
   private async findActiveMemberOrThrow(

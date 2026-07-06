@@ -51,11 +51,16 @@ export class ChatGateway implements OnGatewayConnection {
     this.server.to(chatRoomId).emit('message', payload);
   }
 
-  /** 새 메시지로 안읽음 수가 바뀐 사용자들에게 (탭바 배지/목록 갱신용) 알림 */
-  emitUnreadChanged(chatRoomId: string, memberUserIds: string[]): void {
+  /** 새 메시지로 안읽음 수가 바뀐 사용자들에게 (탭바 배지/목록 실시간 갱신용) 알림 */
+  emitUnreadChanged(
+    chatRoomId: string,
+    memberUserIds: string[],
+    message: MessagePayload,
+  ): void {
     for (const userId of memberUserIds) {
       this.server.to(this.userRoom(userId)).emit('chatUnreadChanged', {
         chatRoomId,
+        message,
       });
     }
   }
