@@ -12,6 +12,7 @@ import { User } from '../user/entities/user.entity';
 import { LikeType } from '../like/entities/like.entity';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { RegisterPushDeviceDto } from './dto/register-push-device.dto';
+import { SendAdminNotificationDto } from './dto/send-admin-notification.dto';
 import { Notice, NoticeTargetType } from './entities/notice.entity';
 import { NoticeRecipient } from './entities/notice-recipient.entity';
 import { UserPushDevice } from './entities/user-push-device.entity';
@@ -24,6 +25,7 @@ const PUSH_TITLE_BY_TARGET: Record<NoticeTargetType, string> = {
   [NoticeTargetType.LIKE]: '좋아요',
   [NoticeTargetType.REVIEW]: '활동 후기',
   [NoticeTargetType.INQUIRY]: '고객센터',
+  [NoticeTargetType.ANNOUNCEMENT]: '공지',
 };
 
 export interface CreateNoticePayload {
@@ -116,6 +118,22 @@ export class NoticeService {
         userId,
       })
       .execute();
+  }
+
+  /** 실제 알림(댓글/팔로우 등) 발송 대상 여부. 기기 등록/OS 권한과 무관. */
+  async getPushEnabled(userId: string): Promise<{ isPushEnabled: boolean }> {
+    const user = await this.userRepo.findOne({
+      where: { userId },
+      select: { isPushEnabled: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return { isPushEnabled: user.isPushEnabled };
+  }
+
+  async setPushEnabled(userId: string, isPushEnabled: boolean): Promise<void> {
+    await this.userRepo.update({ userId }, { isPushEnabled });
   }
 
   async listInbox(userId: string, query: ListNotificationsQueryDto) {
@@ -349,5 +367,93 @@ export class NoticeService {
     }
 
     return notice;
+  }
+
+  /**
+   * 관리자 전체 공지 발송. `isPushEnabled` 여부와 무관하게
+   * 등록된 모든 FCM 토큰으로 발송한다.
+   */
+  async sendAdminBroadcast(
+    adminUserId: string,
+    dto: SendAdminNotificationDto,
+  ): Promise<{
+    recipientCount: number;
+    tokenCount: number;
+    successCount: number;
+    failureCount: number;
+  }> {
+    const users = await this.userRepo.find({ select: { userId: true } });
+    const recipients = users
+      .map((u) => u.userId)
+      .filter((id) => id !== adminUserId);
+
+    if (recipients.length === 0) {
+      return {
+        recipientCount: 0,
+        tokenCount: 0,
+        successCount: 0,
+        failureCount: 0,
+      };
+    }
+
+    const notice = await this.dataSource.transaction(async (em) => {
+      const n = em.create(Notice, {
+        actorUser: { userId: adminUserId } as User,
+        targetType: NoticeTargetType.ANNOUNCEMENT,
+        targetId: adminUserId,
+        title: dto.title,
+        content: dto.body,
+      });
+      await em.save(n);
+      const CHUNK_SIZE = 1000;
+      for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
+        const chunk = recipients.slice(i, i + CHUNK_SIZE);
+        await em.save(
+          chunk.map((userId) =>
+            em.create(NoticeRecipient, {
+              notice: n,
+              user: { userId } as User,
+            }),
+          ),
+        );
+      }
+      return n;
+    });
+
+    if (!this.fcm.isEnabled()) {
+      return {
+        recipientCount: recipients.length,
+        tokenCount: 0,
+        successCount: 0,
+        failureCount: 0,
+      };
+    }
+
+    const devices = await this.pushDeviceRepo.find({
+      where: { user: { userId: In(recipients) } },
+      select: { fcmToken: true },
+    });
+    const tokens = devices.map((d) => d.fcmToken);
+    const { failedTokens, successCount, failureCount } =
+      await this.fcm.sendMulticast({
+        tokens,
+        title: dto.title,
+        body: dto.body,
+        data: {
+          noticeId: notice.id,
+          targetType: NoticeTargetType.ANNOUNCEMENT,
+          targetId: notice.targetId,
+        },
+      });
+    if (failedTokens.length > 0) {
+      await this.pushDeviceRepo.delete({ fcmToken: In(failedTokens) });
+    }
+
+    return {
+      recipientCount: recipients.length,
+      tokenCount: tokens.length,
+      successCount,
+      failureCount,
+    };
   }
 }

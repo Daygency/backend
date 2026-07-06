@@ -19,6 +19,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { RegisterPushDeviceDto } from './dto/register-push-device.dto';
+import { SetPushEnabledDto } from './dto/set-push-enabled.dto';
 import { UnregisterPushDeviceDto } from './dto/unregister-push-device.dto';
 import { NoticeService } from './notice.service';
 
@@ -59,6 +60,26 @@ export class NoticeController {
     @Body() dto: UnregisterPushDeviceDto,
   ) {
     return this.noticeService.unregisterPushDevice(req.user.id, dto.fcmToken);
+  }
+
+  @Get('push-enabled')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '실제 알림(댓글/팔로우 등) 수신 여부 조회' })
+  getPushEnabled(@Request() req: { user: { id: string } }) {
+    return this.noticeService.getPushEnabled(req.user.id);
+  }
+
+  @Patch('push-enabled')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '실제 알림(댓글/팔로우 등) 수신 여부 설정' })
+  async setPushEnabled(
+    @Request() req: { user: { id: string } },
+    @Body() dto: SetPushEnabledDto,
+  ) {
+    await this.noticeService.setPushEnabled(req.user.id, dto.isPushEnabled);
+    return { isPushEnabled: dto.isPushEnabled };
   }
 
   @Get()

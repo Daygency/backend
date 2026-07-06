@@ -661,7 +661,7 @@ export class ChatService {
   ): Promise<{ lastReadAt: Date | null }> {
     const member = await this.findActiveMemberOrThrow(roomId, userId);
 
-    let targetAt: Date | null;
+    let messageId: string | null;
     if (dto.lastMessageId) {
       const message = await this.messageRepo.findOne({
         where: { id: dto.lastMessageId, chatRoom: { id: roomId } },
@@ -669,20 +669,35 @@ export class ChatService {
       if (!message) {
         throw new NotFoundException('메시지를 찾을 수 없습니다.');
       }
-      targetAt = message.createdAt;
+      messageId = message.id;
     } else {
       const latest = await this.messageRepo.findOne({
         where: { chatRoom: { id: roomId } },
         order: { createdAt: 'DESC' },
       });
-      targetAt = latest?.createdAt ?? new Date();
+      messageId = latest?.id ?? null;
     }
 
-    if (!member.lastReadAt || targetAt > member.lastReadAt) {
-      member.lastReadAt = targetAt;
-      await this.chatRoomMemberRepo.save(member);
+    if (messageId) {
+      /**
+       * message.created_at은 DATETIME(6)이지만, TypeORM이 JS Date로 옮기면
+       * 마이크로초 이하가 잘려나간다. 잘린 값을 다시 저장하면 방금 읽은 마지막
+       * 메시지의 원본 created_at보다 last_read_at이 작게 남아 그 메시지 하나가
+       * 계속 안읽음으로 카운트되므로, JS Date를 거치지 않고 SQL 안에서 그대로 복사한다.
+       */
+      await this.chatRoomMemberRepo.manager.query(
+        `UPDATE chat_room_member
+         SET last_read_at = (SELECT created_at FROM message WHERE id = ?)
+         WHERE id = ?
+           AND (last_read_at IS NULL OR (SELECT created_at FROM message WHERE id = ?) > last_read_at)`,
+        [messageId, member.id, messageId],
+      );
     }
-    return { lastReadAt: member.lastReadAt };
+
+    const updated = await this.chatRoomMemberRepo.findOne({
+      where: { id: member.id },
+    });
+    return { lastReadAt: updated?.lastReadAt ?? member.lastReadAt };
   }
 
   /** 하단 탭바 배지 등에 쓰는, 내가 속한 모든 방의 안 읽은 메시지 총합 */
