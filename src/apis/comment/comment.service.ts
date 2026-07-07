@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { ListCommentQueryDto } from './dto/list-comment-query.dto';
@@ -15,6 +15,7 @@ import { Community } from '../community/entities/community.entity';
 import { NoticeTargetType } from '../notice/entities/notice.entity';
 import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
+import { Like, LikeType } from '../like/entities/like.entity';
 
 @Injectable()
 export class CommentService {
@@ -29,6 +30,8 @@ export class CommentService {
     private readonly communityRepository: Repository<Community>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Like)
+    private readonly likeRepository: Repository<Like>,
     private readonly noticeService: NoticeService,
   ) {}
 
@@ -67,10 +70,10 @@ export class CommentService {
     return this.findOne(saved.id);
   }
 
-  async findAll(query: ListCommentQueryDto) {
+  async findAll(query: ListCommentQueryDto, userId?: string) {
     await this.validateTarget(query.targetType, query.targetId);
 
-    return this.commentRepository.find({
+    const comments = await this.commentRepository.find({
       where: {
         targetType: query.targetType,
         targetId: query.targetId,
@@ -78,6 +81,39 @@ export class CommentService {
       relations: ['user'],
       order: { createdAt: 'ASC' },
     });
+
+    return this.withLikeInfo(comments, userId);
+  }
+
+  private async withLikeInfo(comments: Comment[], userId?: string) {
+    if (comments.length === 0) return [];
+
+    const commentIds = comments.map((comment) => comment.id);
+    const likes = await this.likeRepository.find({
+      where: {
+        likeType: LikeType.COMMENT,
+        targetId: In(commentIds),
+      },
+      relations: ['user'],
+    });
+
+    const countByCommentId = new Map<string, number>();
+    const likedCommentIds = new Set<string>();
+    for (const like of likes) {
+      countByCommentId.set(
+        like.targetId,
+        (countByCommentId.get(like.targetId) ?? 0) + 1,
+      );
+      if (userId && like.user?.userId === userId) {
+        likedCommentIds.add(like.targetId);
+      }
+    }
+
+    return comments.map((comment) => ({
+      ...comment,
+      likeCount: countByCommentId.get(comment.id) ?? 0,
+      isLiked: likedCommentIds.has(comment.id),
+    }));
   }
 
   async findOne(id: string) {

@@ -15,6 +15,7 @@ import { CommentService } from './comment.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { ListCommentQueryDto } from './dto/list-comment-query.dto';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 
 @Controller('comment')
 export class CommentController {
@@ -30,8 +31,12 @@ export class CommentController {
   }
 
   @Get()
-  findAll(@Query() query: ListCommentQueryDto) {
-    return this.commentService.findAll(query);
+  @UseGuards(OptionalJwtAuthGuard)
+  findAll(
+    @Query() query: ListCommentQueryDto,
+    @Request() req: { user?: { id: string } },
+  ) {
+    return this.commentService.findAll(query, req.user?.id);
   }
 
   @Get(':id')
