@@ -45,6 +45,14 @@ export class ChatController {
     return { unreadCount };
   }
 
+  @Get('unread-count/by-tab')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '채팅 탭(DM/지원 공고/내 공고)별 안 읽은 메시지 합산 (탭 배지용)' })
+  async getUnreadCountByTab(@Request() req: { user: { id: string } }) {
+    return this.chatService.getUnreadCountsByTab(req.user.id);
+  }
+
   @Get('rooms/all')
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()

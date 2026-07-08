@@ -747,6 +747,51 @@ export class ChatService {
     return Number(rows[0]?.cnt ?? 0);
   }
 
+  /** 채팅 탭(DM/지원 공고/내 공고)별 안읽음 배지용 합산 */
+  async getUnreadCountsByTab(
+    userId: string,
+  ): Promise<{ dm: number; appliedAnnouncement: number; myAnnouncement: number }> {
+    const rows: Array<{
+      kind: string;
+      isApplicant: number | string;
+      cnt: number | string;
+    }> = await this.messageRepo.manager.query(
+      `SELECT r.kind AS kind,
+              CASE WHEN app.user_id = ? THEN 1 ELSE 0 END AS isApplicant,
+              COUNT(*) AS cnt
+       FROM message m
+       INNER JOIN chat_room_member mb
+         ON mb.chat_room_id = m.chat_room_id
+         AND mb.user_id = ?
+         AND mb.deleted_at IS NULL
+       INNER JOIN chat_room r
+         ON r.id = m.chat_room_id
+         AND r.deleted_at IS NULL
+       LEFT JOIN application app
+         ON app.id = r.form_id
+       WHERE m.deleted_at IS NULL
+         AND m.user_id != ?
+         AND (mb.last_read_at IS NULL OR m.created_at > mb.last_read_at)
+       GROUP BY r.kind, isApplicant`,
+      [userId, userId, userId],
+    );
+
+    let dm = 0;
+    let appliedAnnouncement = 0;
+    let myAnnouncement = 0;
+    for (const row of rows) {
+      const cnt = Number(row.cnt);
+      if (row.kind === ChatRoomKind.COFFEE) {
+        dm += cnt;
+      } else if (Number(row.isApplicant) === 1) {
+        appliedAnnouncement += cnt;
+      } else {
+        myAnnouncement += cnt;
+      }
+    }
+    return { dm, appliedAnnouncement, myAnnouncement };
+  }
+
   /** 새 메시지 저장 후 발신자를 제외한 방 멤버들에게 안읽음 변경 알림 전파 */
   private async notifyUnreadChanged(
     chatRoomId: string,
