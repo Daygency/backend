@@ -17,6 +17,7 @@ import { Notice, NoticeTargetType } from './entities/notice.entity';
 import { NoticeRecipient } from './entities/notice-recipient.entity';
 import { UserPushDevice } from './entities/user-push-device.entity';
 import { FcmService } from './fcm.service';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
 
 const PUSH_TITLE_BY_TARGET: Record<NoticeTargetType, string> = {
   [NoticeTargetType.COMMENT]: '댓글',
@@ -45,22 +46,13 @@ function encodeNotificationCursor(
   createdAt: Date,
   recipientId: string,
 ): string {
-  return Buffer.from(
-    JSON.stringify({ t: createdAt.getTime(), i: recipientId }),
-    'utf8',
-  ).toString('base64url');
+  return encodeCursor({ t: createdAt.getTime(), i: recipientId });
 }
 
 function decodeNotificationCursor(cursor: string): { t: number; i: string } {
-  let raw: string;
-  try {
-    raw = Buffer.from(cursor, 'base64url').toString('utf8');
-  } catch {
-    throw new BadRequestException('Invalid cursor');
-  }
   let parsed: { t?: unknown; i?: unknown };
   try {
-    parsed = JSON.parse(raw) as { t?: unknown; i?: unknown };
+    parsed = decodeCursor(cursor);
   } catch {
     throw new BadRequestException('Invalid cursor');
   }

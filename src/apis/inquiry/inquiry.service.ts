@@ -12,9 +12,27 @@ import { NoticeTargetType } from '../notice/entities/notice.entity';
 import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
 import { ListAdminInquiriesQueryDto } from './dto/list-admin-inquiries-query.dto';
+import { ListInquiriesQueryDto } from './dto/list-inquiries-query.dto';
 import { Inquiry } from './entities/inquiry.entity';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
 
 const MAX_INQUIRY_IMAGES = 3;
+
+function decodeInquiryCursor(cursor: string): { t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as { t?: unknown; i?: unknown };
+    if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    return { t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeInquiryCursor(createdAt: Date, id: string): string {
+  return encodeCursor({ t: createdAt.toISOString(), i: id });
+}
 
 export type InquiryDto = {
   id: string;
@@ -27,6 +45,12 @@ export type InquiryDto = {
   userId?: string;
   userName?: string | null;
   userActivityName?: string;
+};
+
+export type InquiryListResponse = {
+  items: InquiryDto[];
+  nextCursor: string | null;
+  hasMore: boolean;
 };
 
 @Injectable()
@@ -81,13 +105,39 @@ export class InquiryService {
     return this.toDto(inquiry, userId);
   }
 
-  async listMine(userId: string): Promise<InquiryDto[]> {
-    const rows = await this.inquiryRepository.find({
-      where: { user: { userId } },
-      relations: { user: true },
-      order: { createdAt: 'DESC' },
-    });
-    return rows.map((row) => this.toDto(row, userId));
+  async listMine(
+    userId: string,
+    query: ListInquiriesQueryDto,
+  ): Promise<InquiryListResponse> {
+    const limit = query.limit ?? 20;
+    const qb = this.inquiryRepository
+      .createQueryBuilder('inquiry')
+      .leftJoinAndSelect('inquiry.user', 'user')
+      .where('user.userId = :userId', { userId })
+      .orderBy('inquiry.createdAt', 'DESC')
+      .addOrderBy('inquiry.id', 'DESC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { t, i } = decodeInquiryCursor(query.cursor);
+      qb.andWhere(
+        '(inquiry.createdAt < :ca OR (inquiry.createdAt = :ca AND inquiry.id < :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeInquiryCursor(last.createdAt, last.id) : null;
+
+    return {
+      items: slice.map((row) => this.toDto(row, userId)),
+      nextCursor,
+      hasMore,
+    };
   }
 
   async findMine(userId: string, inquiryId: string): Promise<InquiryDto> {
@@ -101,11 +151,16 @@ export class InquiryService {
     return this.toDto(row, userId);
   }
 
-  async listForAdmin(query: ListAdminInquiriesQueryDto): Promise<InquiryDto[]> {
+  async listForAdmin(
+    query: ListAdminInquiriesQueryDto,
+  ): Promise<InquiryListResponse> {
+    const limit = query.limit ?? 20;
     const qb = this.inquiryRepository
       .createQueryBuilder('inquiry')
       .leftJoinAndSelect('inquiry.user', 'user')
-      .orderBy('inquiry.createdAt', 'DESC');
+      .orderBy('inquiry.createdAt', 'DESC')
+      .addOrderBy('inquiry.id', 'DESC')
+      .take(limit + 1);
 
     if (query.status === 'answered') {
       qb.andWhere('inquiry.answer IS NOT NULL');
@@ -113,8 +168,26 @@ export class InquiryService {
       qb.andWhere('inquiry.answer IS NULL');
     }
 
+    if (query.cursor) {
+      const { t, i } = decodeInquiryCursor(query.cursor);
+      qb.andWhere(
+        '(inquiry.createdAt < :ca OR (inquiry.createdAt = :ca AND inquiry.id < :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
     const rows = await qb.getMany();
-    return rows.map((row) => this.toDto(row));
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeInquiryCursor(last.createdAt, last.id) : null;
+
+    return {
+      items: slice.map((row) => this.toDto(row)),
+      nextCursor,
+      hasMore,
+    };
   }
 
   async findForAdmin(inquiryId: string): Promise<InquiryDto> {

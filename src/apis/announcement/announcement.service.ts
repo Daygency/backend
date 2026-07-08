@@ -869,6 +869,39 @@ export class AnnouncementService {
    * 모집공고 삭제. 작성자만 삭제 가능.
    * application_config, announcement_major(조인테이블) 함께 삭제.
    */
+  /** 공고 첨부 이미지 1장 삭제. 작성자만 가능 — 대표 `file_id`였다면 다음 첨부로 갱신(없으면 null) */
+  async removeAttachment(userId: string, id: string, fileId: string) {
+    const announcement = await this.announcementRepository.findOne({
+      where: { postId: id },
+    });
+    if (!announcement) {
+      throw new NotFoundException('공고를 찾을 수 없습니다.');
+    }
+    if (announcement.userId !== userId) {
+      throw new ForbiddenException('수정 권한이 없습니다.');
+    }
+
+    const files = await this.announcementFileService.listFilesForPost(id);
+    const target = files.find((f) => f.fileId === fileId);
+    if (!target) {
+      throw new NotFoundException('존재하지 않는 첨부파일입니다.');
+    }
+
+    if (announcement.fileId === fileId) {
+      const next = files
+        .filter((f) => f.fileId !== fileId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+      await this.announcementRepository.update(
+        { postId: id },
+        { fileId: next ? next.fileId : null },
+      );
+    }
+
+    await this.fileService.removeFile(fileId);
+
+    return { success: true };
+  }
+
   async remove(userId: string, id: string): Promise<void> {
     const announcement = await this.announcementRepository.findOne({
       where: { postId: id },

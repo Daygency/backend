@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -12,6 +13,23 @@ import { ListScrapQueryDto } from './dto/list-scrap-query.dto';
 import { News } from '../news/entities/news.entity';
 import { Community } from '../community/entities/community.entity';
 import { Announcement } from '../announcement/entities/announcement.entity';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
+
+function decodeScrapCursor(cursor: string): { t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as { t?: unknown; i?: unknown };
+    if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    return { t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeScrapCursor(createdAt: Date, id: string): string {
+  return encodeCursor({ t: createdAt.toISOString(), i: id });
+}
 
 @Injectable()
 export class ScrapService {
@@ -54,18 +72,41 @@ export class ScrapService {
   async findAll(query: ListScrapQueryDto) {
     await this.validateTarget(query.targetType, query.targetId);
 
-    const items = await this.scrapRepository.find({
-      where: {
-        targetType: query.targetType,
-        targetId: query.targetId,
-      },
-      relations: ['user'],
-      order: { createdAt: 'ASC' },
-    });
+    const limit = query.limit ?? 20;
+    const qb = this.scrapRepository
+      .createQueryBuilder('scrap')
+      .leftJoinAndSelect('scrap.user', 'user')
+      .where('scrap.targetType = :targetType', { targetType: query.targetType })
+      .andWhere('scrap.targetId = :targetId', { targetId: query.targetId })
+      .orderBy('scrap.createdAt', 'ASC')
+      .addOrderBy('scrap.id', 'ASC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { t, i } = decodeScrapCursor(query.cursor);
+      qb.andWhere(
+        '(scrap.createdAt > :ca OR (scrap.createdAt = :ca AND scrap.id > :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const [rows, count] = await Promise.all([
+      qb.getMany(),
+      this.scrapRepository.count({
+        where: { targetType: query.targetType, targetId: query.targetId },
+      }),
+    ]);
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const last = items[items.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeScrapCursor(last.createdAt, last.id) : null;
 
     return {
-      count: items.length,
+      count,
       items,
+      nextCursor,
+      hasMore,
     };
   }
 

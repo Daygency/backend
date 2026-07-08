@@ -9,8 +9,34 @@ import { Repository } from 'typeorm';
 import { FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
 import { CreateAnnouncementPickDto } from './dto/create-announcement-pick.dto';
+import { ListAnnouncementPickQueryDto } from './dto/list-announcement-pick-query.dto';
 import { UpdateAnnouncementPickDto } from './dto/update-announcement-pick.dto';
 import { AnnouncementPick } from './entities/announcement-pick.entity';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
+
+function decodePickCursor(cursor: string): { s: number; t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as {
+      s?: unknown;
+      t?: unknown;
+      i?: unknown;
+    };
+    if (
+      typeof parsed.s !== 'number' ||
+      typeof parsed.t !== 'string' ||
+      typeof parsed.i !== 'string'
+    ) {
+      throw new Error('invalid cursor shape');
+    }
+    return { s: parsed.s, t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodePickCursor(sortOrder: number, createdAt: Date, pickId: string): string {
+  return encodeCursor({ s: sortOrder, t: createdAt.toISOString(), i: pickId });
+}
 
 function parseRequiredDate(value: string): Date {
   const date = new Date(value);
@@ -63,25 +89,78 @@ export class AnnouncementPickService {
     return savedFile.imgUrl;
   }
 
-  async findActivePublic() {
-    const rows = await this.pickRepository.find({
-      order: { sortOrder: 'DESC', createdAt: 'DESC' },
-    });
-    return rows.filter((row) => isPickVisibleNow(row)).map((row) => ({
-      pickId: row.pickId,
-      organizerName: row.organizerName,
-      title: row.title,
-      keywords: row.keywords,
-      deadlineAt: row.deadlineAt,
-      imageUrl: row.imageUrl,
-      linkUrl: row.linkUrl,
-    }));
+  async findActivePublic(query: ListAnnouncementPickQueryDto) {
+    const limit = query.limit ?? 20;
+    const qb = this.pickRepository
+      .createQueryBuilder('pick')
+      .orderBy('pick.sortOrder', 'DESC')
+      .addOrderBy('pick.createdAt', 'DESC')
+      .addOrderBy('pick.pickId', 'DESC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { s, t, i } = decodePickCursor(query.cursor);
+      qb.andWhere(
+        `(pick.sortOrder < :s)
+         OR (pick.sortOrder = :s AND pick.createdAt < :t)
+         OR (pick.sortOrder = :s AND pick.createdAt = :t AND pick.pickId < :i)`,
+        { s, t: new Date(t), i },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodePickCursor(last.sortOrder, last.createdAt, last.pickId)
+        : null;
+
+    return {
+      items: slice.filter((row) => isPickVisibleNow(row)).map((row) => ({
+        pickId: row.pickId,
+        organizerName: row.organizerName,
+        title: row.title,
+        keywords: row.keywords,
+        deadlineAt: row.deadlineAt,
+        imageUrl: row.imageUrl,
+        linkUrl: row.linkUrl,
+      })),
+      nextCursor,
+      hasMore,
+    };
   }
 
-  async findAllAdmin() {
-    return this.pickRepository.find({
-      order: { sortOrder: 'DESC', createdAt: 'DESC' },
-    });
+  async findAllAdmin(query: ListAnnouncementPickQueryDto) {
+    const limit = query.limit ?? 20;
+    const qb = this.pickRepository
+      .createQueryBuilder('pick')
+      .orderBy('pick.sortOrder', 'DESC')
+      .addOrderBy('pick.createdAt', 'DESC')
+      .addOrderBy('pick.pickId', 'DESC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { s, t, i } = decodePickCursor(query.cursor);
+      qb.andWhere(
+        `(pick.sortOrder < :s)
+         OR (pick.sortOrder = :s AND pick.createdAt < :t)
+         OR (pick.sortOrder = :s AND pick.createdAt = :t AND pick.pickId < :i)`,
+        { s, t: new Date(t), i },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodePickCursor(last.sortOrder, last.createdAt, last.pickId)
+        : null;
+
+    return { items: slice, nextCursor, hasMore };
   }
 
   async findOneAdmin(pickId: string) {

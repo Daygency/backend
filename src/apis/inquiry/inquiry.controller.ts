@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Request,
   UploadedFiles,
   UseGuards,
@@ -19,6 +20,7 @@ import { memoryStorage } from 'multer';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { parseAndValidateJsonPayload } from '../../common/parse-json-payload.util';
 import { CreateInquiryDto } from './dto/create-inquiry.dto';
+import { ListInquiriesQueryDto } from './dto/list-inquiries-query.dto';
 import { InquiryService } from './inquiry.service';
 
 @ApiTags('inquiries')
@@ -52,9 +54,12 @@ export class InquiryController {
   @Get()
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
-  @ApiOperation({ summary: '내 문의 목록' })
-  listMine(@Request() req: { user: { id: string } }) {
-    return this.inquiryService.listMine(req.user.id);
+  @ApiOperation({ summary: '내 문의 목록 (무한스크롤)' })
+  listMine(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListInquiriesQueryDto,
+  ) {
+    return this.inquiryService.listMine(req.user.id, query);
   }
 
   @Get(':inquiryId')

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
   UsePipes,
   ValidationPipe,
@@ -15,6 +16,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
 import { FaqService } from './faq.service';
 import { CreateFaqDto } from './dto/create-faq.dto';
+import { ListFaqQueryDto } from './dto/list-faq-query.dto';
 import { UpdateFaqDto } from './dto/update-faq.dto';
 
 @ApiTags('admin-faqs')
@@ -24,9 +26,9 @@ export class AdminFaqController {
   constructor(private readonly faqService: FaqService) {}
 
   @Get()
-  @ApiOperation({ summary: 'FAQ 전체 목록 (관리자)' })
-  findAll() {
-    return this.faqService.findAllAdmin();
+  @ApiOperation({ summary: 'FAQ 전체 목록 (관리자, 무한스크롤)' })
+  findAll(@Query() query: ListFaqQueryDto) {
+    return this.faqService.findAllAdmin(query);
   }
 
   @Get(':faqId')

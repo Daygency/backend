@@ -9,9 +9,35 @@ import { Repository } from 'typeorm';
 import { FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
 import { CreateHomeBannerDto } from './dto/create-home-banner.dto';
+import { ListHomeBannerQueryDto } from './dto/list-home-banner-query.dto';
 import { ListHomeBannersQueryDto } from './dto/list-home-banners-query.dto';
 import { UpdateHomeBannerDto } from './dto/update-home-banner.dto';
 import { HomeBanner } from './entities/home-banner.entity';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
+
+function decodeBannerCursor(cursor: string): { s: number; t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as {
+      s?: unknown;
+      t?: unknown;
+      i?: unknown;
+    };
+    if (
+      typeof parsed.s !== 'number' ||
+      typeof parsed.t !== 'string' ||
+      typeof parsed.i !== 'string'
+    ) {
+      throw new Error('invalid cursor shape');
+    }
+    return { s: parsed.s, t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeBannerCursor(sortOrder: number, createdAt: Date, bannerId: string): string {
+  return encodeCursor({ s: sortOrder, t: createdAt.toISOString(), i: bannerId });
+}
 
 function parseOptionalDate(value?: string | null): Date | null {
   if (!value) return null;
@@ -67,36 +93,81 @@ export class HomeBannerService {
     return urls;
   }
 
-  async findActivePublic() {
-    const rows = await this.bannerRepository.find({
-      order: { sortOrder: 'DESC', createdAt: 'DESC' },
-    });
-    return rows
-      .filter((row) => isBannerVisibleNow(row))
-      .map((row) => {
+  private buildBannerCursorQuery(cursor?: string) {
+    const qb = this.bannerRepository
+      .createQueryBuilder('banner')
+      .orderBy('banner.sortOrder', 'DESC')
+      .addOrderBy('banner.createdAt', 'DESC')
+      .addOrderBy('banner.bannerId', 'DESC');
+
+    if (cursor) {
+      const { s, t, i } = decodeBannerCursor(cursor);
+      qb.andWhere(
+        `(banner.sortOrder < :s)
+         OR (banner.sortOrder = :s AND banner.createdAt < :t)
+         OR (banner.sortOrder = :s AND banner.createdAt = :t AND banner.bannerId < :i)`,
+        { s, t: new Date(t), i },
+      );
+    }
+    return qb;
+  }
+
+  async findActivePublic(query: ListHomeBannerQueryDto) {
+    const limit = query.limit ?? 20;
+    const rows = await this.buildBannerCursorQuery(query.cursor)
+      .take(limit + 1)
+      .getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeBannerCursor(last.sortOrder, last.createdAt, last.bannerId)
+        : null;
+
+    return {
+      items: slice
+        .filter((row) => isBannerVisibleNow(row))
+        .map((row) => {
+          const imageUrls = resolveImageUrls(row);
+          return {
+            bannerId: row.bannerId,
+            title: row.title,
+            imageUrl: imageUrls[0] ?? row.imageUrl,
+          };
+        }),
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  async findAllPublic(query: ListHomeBannerQueryDto) {
+    const limit = query.limit ?? 20;
+    const rows = await this.buildBannerCursorQuery(query.cursor)
+      .take(limit + 1)
+      .getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeBannerCursor(last.sortOrder, last.createdAt, last.bannerId)
+        : null;
+
+    return {
+      items: slice.map((row) => {
         const imageUrls = resolveImageUrls(row);
         return {
           bannerId: row.bannerId,
           title: row.title,
           imageUrl: imageUrls[0] ?? row.imageUrl,
+          isCurrent: isBannerVisibleNow(row),
+          createdAt: row.createdAt,
         };
-      });
-  }
-
-  async findAllPublic() {
-    const rows = await this.bannerRepository.find({
-      order: { sortOrder: 'DESC', createdAt: 'DESC' },
-    });
-    return rows.map((row) => {
-      const imageUrls = resolveImageUrls(row);
-      return {
-        bannerId: row.bannerId,
-        title: row.title,
-        imageUrl: imageUrls[0] ?? row.imageUrl,
-        isCurrent: isBannerVisibleNow(row),
-        createdAt: row.createdAt,
-      };
-    });
+      }),
+      nextCursor,
+      hasMore,
+    };
   }
 
   async findFeedPublic(query: ListHomeBannersQueryDto) {
@@ -161,14 +232,27 @@ export class HomeBannerService {
     };
   }
 
-  async findAllAdmin() {
-    const rows = await this.bannerRepository.find({
-      order: { sortOrder: 'DESC', createdAt: 'DESC' },
-    });
-    return rows.map((row) => ({
-      ...row,
-      imageUrls: resolveImageUrls(row),
-    }));
+  async findAllAdmin(query: ListHomeBannerQueryDto) {
+    const limit = query.limit ?? 20;
+    const rows = await this.buildBannerCursorQuery(query.cursor)
+      .take(limit + 1)
+      .getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeBannerCursor(last.sortOrder, last.createdAt, last.bannerId)
+        : null;
+
+    return {
+      items: slice.map((row) => ({
+        ...row,
+        imageUrls: resolveImageUrls(row),
+      })),
+      nextCursor,
+      hasMore,
+    };
   }
 
   async findOneAdmin(bannerId: string) {

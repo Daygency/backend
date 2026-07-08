@@ -181,4 +181,15 @@ export class AnnouncementController {
   remove(@Param('id') id: string, @Request() req: { user: { id: string } }) {
     return this.announcementService.remove(req.user.id, id);
   }
+
+  @Delete(':id/attachments/:fileId')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '모집공고 첨부 이미지 1장 삭제' })
+  removeAttachment(
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.announcementService.removeAttachment(req.user.id, id, fileId);
+  }
 }

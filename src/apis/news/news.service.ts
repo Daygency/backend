@@ -358,6 +358,40 @@ export class NewsService {
     };
   }
 
+  /** 공연소식 첨부 이미지 1장 삭제. 작성자만 가능 — 대표 `file_id`였다면 다음 첨부로 갱신(없으면 null) */
+  async removeAttachment(userId: string, newsId: string, fileId: string) {
+    const news = await this.newsRepository.findOne({
+      where: { newsId },
+      relations: ['user', 'file'],
+    });
+    if (!news) {
+      throw new NotFoundException('공연소식을 찾을 수 없습니다.');
+    }
+    if (news.user?.userId !== userId) {
+      throw new ForbiddenException('수정 권한이 없습니다.');
+    }
+
+    const files = await this.newsFileService.listFilesForPost(newsId);
+    const target = files.find((f) => f.fileId === fileId);
+    if (!target) {
+      throw new NotFoundException('존재하지 않는 첨부파일입니다.');
+    }
+
+    if (news.file?.fileId === fileId) {
+      const next = files
+        .filter((f) => f.fileId !== fileId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+      await this.newsRepository.save({
+        ...news,
+        file: next ? ({ fileId: next.fileId } as File) : null,
+      });
+    }
+
+    await this.fileService.removeFile(fileId);
+
+    return { success: true };
+  }
+
   /**
    * 공연소식 삭제. 작성자만 삭제 가능
    */

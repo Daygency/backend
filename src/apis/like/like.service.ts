@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -17,6 +18,23 @@ import { Comment } from '../comment/entities/comment.entity';
 import { NoticeTargetType } from '../notice/entities/notice.entity';
 import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
+
+function decodeLikeCursor(cursor: string): { t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as { t?: unknown; i?: unknown };
+    if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    return { t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeLikeCursor(createdAt: Date, id: string): string {
+  return encodeCursor({ t: createdAt.toISOString(), i: id });
+}
 
 @Injectable()
 export class LikeService {
@@ -152,18 +170,41 @@ export class LikeService {
   async findAll(query: ListLikeQueryDto) {
     await this.validateTarget(query.likeType, query.targetId);
 
-    const items = await this.likeRepository.find({
-      where: {
-        likeType: query.likeType,
-        targetId: query.targetId,
-      },
-      relations: ['user'],
-      order: { createdAt: 'ASC' },
-    });
+    const limit = query.limit ?? 20;
+    const qb = this.likeRepository
+      .createQueryBuilder('like')
+      .leftJoinAndSelect('like.user', 'user')
+      .where('like.likeType = :likeType', { likeType: query.likeType })
+      .andWhere('like.targetId = :targetId', { targetId: query.targetId })
+      .orderBy('like.createdAt', 'ASC')
+      .addOrderBy('like.id', 'ASC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { t, i } = decodeLikeCursor(query.cursor);
+      qb.andWhere(
+        '(like.createdAt > :ca OR (like.createdAt = :ca AND like.id > :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const [rows, count] = await Promise.all([
+      qb.getMany(),
+      this.likeRepository.count({
+        where: { likeType: query.likeType, targetId: query.targetId },
+      }),
+    ]);
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const last = items[items.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeLikeCursor(last.createdAt, last.id) : null;
 
     return {
-      count: items.length,
+      count,
       items,
+      nextCursor,
+      hasMore,
     };
   }
 

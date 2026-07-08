@@ -20,7 +20,9 @@ import { CreateApplicationDto } from './dto/create-application.dto';
 import { UpdateApplicationDto } from './dto/update-application.dto';
 import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
 import { Application, ApplicationStatus } from './entities/application.entity';
+import { ListApplicationsQueryDto } from './dto/list-applications-query.dto';
 import { ChatService } from '../chat/chat.service';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
 import type {
   ApplicationAwardSnapshot,
   ApplicationCareerSnapshot,
@@ -34,6 +36,22 @@ import type { ApplicationDetailResponse } from './utils/application-response.uti
 /** JSON 배열 컬럼에 1개 이상 항목이 있는지 */
 function hasJsonArrayContent(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
+}
+
+function decodeApplicationCursor(cursor: string): { t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as { t?: unknown; i?: unknown };
+    if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    return { t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeApplicationCursor(createdAt: Date, id: string): string {
+  return encodeCursor({ t: createdAt.toISOString(), i: id });
 }
 
 @Injectable()
@@ -380,7 +398,12 @@ export class ApplicationService {
   async findAllForPost(
     postId: string,
     requestUserId: string,
-  ): Promise<ApplicationDetailResponse[]> {
+    query: ListApplicationsQueryDto,
+  ): Promise<{
+    items: ApplicationDetailResponse[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
     const announcement = await this.announcementRepo.findOne({
       where: { postId },
     });
@@ -390,13 +413,36 @@ export class ApplicationService {
     if (announcement.userId !== requestUserId) {
       throw new ForbiddenException('공고 작성자만 지원 목록을 볼 수 있습니다.');
     }
-    return this.applicationRepo
-      .find({
-        where: { postId },
-        relations: { user: true },
-        order: { createdAt: 'DESC' },
-      })
-      .then((rows) => rows.map(toApplicationDetailResponse));
+
+    const limit = query.limit ?? 20;
+    const qb = this.applicationRepo
+      .createQueryBuilder('application')
+      .leftJoinAndSelect('application.user', 'user')
+      .where('application.postId = :postId', { postId })
+      .orderBy('application.createdAt', 'DESC')
+      .addOrderBy('application.id', 'DESC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { t, i } = decodeApplicationCursor(query.cursor);
+      qb.andWhere(
+        '(application.createdAt < :ca OR (application.createdAt = :ca AND application.id < :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeApplicationCursor(last.createdAt, last.id) : null;
+
+    return {
+      items: slice.map(toApplicationDetailResponse),
+      nextCursor,
+      hasMore,
+    };
   }
 
   private mergeForValidation(

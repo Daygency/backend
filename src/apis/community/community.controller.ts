@@ -21,6 +21,7 @@ import { ApiConsumes, ApiOperation } from '@nestjs/swagger';
 import { parseAndValidateJsonPayload } from '../../common/parse-json-payload.util';
 import { CommunityService } from './community.service';
 import { CreateCommunityDto } from './dto/create-community.dto';
+import { ListCommunityQueryDto } from './dto/list-community-query.dto';
 import { UpdateCommunityDto } from './dto/update-community.dto';
 
 @Controller('community')
@@ -62,11 +63,8 @@ export class CommunityController {
   }
 
   @Get()
-  findAll(
-    @Query('categoryId') categoryId?: string,
-    @Query('q') q?: string,
-  ) {
-    return this.communityService.findAll(categoryId, q);
+  findAll(@Query() query: ListCommunityQueryDto) {
+    return this.communityService.findAll(query);
   }
 
   @Get('categories')
@@ -97,5 +95,16 @@ export class CommunityController {
   @UseGuards(AuthGuard('access'))
   remove(@Param('id') id: string, @Request() req: { user: { id: string } }) {
     return this.communityService.remove(req.user.id, id);
+  }
+
+  @Delete(':id/attachments/:fileId')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '커뮤니티 첨부 이미지 1장 삭제' })
+  removeAttachment(
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.communityService.removeAttachment(req.user.id, id, fileId);
   }
 }

@@ -63,7 +63,9 @@ export class HomeService {
       this.communityCategoryRepository.find({
         order: { name: 'ASC' },
       }),
-      this.homeBannerService.findActivePublic(),
+      this.homeBannerService
+        .findActivePublic({ limit: 20 })
+        .then((res) => res.items),
     ]);
 
     const latestCommunityByCategoryRows = await Promise.all(

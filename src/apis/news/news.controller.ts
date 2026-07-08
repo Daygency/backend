@@ -114,4 +114,15 @@ export class NewsController {
   remove(@Param('id') id: string, @Request() req: { user: { id: string } }) {
     return this.newsService.remove(req.user.id, id);
   }
+
+  @Delete(':id/attachments/:fileId')
+  @UseGuards(AuthGuard('access'))
+  @ApiOperation({ summary: '공연소식 첨부 이미지 1장 삭제' })
+  removeAttachment(
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.newsService.removeAttachment(req.user.id, id, fileId);
+  }
 }

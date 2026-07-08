@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -19,6 +20,7 @@ import { parseAndValidateJsonPayload } from '../../common/parse-json-payload.uti
 import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
 import { AnnouncementPickService } from './announcement-pick.service';
 import { CreateAnnouncementPickDto } from './dto/create-announcement-pick.dto';
+import { ListAnnouncementPickQueryDto } from './dto/list-announcement-pick-query.dto';
 import { UpdateAnnouncementPickDto } from './dto/update-announcement-pick.dto';
 
 @ApiTags('admin-announcement-picks')
@@ -30,9 +32,9 @@ export class AdminAnnouncementPickController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: '데이전시 Pick 전체 목록 (관리자)' })
-  findAll() {
-    return this.announcementPickService.findAllAdmin();
+  @ApiOperation({ summary: '데이전시 Pick 전체 목록 (관리자, 무한스크롤)' })
+  findAll(@Query() query: ListAnnouncementPickQueryDto) {
+    return this.announcementPickService.findAllAdmin(query);
   }
 
   @Get(':pickId')

@@ -14,6 +14,7 @@ import { NoticeTargetType } from '../notice/entities/notice.entity';
 import { NoticeService } from '../notice/notice.service';
 import { Follow } from './entities/follow.entity';
 import { ListFollowQueryDto } from './dto/list-follow-query.dto';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
 
 export type FollowListItemDto = {
   userId: string;
@@ -228,8 +229,7 @@ export class FollowService {
 
   private decodeFollowCursor(cursor: string): { t: string; p: string } {
     try {
-      const json = Buffer.from(cursor, 'base64url').toString('utf8');
-      const o = JSON.parse(json) as { t?: string; p?: string };
+      const o = decodeCursor(cursor) as { t?: string; p?: string };
       if (!o?.t || !o?.p) {
         throw new Error();
       }
@@ -240,8 +240,6 @@ export class FollowService {
   }
 
   private encodeFollowCursor(createdAt: Date, peerColumnValue: string): string {
-    return Buffer.from(
-      JSON.stringify({ t: createdAt.toISOString(), p: peerColumnValue }),
-    ).toString('base64url');
+    return encodeCursor({ t: createdAt.toISOString(), p: peerColumnValue });
   }
 }

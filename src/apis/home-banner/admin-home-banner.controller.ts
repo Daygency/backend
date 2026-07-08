@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
@@ -18,6 +19,7 @@ import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { parseAndValidateJsonPayload } from '../../common/parse-json-payload.util';
 import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
 import { CreateHomeBannerDto } from './dto/create-home-banner.dto';
+import { ListHomeBannerQueryDto } from './dto/list-home-banner-query.dto';
 import { UpdateHomeBannerDto } from './dto/update-home-banner.dto';
 import { HomeBannerService } from './home-banner.service';
 
@@ -28,9 +30,9 @@ export class AdminHomeBannerController {
   constructor(private readonly homeBannerService: HomeBannerService) {}
 
   @Get()
-  @ApiOperation({ summary: '홈 배너 전체 목록 (관리자)' })
-  findAll() {
-    return this.homeBannerService.findAllAdmin();
+  @ApiOperation({ summary: '홈 배너 전체 목록 (관리자, 무한스크롤)' })
+  findAll(@Query() query: ListHomeBannerQueryDto) {
+    return this.homeBannerService.findAllAdmin(query);
   }
 
   @Get(':bannerId')

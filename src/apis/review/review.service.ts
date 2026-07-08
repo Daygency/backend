@@ -12,6 +12,7 @@ import { Announcement } from '../announcement/entities/announcement.entity';
 import { NoticeTargetType } from '../notice/entities/notice.entity';
 import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
 import {
   REVIEW_DISAPPOINTMENT_REASON_VALUES,
   REVIEW_POSITIVE_REASON_VALUES,
@@ -30,16 +31,12 @@ function isAnnouncementCompleted(a: Announcement): boolean {
 }
 
 function encodeReviewCursor(createdAt: Date, reviewId: string): string {
-  return Buffer.from(
-    JSON.stringify({ t: createdAt.toISOString(), i: reviewId }),
-  ).toString('base64url');
+  return encodeCursor({ t: createdAt.toISOString(), i: reviewId });
 }
 
 function decodeReviewCursor(cursor: string): { t: string; i: string } {
   try {
-    const parsed = JSON.parse(
-      Buffer.from(cursor, 'base64url').toString('utf8'),
-    ) as { t?: unknown; i?: unknown };
+    const parsed = decodeCursor(cursor) as { t?: unknown; i?: unknown };
     if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
       throw new Error('invalid cursor shape');
     }

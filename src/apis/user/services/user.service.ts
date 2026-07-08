@@ -45,18 +45,86 @@ import { FileTargetType } from '../../file/entities/file.entity';
 import { UserPushDevice } from '../../notice/entities/user-push-device.entity';
 import { hardDeleteUserCascade } from '../utils/user-hard-delete-cascade';
 import type { PurgeExpiredSoftDeletedUsersResult } from '../types/purge-soft-deleted.types';
+import { ListBannedUsersQueryDto } from '../dto/list-banned-users-query.dto';
+import { ListMyWrittenPostsQueryDto } from '../dto/list-my-written-posts-query.dto';
+import { decodeCursor, encodeCursor } from '../../../common/cursor.util';
+
+function decodeBannedUserCursor(
+  cursor: string,
+): { n: boolean; b: string | null; t: string; u: string } {
+  try {
+    const parsed = decodeCursor(cursor) as {
+      n?: unknown;
+      b?: unknown;
+      t?: unknown;
+      u?: unknown;
+    };
+    if (
+      typeof parsed.n !== 'boolean' ||
+      (parsed.b !== null && typeof parsed.b !== 'string') ||
+      typeof parsed.t !== 'string' ||
+      typeof parsed.u !== 'string'
+    ) {
+      throw new Error('invalid cursor shape');
+    }
+    return { n: parsed.n, b: parsed.b, t: parsed.t, u: parsed.u };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function decodeMyPostsCursor(cursor: string): { t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as { t?: unknown; i?: unknown };
+    if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    return { t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeMyPostsCursor(createdAt: Date, id: string): string {
+  return encodeCursor({ t: createdAt.toISOString(), i: id });
+}
+
+function decodeMyAnnouncementPostsCursor(cursor: string): { i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as { i?: unknown };
+    if (typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    return { i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeMyAnnouncementPostsCursor(postId: string): string {
+  return encodeCursor({ i: postId });
+}
+
+function encodeBannedUserCursor(
+  reportBannedUntil: Date | null,
+  createdAt: Date,
+  userId: string,
+): string {
+  return encodeCursor({
+    n: reportBannedUntil === null,
+    b: reportBannedUntil ? reportBannedUntil.toISOString() : null,
+    t: createdAt.toISOString(),
+    u: userId,
+  });
+}
 
 function encodeUserListCursor(createdAt: Date, userId: string): string {
-  return Buffer.from(
-    JSON.stringify({ ca: createdAt.toISOString(), uid: userId }),
-    'utf8',
-  ).toString('base64url');
+  return encodeCursor({ ca: createdAt.toISOString(), uid: userId });
 }
 
 function decodeUserListCursor(cursor: string): { ca: string; uid: string } {
   try {
-    const raw = Buffer.from(cursor, 'base64url').toString('utf8');
-    const o = JSON.parse(raw) as { ca?: string; uid?: string };
+    const o = decodeCursor(cursor) as { ca?: string; uid?: string };
     if (!o?.ca || !o?.uid) throw new Error('invalid');
     return { ca: o.ca, uid: o.uid };
   } catch {
@@ -338,32 +406,67 @@ export class UserService {
     return liftExpiredReportBanIfNeeded(user, (u) => this.userRepository.save(u));
   }
 
-  async listBannedForAdmin() {
-    const rows = await this.userRepository.find({
-      where: { activity: UserActivity.BAN },
-      select: [
-        'userId',
-        'name',
-        'activityName',
-        'email',
-        'activity',
-        'reportBannedUntil',
-        'reportStrikeResetAt',
-        'createdAt',
-      ],
-      order: { reportBannedUntil: 'ASC', createdAt: 'DESC' },
-    });
+  async listBannedForAdmin(query: ListBannedUsersQueryDto) {
+    const limit = query.limit ?? 20;
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.userId',
+        'user.name',
+        'user.activityName',
+        'user.email',
+        'user.activity',
+        'user.reportBannedUntil',
+        'user.reportStrikeResetAt',
+        'user.createdAt',
+      ])
+      .where('user.activity = :activity', { activity: UserActivity.BAN })
+      .orderBy('user.reportBannedUntil', 'ASC')
+      .addOrderBy('user.createdAt', 'DESC')
+      .addOrderBy('user.userId', 'DESC')
+      .take(limit + 1);
 
-    return rows.map((user) => ({
-      userId: user.userId,
-      name: user.name,
-      activityName: user.activityName,
-      email: user.email,
-      reportBannedUntil: user.reportBannedUntil?.toISOString() ?? null,
-      reportStrikeResetAt: user.reportStrikeResetAt?.toISOString() ?? null,
-      banType: user.reportBannedUntil ? 'auto_report' : 'manual',
-      createdAt: user.createdAt.toISOString(),
-    }));
+    if (query.cursor) {
+      const { n, b, t, u } = decodeBannedUserCursor(query.cursor);
+      if (n) {
+        qb.andWhere(
+          `(user.reportBannedUntil IS NOT NULL)
+           OR (user.reportBannedUntil IS NULL AND (user.createdAt < :t OR (user.createdAt = :t AND user.userId < :u)))`,
+          { t: new Date(t), u },
+        );
+      } else {
+        qb.andWhere(
+          `user.reportBannedUntil IS NOT NULL
+           AND (user.reportBannedUntil > :b
+                OR (user.reportBannedUntil = :b AND (user.createdAt < :t OR (user.createdAt = :t AND user.userId < :u))))`,
+          { b: new Date(b as string), t: new Date(t), u },
+        );
+      }
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const last = slice[slice.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeBannedUserCursor(last.reportBannedUntil, last.createdAt, last.userId)
+        : null;
+
+    return {
+      items: slice.map((user) => ({
+        userId: user.userId,
+        name: user.name,
+        activityName: user.activityName,
+        email: user.email,
+        reportBannedUntil: user.reportBannedUntil?.toISOString() ?? null,
+        reportStrikeResetAt: user.reportStrikeResetAt?.toISOString() ?? null,
+        banType: user.reportBannedUntil ? 'auto_report' : 'manual',
+        createdAt: user.createdAt.toISOString(),
+      })),
+      nextCursor,
+      hasMore,
+    };
   }
 
   async unbanUserForAdmin(userId: string) {
@@ -946,24 +1049,67 @@ export class UserService {
     }));
   }
 
-  async getMyWrittenPosts(userId: string) {
-    const [communities, news, announcements] = await Promise.all([
-      this.communityRepository.find({
-        where: { user: { userId } },
-        order: { createdAt: 'DESC' },
-        relations: ['category', 'file'],
-      }),
-      this.newsRepository.find({
-        where: { user: { userId } },
-        order: { createdAt: 'DESC' },
-        relations: ['file'],
-      }),
-      this.announcementRepository.find({
-        where: { userId },
-        order: { postId: 'DESC' },
-        relations: ['category'],
-      }),
+  async getMyWrittenPosts(userId: string, query: ListMyWrittenPostsQueryDto) {
+    const limit = query.limit ?? 20;
+
+    const communityQb = this.communityRepository
+      .createQueryBuilder('community')
+      .leftJoinAndSelect('community.category', 'category')
+      .leftJoinAndSelect('community.file', 'file')
+      .where('community.user_id = :userId', { userId })
+      .orderBy('community.createdAt', 'DESC')
+      .addOrderBy('community.communityId', 'DESC')
+      .take(limit + 1);
+    if (query.communityCursor) {
+      const { t, i } = decodeMyPostsCursor(query.communityCursor);
+      communityQb.andWhere(
+        '(community.createdAt < :ca OR (community.createdAt = :ca AND community.communityId < :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const newsQb = this.newsRepository
+      .createQueryBuilder('news')
+      .leftJoinAndSelect('news.file', 'file')
+      .where('news.user_id = :userId', { userId })
+      .orderBy('news.createdAt', 'DESC')
+      .addOrderBy('news.newsId', 'DESC')
+      .take(limit + 1);
+    if (query.newsCursor) {
+      const { t, i } = decodeMyPostsCursor(query.newsCursor);
+      newsQb.andWhere(
+        '(news.createdAt < :ca OR (news.createdAt = :ca AND news.newsId < :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const announcementQb = this.announcementRepository
+      .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category')
+      .where('announcement.userId = :userId', { userId })
+      .orderBy('announcement.postId', 'DESC')
+      .take(limit + 1);
+    if (query.announcementCursor) {
+      const { i } = decodeMyAnnouncementPostsCursor(query.announcementCursor);
+      announcementQb.andWhere('announcement.postId < :cid', { cid: i });
+    }
+
+    const [communityRows, newsRows, announcementRows] = await Promise.all([
+      communityQb.getMany(),
+      newsQb.getMany(),
+      announcementQb.getMany(),
     ]);
+
+    const communityHasMore = communityRows.length > limit;
+    const communities = communityHasMore
+      ? communityRows.slice(0, limit)
+      : communityRows;
+    const newsHasMore = newsRows.length > limit;
+    const news = newsHasMore ? newsRows.slice(0, limit) : newsRows;
+    const announcementHasMore = announcementRows.length > limit;
+    const announcements = announcementHasMore
+      ? announcementRows.slice(0, limit)
+      : announcementRows;
 
     const [communityLikeCountMap, communityCommentCountMap] = await Promise.all(
       [
@@ -999,48 +1145,88 @@ export class UserService {
       this.buildNewsThumbnailUrlMap(news),
     ]);
 
+    const lastCommunity = communities[communities.length - 1];
+    const lastNews = news[news.length - 1];
+    const lastAnnouncement = announcements[announcements.length - 1];
+
     return {
-      community: communities.map((item: Community) => ({
-        communityId: item.communityId,
-        title: item.title,
-        category: item.category?.name ?? null,
-        createdAt: item.createdAt,
-        likeCount: communityLikeCountMap.get(item.communityId) ?? 0,
-        viewCount: Number(item.viewCount ?? 0),
-        commentCount: communityCommentCountMap.get(item.communityId) ?? 0,
-        thumbnailUrl: communityThumbMap.get(item.communityId) ?? null,
-      })),
-      news: news.map((item: News) => ({
-        newsId: item.newsId,
-        title: item.title,
-        place: item.place,
-        createdAt: item.createdAt,
-        likeCount: newsLikeCountMap.get(item.newsId) ?? 0,
-        viewCount: Number(item.viewCount ?? 0),
-        commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
-        thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
-      })),
-      announcements: announcements.map((item: Announcement) => ({
-        postId: item.postId,
-        title: item.title,
-        category: item.category?.name ?? null,
-        scheduledAt: item.scheduledAt,
-        deadlineAt: item.deadlineAt,
-        priceType: item.priceType,
-        price: item.price,
-        likeCount: announcementLikeCountMap.get(item.postId) ?? 0,
-        viewCount: 0,
-        commentCount: 0,
-      })),
+      community: {
+        items: communities.map((item: Community) => ({
+          communityId: item.communityId,
+          title: item.title,
+          category: item.category?.name ?? null,
+          createdAt: item.createdAt,
+          likeCount: communityLikeCountMap.get(item.communityId) ?? 0,
+          viewCount: Number(item.viewCount ?? 0),
+          commentCount: communityCommentCountMap.get(item.communityId) ?? 0,
+          thumbnailUrl: communityThumbMap.get(item.communityId) ?? null,
+        })),
+        nextCursor:
+          communityHasMore && lastCommunity
+            ? encodeMyPostsCursor(lastCommunity.createdAt, lastCommunity.communityId)
+            : null,
+        hasMore: communityHasMore,
+      },
+      news: {
+        items: news.map((item: News) => ({
+          newsId: item.newsId,
+          title: item.title,
+          place: item.place,
+          createdAt: item.createdAt,
+          likeCount: newsLikeCountMap.get(item.newsId) ?? 0,
+          viewCount: Number(item.viewCount ?? 0),
+          commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
+          thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
+        })),
+        nextCursor:
+          newsHasMore && lastNews
+            ? encodeMyPostsCursor(lastNews.createdAt, lastNews.newsId)
+            : null,
+        hasMore: newsHasMore,
+      },
+      announcements: {
+        items: announcements.map((item: Announcement) => ({
+          postId: item.postId,
+          title: item.title,
+          category: item.category?.name ?? null,
+          scheduledAt: item.scheduledAt,
+          deadlineAt: item.deadlineAt,
+          priceType: item.priceType,
+          price: item.price,
+          likeCount: announcementLikeCountMap.get(item.postId) ?? 0,
+          viewCount: 0,
+          commentCount: 0,
+        })),
+        nextCursor:
+          announcementHasMore && lastAnnouncement
+            ? encodeMyAnnouncementPostsCursor(lastAnnouncement.postId)
+            : null,
+        hasMore: announcementHasMore,
+      },
     };
   }
 
-  async getMyNewsPosts(userId: string) {
-    const news = await this.newsRepository.find({
-      where: { user: { userId } },
-      order: { createdAt: 'DESC' },
-      relations: ['file'],
-    });
+  async getMyNewsPosts(userId: string, query: ListMyScrapQueryDto) {
+    const limit = query.limit ?? 20;
+    const qb = this.newsRepository
+      .createQueryBuilder('news')
+      .leftJoinAndSelect('news.file', 'file')
+      .where('news.user_id = :userId', { userId })
+      .orderBy('news.createdAt', 'DESC')
+      .addOrderBy('news.newsId', 'DESC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { t, i } = decodeMyPostsCursor(query.cursor);
+      qb.andWhere(
+        '(news.createdAt < :ca OR (news.createdAt = :ca AND news.newsId < :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const news = hasMore ? rows.slice(0, limit) : rows;
 
     const [newsLikeCountMap, newsCommentCountMap, newsThumbMap] =
       await Promise.all([
@@ -1055,7 +1241,7 @@ export class UserService {
         this.buildNewsThumbnailUrlMap(news),
       ]);
 
-    return news.map((item: News) => ({
+    const items = news.map((item: News) => ({
       newsId: item.newsId,
       title: item.title,
       place: item.place,
@@ -1065,13 +1251,34 @@ export class UserService {
       commentCount: newsCommentCountMap.get(item.newsId) ?? 0,
       thumbnailUrl: newsThumbMap.get(item.newsId) ?? null,
     }));
+
+    const last = news[news.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeMyPostsCursor(last.createdAt, last.newsId) : null;
+
+    return { items, nextCursor, hasMore };
   }
 
-  async getMyCommentPosts(userId: string) {
-    const comments = await this.commentRepository.find({
-      where: { user: { userId } },
-      order: { createdAt: 'DESC' },
-    });
+  async getMyCommentPosts(userId: string, query: ListMyScrapQueryDto) {
+    const limit = query.limit ?? 20;
+    const qb = this.commentRepository
+      .createQueryBuilder('comment')
+      .where('comment.user_id = :userId', { userId })
+      .orderBy('comment.createdAt', 'DESC')
+      .addOrderBy('comment.id', 'DESC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { t, i } = decodeMyPostsCursor(query.cursor);
+      qb.andWhere(
+        '(comment.createdAt < :ca OR (comment.createdAt = :ca AND comment.id < :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const comments = hasMore ? rows.slice(0, limit) : rows;
 
     const newsIds = [
       ...new Set(
@@ -1108,7 +1315,7 @@ export class UserService {
       communityRows.map((row) => [row.communityId, row.title]),
     );
 
-    return comments.map((comment) => ({
+    const items = comments.map((comment) => ({
       commentId: comment.id,
       content: comment.content,
       createdAt: comment.createdAt,
@@ -1119,21 +1326,38 @@ export class UserService {
           ? (newsTitleMap.get(comment.targetId) ?? null)
           : (communityTitleMap.get(comment.targetId) ?? null),
     }));
+
+    const last = comments[comments.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeMyPostsCursor(last.createdAt, last.id) : null;
+
+    return { items, nextCursor, hasMore };
   }
 
-  async getMyAnnouncementPosts(userId: string) {
-    const announcements = await this.announcementRepository.find({
-      where: { userId },
-      order: { postId: 'DESC' },
-      relations: ['category'],
-    });
+  async getMyAnnouncementPosts(userId: string, query: ListMyScrapQueryDto) {
+    const limit = query.limit ?? 20;
+    const qb = this.announcementRepository
+      .createQueryBuilder('announcement')
+      .leftJoinAndSelect('announcement.category', 'category')
+      .where('announcement.userId = :userId', { userId })
+      .orderBy('announcement.postId', 'DESC')
+      .take(limit + 1);
+
+    if (query.cursor) {
+      const { i } = decodeMyAnnouncementPostsCursor(query.cursor);
+      qb.andWhere('announcement.postId < :cid', { cid: i });
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const announcements = hasMore ? rows.slice(0, limit) : rows;
 
     const announcementLikeCountMap = await this.getLikeCountMap(
       LikeType.ANNOUNCEMENT,
       announcements.map((item) => item.postId),
     );
 
-    return announcements.map((item: Announcement) => ({
+    const items = announcements.map((item: Announcement) => ({
       postId: item.postId,
       title: item.title,
       category: item.category?.name ?? null,
@@ -1146,6 +1370,12 @@ export class UserService {
       viewCount: 0,
       commentCount: 0,
     }));
+
+    const last = announcements[announcements.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeMyAnnouncementPostsCursor(last.postId) : null;
+
+    return { items, nextCursor, hasMore };
   }
 
   async getMyScrappedAnnouncementPosts(

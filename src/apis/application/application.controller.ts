@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
   UsePipes,
@@ -19,6 +20,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApplicationService } from './application.service';
 import { CreateApplicationDto } from './dto/create-application.dto';
+import { ListApplicationsQueryDto } from './dto/list-applications-query.dto';
 import { UpdateApplicationDto } from './dto/update-application.dto';
 import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
 
@@ -61,13 +63,14 @@ export class ApplicationController {
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
   @ApiOperation({
-    summary: '해당 공고에 달린 지원서 목록 (공고 작성자만)',
+    summary: '해당 공고에 달린 지원서 목록 (공고 작성자만, 무한스크롤)',
   })
   findAllForPost(
     @Param('postId', ParseUUIDPipe) postId: string,
     @Request() req: { user: { id: string } },
+    @Query() query: ListApplicationsQueryDto,
   ) {
-    return this.applicationService.findAllForPost(postId, req.user.id);
+    return this.applicationService.findAllForPost(postId, req.user.id, query);
   }
 
   @Get(':id')

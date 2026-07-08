@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -7,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateCommunityDto } from './dto/create-community.dto';
+import { ListCommunityQueryDto } from './dto/list-community-query.dto';
 import { UpdateCommunityDto } from './dto/update-community.dto';
 import { Community } from './entities/community.entity';
 import { CommunityCategory } from './entities/community-category.entity';
@@ -16,8 +18,25 @@ import { File, FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
 import { CommunityFileService } from './community-file.service';
 import { toLikePattern } from '../../common/escape-like-pattern.util';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
 
 const MAX_COMMUNITY_IMAGES = 5;
+
+function decodeCommunityCursor(cursor: string): { t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as { t?: unknown; i?: unknown };
+    if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    return { t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeCommunityCursor(createdAt: Date, communityId: string): string {
+  return encodeCursor({ t: createdAt.toISOString(), i: communityId });
+}
 
 @Injectable()
 export class CommunityService {
@@ -92,14 +111,17 @@ export class CommunityService {
     };
   }
 
-  async findAll(categoryId?: string, q?: string) {
+  async findAll(query: ListCommunityQueryDto) {
+    const { categoryId, q, cursor, limit = 20 } = query;
     const likeQ = q ? toLikePattern(q) : null;
     const qb = this.communityRepository
       .createQueryBuilder('community')
       .leftJoinAndSelect('community.category', 'category')
       .leftJoinAndSelect('community.user', 'user')
       .leftJoinAndSelect('community.file', 'file')
-      .orderBy('community.createdAt', 'DESC');
+      .orderBy('community.createdAt', 'DESC')
+      .addOrderBy('community.communityId', 'DESC')
+      .take(limit + 1);
 
     if (categoryId) {
       qb.andWhere('category.categoryId = :categoryId', { categoryId });
@@ -110,8 +132,17 @@ export class CommunityService {
         { likeQ },
       );
     }
+    if (cursor) {
+      const { t, i } = decodeCommunityCursor(cursor);
+      qb.andWhere(
+        '(community.createdAt < :ca OR (community.createdAt = :ca AND community.communityId < :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
 
-    const communities = await qb.getMany();
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const communities = hasMore ? rows.slice(0, limit) : rows;
 
     const communityIds = communities.map((community) => community.communityId);
     const [likeCounts, commentCounts] = await Promise.all([
@@ -152,7 +183,7 @@ export class CommunityService {
         communityIds,
       );
 
-    return communities.map((community) => ({
+    const items = communities.map((community) => ({
       ...community,
       likeCount: likeCountMap.get(community.communityId) ?? 0,
       commentCount: commentCountMap.get(community.communityId) ?? 0,
@@ -162,6 +193,14 @@ export class CommunityService {
         community.file?.imgUrl ??
         null,
     }));
+
+    const last = communities[communities.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCommunityCursor(last.createdAt, last.communityId)
+        : null;
+
+    return { items, nextCursor, hasMore };
   }
 
   async findOne(id: string, currentUserId?: string) {
@@ -245,6 +284,40 @@ export class CommunityService {
     Object.assign(community, rest);
 
     return this.communityRepository.save(community);
+  }
+
+  /** 커뮤니티 첨부 이미지 1장 삭제. 작성자만 가능 — 대표 `file_id`였다면 다음 첨부로 갱신(없으면 null) */
+  async removeAttachment(userId: string, id: string, fileId: string) {
+    const community = await this.communityRepository.findOne({
+      where: { communityId: id },
+      relations: ['user', 'file'],
+    });
+    if (!community) {
+      throw new NotFoundException('존재하지 않는 커뮤니티 게시글입니다.');
+    }
+    if (community.user?.userId !== userId) {
+      throw new ForbiddenException('수정 권한이 없습니다.');
+    }
+
+    const files = await this.communityFileService.listFilesForPost(id);
+    const target = files.find((f) => f.fileId === fileId);
+    if (!target) {
+      throw new NotFoundException('존재하지 않는 첨부파일입니다.');
+    }
+
+    if (community.file?.fileId === fileId) {
+      const next = files
+        .filter((f) => f.fileId !== fileId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+      await this.communityRepository.save({
+        ...community,
+        file: next ? ({ fileId: next.fileId } as File) : null,
+      });
+    }
+
+    await this.fileService.removeFile(fileId);
+
+    return { success: true };
   }
 
   async remove(userId: string, id: string) {

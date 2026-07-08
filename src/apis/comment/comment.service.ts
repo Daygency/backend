@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -16,6 +17,23 @@ import { NoticeTargetType } from '../notice/entities/notice.entity';
 import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
 import { Like, LikeType } from '../like/entities/like.entity';
+import { decodeCursor, encodeCursor } from '../../common/cursor.util';
+
+function decodeCommentCursor(cursor: string): { t: string; i: string } {
+  try {
+    const parsed = decodeCursor(cursor) as { t?: unknown; i?: unknown };
+    if (typeof parsed.t !== 'string' || typeof parsed.i !== 'string') {
+      throw new Error('invalid cursor shape');
+    }
+    return { t: parsed.t, i: parsed.i };
+  } catch {
+    throw new BadRequestException('유효하지 않은 cursor 입니다.');
+  }
+}
+
+function encodeCommentCursor(createdAt: Date, id: string): string {
+  return encodeCursor({ t: createdAt.toISOString(), i: id });
+}
 
 @Injectable()
 export class CommentService {
@@ -73,16 +91,33 @@ export class CommentService {
   async findAll(query: ListCommentQueryDto, userId?: string) {
     await this.validateTarget(query.targetType, query.targetId);
 
-    const comments = await this.commentRepository.find({
-      where: {
-        targetType: query.targetType,
-        targetId: query.targetId,
-      },
-      relations: ['user'],
-      order: { createdAt: 'ASC' },
-    });
+    const limit = query.limit ?? 20;
+    const qb = this.commentRepository
+      .createQueryBuilder('comment')
+      .leftJoinAndSelect('comment.user', 'user')
+      .where('comment.targetType = :targetType', { targetType: query.targetType })
+      .andWhere('comment.targetId = :targetId', { targetId: query.targetId })
+      .orderBy('comment.createdAt', 'ASC')
+      .addOrderBy('comment.id', 'ASC')
+      .take(limit + 1);
 
-    return this.withLikeInfo(comments, userId);
+    if (query.cursor) {
+      const { t, i } = decodeCommentCursor(query.cursor);
+      qb.andWhere(
+        '(comment.createdAt > :ca OR (comment.createdAt = :ca AND comment.id > :cid))',
+        { ca: new Date(t), cid: i },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const comments = hasMore ? rows.slice(0, limit) : rows;
+    const last = comments[comments.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeCommentCursor(last.createdAt, last.id) : null;
+
+    const items = await this.withLikeInfo(comments, userId);
+    return { items, nextCursor, hasMore };
   }
 
   private async withLikeInfo(comments: Comment[], userId?: string) {

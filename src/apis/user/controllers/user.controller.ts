@@ -37,6 +37,7 @@ import { ProfileResponseDto } from '../dto/profile-response.dto';
 import { PublicProfileResponseDto } from '../dto/public-profile-response.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { ListMyScrapQueryDto } from '../dto/list-my-scrap-query.dto';
+import { ListMyWrittenPostsQueryDto } from '../dto/list-my-written-posts-query.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { parseAndValidateJsonPayload } from '../../../common/parse-json-payload.util';
 import { ReviewService } from '../../review/review.service';
@@ -82,41 +83,53 @@ export class UserController {
 
   @Get('posts/my')
   @UseGuards(AuthGuard('access'))
-  @ApiOperation({ summary: '내가 쓴 작성글 목록 조회' })
+  @ApiOperation({ summary: '내가 쓴 작성글 목록 조회 (섹션별 무한스크롤)' })
   @ApiResponse({
     status: 200,
     description: '내가 쓴 글(커뮤니티/공연소식/모집공고) 반환',
   })
   @ApiResponse({ status: 401, description: '인증 필요' })
-  getMyWrittenPosts(@Request() req: { user: { id: string } }) {
-    return this.userService.getMyWrittenPosts(req.user.id);
+  getMyWrittenPosts(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListMyWrittenPostsQueryDto,
+  ) {
+    return this.userService.getMyWrittenPosts(req.user.id, query);
   }
 
   @Get('posts/my/news')
   @UseGuards(AuthGuard('access'))
-  @ApiOperation({ summary: '내가 쓴 공연소식 목록 조회' })
+  @ApiOperation({ summary: '내가 쓴 공연소식 목록 조회 (무한스크롤)' })
   @ApiResponse({ status: 200, description: '내 공연소식 목록 반환' })
   @ApiResponse({ status: 401, description: '인증 필요' })
-  getMyNewsPosts(@Request() req: { user: { id: string } }) {
-    return this.userService.getMyNewsPosts(req.user.id);
+  getMyNewsPosts(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListMyScrapQueryDto,
+  ) {
+    return this.userService.getMyNewsPosts(req.user.id, query);
   }
 
   @Get('posts/my/comments')
   @UseGuards(AuthGuard('access'))
-  @ApiOperation({ summary: '내가 작성한 댓글 목록 조회' })
+  @ApiOperation({ summary: '내가 작성한 댓글 목록 조회 (무한스크롤)' })
   @ApiResponse({ status: 200, description: '내 댓글 목록 반환' })
   @ApiResponse({ status: 401, description: '인증 필요' })
-  getMyCommentPosts(@Request() req: { user: { id: string } }) {
-    return this.userService.getMyCommentPosts(req.user.id);
+  getMyCommentPosts(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListMyScrapQueryDto,
+  ) {
+    return this.userService.getMyCommentPosts(req.user.id, query);
   }
 
   @Get('posts/my/announcements')
   @UseGuards(AuthGuard('access'))
-  @ApiOperation({ summary: '내가 쓴 모집공고 목록 조회' })
+  @ApiOperation({ summary: '내가 쓴 모집공고 목록 조회 (무한스크롤)' })
   @ApiResponse({ status: 200, description: '내 모집공고 목록 반환' })
   @ApiResponse({ status: 401, description: '인증 필요' })
-  getMyAnnouncementPosts(@Request() req: { user: { id: string } }) {
-    return this.userService.getMyAnnouncementPosts(req.user.id);
+  getMyAnnouncementPosts(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListMyScrapQueryDto,
+  ) {
+    return this.userService.getMyAnnouncementPosts(req.user.id, query);
   }
 
   @Get('posts/my/scraps/announcements')
