@@ -803,6 +803,28 @@ export class ChatService {
     return this.toRoomListPage(rows, limit, userId);
   }
 
+  /** 내가 속한 모든 채팅방 — 커피챗·공고(지원자/작성자) 구분 없이 한 목록으로 */
+  async listAllRooms(
+    userId: string,
+    query: ListChatRoomsQueryDto,
+  ): Promise<ChatRoomListResponse> {
+    const limit = query.limit ?? 20;
+    const qb = this.chatRoomRepo
+      .createQueryBuilder('room')
+      .leftJoinAndSelect('room.announcement', 'announcement')
+      .innerJoin('room.members', 'mb')
+      .where('room.deletedAt IS NULL')
+      .andWhere('mb.deletedAt IS NULL')
+      .andWhere('mb.user_id = :uid', { uid: userId })
+      .orderBy('room.id', 'DESC')
+      .take(limit + 1);
+    if (query.cursor) {
+      qb.andWhere('room.id < :cursor', { cursor: query.cursor });
+    }
+    const rows = await qb.getMany();
+    return this.toRoomListPage(rows, limit, userId);
+  }
+
   /** 내가 지원자인 공고 1:1 채팅방 (공고당·지원자당 1방) */
   async listAppliedAnnouncementRooms(
     userId: string,

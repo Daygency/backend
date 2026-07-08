@@ -45,10 +45,21 @@ export class ChatController {
     return { unreadCount };
   }
 
+  @Get('rooms/all')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내가 속한 모든 채팅방 목록 (전체 탭)' })
+  listAllRooms(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListChatRoomsQueryDto,
+  ) {
+    return this.chatService.listAllRooms(req.user.id, query);
+  }
+
   @Get('rooms/coffee')
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
-  @ApiOperation({ summary: '커피챗(일반 1:1) 채팅방 목록' })
+  @ApiOperation({ summary: '커피챗(DM 1:1) 채팅방 목록' })
   listCoffeeRooms(
     @Request() req: { user: { id: string } },
     @Query() query: ListChatRoomsQueryDto,
