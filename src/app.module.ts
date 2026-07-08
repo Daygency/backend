@@ -29,6 +29,7 @@ import { ReviewModule } from './apis/review/review.module';
 import { InquiryModule } from './apis/inquiry/inquiry.module';
 import { KakaoModule } from './apis/kakao/kakao.module';
 import { AnnouncementPickModule } from './apis/announcement-pick/announcement-pick.module';
+import { FaqModule } from './apis/faq/faq.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { AnnouncementPickModule } from './apis/announcement-pick/announcement-pi
     InquiryModule,
     KakaoModule,
     AnnouncementPickModule,
+    FaqModule,
   ],
   providers: [DatabaseSeedService],
 })

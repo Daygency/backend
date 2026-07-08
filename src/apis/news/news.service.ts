@@ -271,7 +271,7 @@ export class NewsService {
 
     const authorUser = news.user;
 
-    const [likeCount, commentCount] = await Promise.all([
+    const [likeCount, commentCount, files] = await Promise.all([
       this.likeRepository.count({
         where: {
           likeType: LikeType.NEWS,
@@ -284,7 +284,14 @@ export class NewsService {
           targetId: newsId,
         },
       }),
+      this.newsFileService.listFilesForPost(newsId),
     ]);
+
+    const attachments = files.map((f) => ({
+      fileId: f.fileId,
+      imgUrl: f.imgUrl,
+      sortOrder: f.sortOrder,
+    }));
 
     return {
       ...news,
@@ -299,6 +306,7 @@ export class NewsService {
       isMine,
       likeCount,
       commentCount,
+      attachments,
     };
   }
 

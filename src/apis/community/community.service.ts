@@ -181,7 +181,7 @@ export class CommunityService {
     await this.communityRepository.increment({ communityId: id }, 'viewCount', 1);
     community.viewCount += 1;
 
-    const [likeCount, commentCount] = await Promise.all([
+    const [likeCount, commentCount, files] = await Promise.all([
       this.likeRepository.count({
         where: {
           likeType: LikeType.COMMUNITY,
@@ -194,13 +194,21 @@ export class CommunityService {
           targetId: id,
         },
       }),
+      this.communityFileService.listFilesForPost(id),
     ]);
+
+    const attachments = files.map((f) => ({
+      fileId: f.fileId,
+      imgUrl: f.imgUrl,
+      sortOrder: f.sortOrder,
+    }));
 
     return {
       ...community,
       isMine,
       likeCount,
       commentCount,
+      attachments,
     };
   }
 

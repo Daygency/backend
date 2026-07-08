@@ -65,6 +65,15 @@ export class ChatGateway implements OnGatewayConnection {
     }
   }
 
+  /** 누군가 방을 읽음 처리했을 때, 같은 방 구독자들에게 알려 보낸 메시지의 읽음 표시를 실시간 갱신 */
+  emitReadUpdated(chatRoomId: string, userId: string, lastReadAt: Date): void {
+    this.server.to(chatRoomId).emit('readUpdated', {
+      chatRoomId,
+      userId,
+      lastReadAt,
+    });
+  }
+
   private userRoom(userId: string): string {
     return `user:${userId}`;
   }

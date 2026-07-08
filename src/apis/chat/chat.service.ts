@@ -31,6 +31,8 @@ export type MessagePayload = {
   fileMime?: string | null;
   fileItems?: MessageFileItem[] | null;
   createdAt: Date;
+  /** 방의 다른 멤버(1:1 기준 상대방)가 이 메시지를 읽었는지 — 목록 조회 시에만 채워짐 */
+  readByPeer?: boolean;
 };
 
 export type ChatRoomListItemDto = {
@@ -617,12 +619,31 @@ export class ChatService {
       skip,
     });
 
+    const peerLastReadAt = await this.getPeerLastReadAt(chatRoomId, userId);
+
     return {
-      items: rows.map((m) => this.toMessagePayload(m)),
+      items: rows.map((m) => this.toMessagePayload(m, peerLastReadAt)),
       total,
       page,
       limit,
     };
+  }
+
+  /** 방의 다른 멤버들(1:1 기준 상대방)이 공통으로 읽은 지점 — 여러 명이면 가장 늦게 읽은 사람 기준 */
+  private async getPeerLastReadAt(
+    roomId: string,
+    userId: string,
+  ): Promise<Date | null> {
+    const rows: Array<{ lastReadAt: Date | string | null }> =
+      await this.chatRoomMemberRepo.manager.query(
+        `SELECT MIN(last_read_at) AS lastReadAt
+         FROM chat_room_member
+         WHERE chat_room_id = ? AND user_id != ? AND deleted_at IS NULL`,
+        [roomId, userId],
+      );
+    const value = rows[0]?.lastReadAt;
+    if (!value) return null;
+    return value instanceof Date ? value : new Date(value);
   }
 
   async getMemberSettings(
@@ -697,7 +718,12 @@ export class ChatService {
     const updated = await this.chatRoomMemberRepo.findOne({
       where: { id: member.id },
     });
-    return { lastReadAt: updated?.lastReadAt ?? member.lastReadAt };
+    const lastReadAt = updated?.lastReadAt ?? member.lastReadAt;
+    if (lastReadAt) {
+      /** 방의 다른 멤버(발신자)에게 실시간으로 알려, 보낸 메시지의 안읽음 숫자를 즉시 지워줌 */
+      this.chatGateway.emitReadUpdated(roomId, userId, lastReadAt);
+    }
+    return { lastReadAt };
   }
 
   /** 하단 탭바 배지 등에 쓰는, 내가 속한 모든 방의 안 읽은 메시지 총합 */
@@ -1042,7 +1068,10 @@ export class ChatService {
     return result;
   }
 
-  private toMessagePayload(message: Message): MessagePayload {
+  private toMessagePayload(
+    message: Message,
+    peerLastReadAt?: Date | null,
+  ): MessagePayload {
     const fileName = this.pickDisplayFileName({
       fileName: message.fileName,
       content: message.content,
@@ -1060,6 +1089,9 @@ export class ChatService {
       fileMime: message.fileMime,
       fileItems: message.fileItems,
       createdAt: message.createdAt,
+      readByPeer: Boolean(
+        peerLastReadAt && message.createdAt <= peerLastReadAt,
+      ),
     };
   }
 }
