@@ -11,6 +11,7 @@ import { EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import { ChatGateway } from './chat.gateway';
 import { Announcement } from '../announcement/entities/announcement.entity';
 import { Application } from '../application/entities/application.entity';
+import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
 import { CreateAnnouncementChatRoomDto } from './dto/create-announcement-chat-room.dto';
 import { ListChatRoomsQueryDto } from './dto/list-chat-rooms-query.dto';
@@ -82,6 +83,7 @@ export class ChatService {
     @Inject(forwardRef(() => ChatGateway))
     private readonly chatGateway: ChatGateway,
     private readonly fileService: FileService,
+    private readonly noticeService: NoticeService,
   ) {}
 
   private decodeRepeatedly(value: string): string {
@@ -748,9 +750,11 @@ export class ChatService {
   }
 
   /** 채팅 탭(DM/지원 공고/내 공고)별 안읽음 배지용 합산 */
-  async getUnreadCountsByTab(
-    userId: string,
-  ): Promise<{ dm: number; appliedAnnouncement: number; myAnnouncement: number }> {
+  async getUnreadCountsByTab(userId: string): Promise<{
+    dm: number;
+    appliedAnnouncement: number;
+    myAnnouncement: number;
+  }> {
     const rows: Array<{
       kind: string;
       isApplicant: number | string;
@@ -792,7 +796,7 @@ export class ChatService {
     return { dm, appliedAnnouncement, myAnnouncement };
   }
 
-  /** 새 메시지 저장 후 발신자를 제외한 방 멤버들에게 안읽음 변경 알림 전파 */
+  /** 새 메시지 저장 후 발신자를 제외한 방 멤버들에게 안읽음 변경 알림 전파 + FCM 푸시 */
   private async notifyUnreadChanged(
     chatRoomId: string,
     senderUserId: string,
@@ -802,11 +806,45 @@ export class ChatService {
       where: { chatRoom: { id: chatRoomId } },
       relations: { user: true },
     });
-    const memberUserIds = members
-      .map((m) => m.user.userId)
-      .filter((uid) => uid !== senderUserId);
-    if (memberUserIds.length === 0) return;
+    const others = members.filter((m) => m.user.userId !== senderUserId);
+    if (others.length === 0) return;
+
+    const memberUserIds = others.map((m) => m.user.userId);
     this.chatGateway.emitUnreadChanged(chatRoomId, memberUserIds, message);
+
+    const pushRecipientIds = others
+      .filter((m) => !m.notificationsMuted)
+      .map((m) => m.user.userId);
+    if (pushRecipientIds.length > 0) {
+      void this.sendChatPush(
+        chatRoomId,
+        senderUserId,
+        pushRecipientIds,
+        message,
+      );
+    }
+  }
+
+  private async sendChatPush(
+    chatRoomId: string,
+    senderUserId: string,
+    recipientUserIds: string[],
+    message: MessagePayload,
+  ): Promise<void> {
+    const sender = await this.userRepo.findOne({
+      where: { userId: senderUserId },
+      select: ['name', 'activityName'],
+    });
+    const title = sender?.activityName ?? sender?.name ?? '회원';
+    const body = (message.content ?? '새 메시지가 도착했습니다.').slice(0, 500);
+    await this.noticeService.sendChatPush({
+      senderUserId,
+      recipientUserIds,
+      title,
+      body,
+      chatRoomId,
+      messageId: message.id,
+    });
   }
 
   private async findActiveMemberOrThrow(

@@ -95,7 +95,9 @@ export class CommentService {
     const qb = this.commentRepository
       .createQueryBuilder('comment')
       .leftJoinAndSelect('comment.user', 'user')
-      .where('comment.targetType = :targetType', { targetType: query.targetType })
+      .where('comment.targetType = :targetType', {
+        targetType: query.targetType,
+      })
       .andWhere('comment.targetId = :targetId', { targetId: query.targetId })
       .orderBy('comment.createdAt', 'ASC')
       .addOrderBy('comment.id', 'ASC')
@@ -253,7 +255,6 @@ export class CommentService {
         targetId: comment.id,
         content,
         recipientUserIds: [recipientUserId],
-        skipPush: true,
       });
     } catch (e) {
       this.logger.error('notifyCommentCreated failed', e);

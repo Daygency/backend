@@ -362,6 +362,63 @@ export class NoticeService {
   }
 
   /**
+   * 채팅 새 메시지 푸시. 메시지 자체는 `message` 테이블 + 방별 읽음 커서로
+   * 이미 관리되므로, 여기서는 `notice`/`notice_recipient`(인박스) row를 만들지 않고
+   * FCM만 보낸다. 호출자가 방 음소거(`notificationsMuted`) 등으로 이미 걸러진
+   * 수신자 목록을 넘긴다는 전제이며, 여기서는 `isPushEnabled` + 토큰 유무만 본다.
+   */
+  async sendChatPush(payload: {
+    senderUserId: string;
+    recipientUserIds: string[];
+    title: string;
+    body: string;
+    chatRoomId: string;
+    messageId: string;
+  }): Promise<void> {
+    if (!this.fcm.isEnabled()) {
+      return;
+    }
+    const recipients = [
+      ...new Set(
+        payload.recipientUserIds.filter((id) => id !== payload.senderUserId),
+      ),
+    ];
+    if (recipients.length === 0) {
+      return;
+    }
+    try {
+      const pushAllowed = await this.userRepo.find({
+        where: { userId: In(recipients), isPushEnabled: true },
+        select: ['userId'],
+      });
+      const allowedIds = pushAllowed.map((u) => u.userId);
+      if (allowedIds.length === 0) {
+        return;
+      }
+      const devices = await this.pushDeviceRepo.find({
+        where: { user: { userId: In(allowedIds) } },
+        select: { fcmToken: true },
+      });
+      const tokens = devices.map((d) => d.fcmToken);
+      const { failedTokens } = await this.fcm.sendMulticast({
+        tokens,
+        title: payload.title,
+        body: payload.body,
+        data: {
+          targetType: 'CHAT',
+          chatRoomId: payload.chatRoomId,
+          messageId: payload.messageId,
+        },
+      });
+      if (failedTokens.length > 0) {
+        await this.pushDeviceRepo.delete({ fcmToken: In(failedTokens) });
+      }
+    } catch (e) {
+      this.logger.error('sendChatPush failed', e);
+    }
+  }
+
+  /**
    * 관리자 전체 공지 발송. `isPushEnabled` 여부와 무관하게
    * 등록된 모든 FCM 토큰으로 발송한다.
    */

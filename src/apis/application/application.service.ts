@@ -295,9 +295,7 @@ export class ApplicationService {
     }
     if (dto.birth !== undefined) {
       existing.birth =
-        dto.birth === null || dto.birth === ''
-          ? null
-          : new Date(dto.birth);
+        dto.birth === null || dto.birth === '' ? null : new Date(dto.birth);
     }
     if (dto.gender !== undefined) {
       existing.gender = dto.gender ?? null;
@@ -365,9 +363,51 @@ export class ApplicationService {
         '해당 공고 작성자만 지원 상태를 변경할 수 있습니다.',
       );
     }
+    const previousStatus = existing.status;
     existing.status = dto.status;
     await this.applicationRepo.save(existing);
+    if (previousStatus !== dto.status) {
+      void this.notifyApplicationStatusChanged(
+        recruiterUserId,
+        existing,
+        dto.status,
+      );
+    }
     return this.findOneById(applicationId, recruiterUserId);
+  }
+
+  private async notifyApplicationStatusChanged(
+    recruiterUserId: string,
+    application: Application,
+    status: ApplicationStatus,
+  ): Promise<void> {
+    if (
+      status !== ApplicationStatus.ACCEPTED &&
+      status !== ApplicationStatus.REJECTED
+    ) {
+      return;
+    }
+    try {
+      const titleCut =
+        application.announcement.title.length > 80
+          ? `${application.announcement.title.slice(0, 80)}…`
+          : application.announcement.title;
+      const result = status === ApplicationStatus.ACCEPTED ? '합격' : '불합격';
+      const content =
+        `"${titleCut}" 공고 지원 결과가 발표되었습니다: ${result}`.slice(
+          0,
+          500,
+        );
+      await this.noticeService.createAndDispatchPush({
+        actorUserId: recruiterUserId,
+        targetType: NoticeTargetType.APPLICATION,
+        targetId: application.postId,
+        content,
+        recipientUserIds: [application.userId],
+      });
+    } catch (e) {
+      this.logger.error('notifyApplicationStatusChanged failed', e);
+    }
   }
 
   /**
@@ -455,13 +495,11 @@ export class ApplicationService {
       birth:
         dto.birth !== undefined
           ? dto.birth
-          : (existing.birth != null
-              ? existing.birth.toISOString()
-              : undefined),
+          : existing.birth != null
+            ? existing.birth.toISOString()
+            : undefined,
       gender:
-        dto.gender !== undefined
-          ? dto.gender
-          : (existing.gender ?? undefined),
+        dto.gender !== undefined ? dto.gender : (existing.gender ?? undefined),
       major:
         dto.major !== undefined ? dto.major : (existing.major ?? undefined),
       majorDetail:
@@ -493,9 +531,7 @@ export class ApplicationService {
           ? dto.education
           : (existing.education ?? undefined),
       career:
-        dto.career !== undefined
-          ? dto.career
-          : (existing.career ?? undefined),
+        dto.career !== undefined ? dto.career : (existing.career ?? undefined),
       award:
         dto.award !== undefined ? dto.award : (existing.award ?? undefined),
       certificate:
@@ -521,16 +557,10 @@ export class ApplicationService {
       missing('이름', !!dto.name?.trim());
     }
     if (config.includeBirth) {
-      missing(
-        '생년월일',
-        dto.birth != null && String(dto.birth).trim() !== '',
-      );
+      missing('생년월일', dto.birth != null && String(dto.birth).trim() !== '');
     }
     if (config.includeGender) {
-      missing(
-        '성별',
-        dto.gender !== undefined && dto.gender !== null,
-      );
+      missing('성별', dto.gender !== undefined && dto.gender !== null);
     }
     if (config.includeMajor) {
       missing('전공', !!dto.major?.trim());

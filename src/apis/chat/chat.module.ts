@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { FileModule } from '../file/file.module';
+import { NoticeModule } from '../notice/notice.module';
 import { Announcement } from '../announcement/entities/announcement.entity';
 import { Application } from '../application/entities/application.entity';
 import { User } from '../user/entities/user.entity';
@@ -24,6 +25,7 @@ import { ChatGateway } from './chat.gateway';
     ]),
     AuthModule,
     FileModule,
+    NoticeModule,
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway],
