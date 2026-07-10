@@ -29,6 +29,14 @@ const PUSH_TITLE_BY_TARGET: Record<NoticeTargetType, string> = {
   [NoticeTargetType.ANNOUNCEMENT]: '공지',
 };
 
+/** 케이스별 푸시 on/off 토글이 적용되는 targetType → User 컬럼 매핑 */
+const CATEGORY_PUSH_COLUMN: Partial<Record<NoticeTargetType, string>> = {
+  [NoticeTargetType.FOLLOW]: 'pushEnabledFollow',
+  [NoticeTargetType.APPLICATION]: 'pushEnabledApplication',
+  [NoticeTargetType.REVIEW]: 'pushEnabledReview',
+  [NoticeTargetType.INQUIRY]: 'pushEnabledInquiry',
+};
+
 export interface CreateNoticePayload {
   actorUserId: string;
   targetType: NoticeTargetType;
@@ -126,6 +134,60 @@ export class NoticeService {
 
   async setPushEnabled(userId: string, isPushEnabled: boolean): Promise<void> {
     await this.userRepo.update({ userId }, { isPushEnabled });
+  }
+
+  /** 케이스별(팔로우/지원/후기/문의) 푸시 수신 여부 조회 */
+  async getPushCategoryPreferences(userId: string): Promise<{
+    follow: boolean;
+    application: boolean;
+    review: boolean;
+    inquiry: boolean;
+  }> {
+    const user = await this.userRepo.findOne({
+      where: { userId },
+      select: {
+        pushEnabledFollow: true,
+        pushEnabledApplication: true,
+        pushEnabledReview: true,
+        pushEnabledInquiry: true,
+      },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return {
+      follow: user.pushEnabledFollow,
+      application: user.pushEnabledApplication,
+      review: user.pushEnabledReview,
+      inquiry: user.pushEnabledInquiry,
+    };
+  }
+
+  async setPushCategoryPreferences(
+    userId: string,
+    dto: {
+      follow?: boolean;
+      application?: boolean;
+      review?: boolean;
+      inquiry?: boolean;
+    },
+  ): Promise<void> {
+    const update: Partial<
+      Pick<
+        User,
+        | 'pushEnabledFollow'
+        | 'pushEnabledApplication'
+        | 'pushEnabledReview'
+        | 'pushEnabledInquiry'
+      >
+    > = {};
+    if (dto.follow !== undefined) update.pushEnabledFollow = dto.follow;
+    if (dto.application !== undefined)
+      update.pushEnabledApplication = dto.application;
+    if (dto.review !== undefined) update.pushEnabledReview = dto.review;
+    if (dto.inquiry !== undefined) update.pushEnabledInquiry = dto.inquiry;
+    if (Object.keys(update).length === 0) return;
+    await this.userRepo.update({ userId }, update);
   }
 
   async listInbox(userId: string, query: ListNotificationsQueryDto) {
@@ -319,10 +381,12 @@ export class NoticeService {
     }
 
     try {
+      const categoryColumn = CATEGORY_PUSH_COLUMN[payload.targetType];
       const pushAllowed = await this.userRepo.find({
         where: {
           userId: In(recipients),
           isPushEnabled: true,
+          ...(categoryColumn ? { [categoryColumn]: true } : {}),
         },
         select: ['userId'],
       });

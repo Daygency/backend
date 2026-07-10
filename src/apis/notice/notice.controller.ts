@@ -20,6 +20,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { RegisterPushDeviceDto } from './dto/register-push-device.dto';
 import { SetPushEnabledDto } from './dto/set-push-enabled.dto';
+import { SetPushCategoryPreferencesDto } from './dto/set-push-category-preferences.dto';
 import { UnregisterPushDeviceDto } from './dto/unregister-push-device.dto';
 import { NoticeService } from './notice.service';
 
@@ -80,6 +81,26 @@ export class NoticeController {
   ) {
     await this.noticeService.setPushEnabled(req.user.id, dto.isPushEnabled);
     return { isPushEnabled: dto.isPushEnabled };
+  }
+
+  @Get('push-category-preferences')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '케이스별(팔로우/지원/후기/문의) 푸시 수신 여부 조회' })
+  getPushCategoryPreferences(@Request() req: { user: { id: string } }) {
+    return this.noticeService.getPushCategoryPreferences(req.user.id);
+  }
+
+  @Patch('push-category-preferences')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '케이스별(팔로우/지원/후기/문의) 푸시 수신 여부 설정' })
+  async setPushCategoryPreferences(
+    @Request() req: { user: { id: string } },
+    @Body() dto: SetPushCategoryPreferencesDto,
+  ) {
+    await this.noticeService.setPushCategoryPreferences(req.user.id, dto);
+    return this.noticeService.getPushCategoryPreferences(req.user.id);
   }
 
   @Get()

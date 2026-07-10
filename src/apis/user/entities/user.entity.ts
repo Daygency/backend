@@ -107,6 +107,19 @@ export class User {
   @Column()
   isPushEnabled: boolean;
 
+  /** 케이스별 푸시 알림 on/off. isPushEnabled(전체 등록) 이 true 일 때만 적용 */
+  @Column({ name: 'push_enabled_follow', default: true })
+  pushEnabledFollow: boolean;
+
+  @Column({ name: 'push_enabled_application', default: true })
+  pushEnabledApplication: boolean;
+
+  @Column({ name: 'push_enabled_review', default: true })
+  pushEnabledReview: boolean;
+
+  @Column({ name: 'push_enabled_inquiry', default: true })
+  pushEnabledInquiry: boolean;
+
   @Column({ name: 'is_portfolio_private', default: false })
   isPortfolioPrivate: boolean;
 
