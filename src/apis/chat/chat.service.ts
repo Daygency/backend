@@ -607,6 +607,7 @@ export class ChatService {
     total: number;
     page: number;
     limit: number;
+    peerUserId: string | null;
   }> {
     await this.findRoomForUserOrThrow(chatRoomId, userId);
     const page = query.page ?? 1;
@@ -622,12 +623,14 @@ export class ChatService {
     });
 
     const peerLastReadAt = await this.getPeerLastReadAt(chatRoomId, userId);
+    const peerUserId = await this.getPeerUserId(chatRoomId, userId);
 
     return {
       items: rows.map((m) => this.toMessagePayload(m, peerLastReadAt)),
       total,
       page,
       limit,
+      peerUserId,
     };
   }
 
@@ -646,6 +649,26 @@ export class ChatService {
     const value = rows[0]?.lastReadAt;
     if (!value) return null;
     return value instanceof Date ? value : new Date(value);
+  }
+
+  /**
+   * 1:1 UI: 메시지 유무와 무관하게 방 멤버십으로 상대를 확정한다.
+   * (프론트에서 메시지 발신자로 상대를 추측하면, 상대가 아직 한 번도
+   * 답장하지 않은 방에서 내가 나로 잘못 추론되는 문제가 있었다.)
+   */
+  private async getPeerUserId(
+    roomId: string,
+    userId: string,
+  ): Promise<string | null> {
+    const rows: Array<{ userId: string }> =
+      await this.chatRoomMemberRepo.manager.query(
+        `SELECT user_id AS userId
+         FROM chat_room_member
+         WHERE chat_room_id = ? AND user_id != ? AND deleted_at IS NULL
+         LIMIT 1`,
+        [roomId, userId],
+      );
+    return rows[0]?.userId ?? null;
   }
 
   async getMemberSettings(
