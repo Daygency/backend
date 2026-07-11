@@ -21,4 +21,14 @@ export class SetPushCategoryPreferencesDto {
   @IsOptional()
   @IsBoolean()
   inquiry?: boolean;
+
+  @ApiPropertyOptional({ description: '댓글/대댓글 알림 수신 여부' })
+  @IsOptional()
+  @IsBoolean()
+  comment?: boolean;
+
+  @ApiPropertyOptional({ description: '좋아요 알림 수신 여부' })
+  @IsOptional()
+  @IsBoolean()
+  like?: boolean;
 }

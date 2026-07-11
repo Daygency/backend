@@ -35,6 +35,8 @@ const CATEGORY_PUSH_COLUMN: Partial<Record<NoticeTargetType, string>> = {
   [NoticeTargetType.APPLICATION]: 'pushEnabledApplication',
   [NoticeTargetType.REVIEW]: 'pushEnabledReview',
   [NoticeTargetType.INQUIRY]: 'pushEnabledInquiry',
+  [NoticeTargetType.COMMENT]: 'pushEnabledComment',
+  [NoticeTargetType.LIKE]: 'pushEnabledLike',
 };
 
 export interface CreateNoticePayload {
@@ -136,12 +138,14 @@ export class NoticeService {
     await this.userRepo.update({ userId }, { isPushEnabled });
   }
 
-  /** 케이스별(팔로우/지원/후기/문의) 푸시 수신 여부 조회 */
+  /** 케이스별(팔로우/지원/후기/문의/댓글/좋아요) 푸시 수신 여부 조회 */
   async getPushCategoryPreferences(userId: string): Promise<{
     follow: boolean;
     application: boolean;
     review: boolean;
     inquiry: boolean;
+    comment: boolean;
+    like: boolean;
   }> {
     const user = await this.userRepo.findOne({
       where: { userId },
@@ -150,6 +154,8 @@ export class NoticeService {
         pushEnabledApplication: true,
         pushEnabledReview: true,
         pushEnabledInquiry: true,
+        pushEnabledComment: true,
+        pushEnabledLike: true,
       },
     });
     if (!user) {
@@ -160,6 +166,8 @@ export class NoticeService {
       application: user.pushEnabledApplication,
       review: user.pushEnabledReview,
       inquiry: user.pushEnabledInquiry,
+      comment: user.pushEnabledComment,
+      like: user.pushEnabledLike,
     };
   }
 
@@ -170,6 +178,8 @@ export class NoticeService {
       application?: boolean;
       review?: boolean;
       inquiry?: boolean;
+      comment?: boolean;
+      like?: boolean;
     },
   ): Promise<void> {
     const update: Partial<
@@ -179,6 +189,8 @@ export class NoticeService {
         | 'pushEnabledApplication'
         | 'pushEnabledReview'
         | 'pushEnabledInquiry'
+        | 'pushEnabledComment'
+        | 'pushEnabledLike'
       >
     > = {};
     if (dto.follow !== undefined) update.pushEnabledFollow = dto.follow;
@@ -186,6 +198,8 @@ export class NoticeService {
       update.pushEnabledApplication = dto.application;
     if (dto.review !== undefined) update.pushEnabledReview = dto.review;
     if (dto.inquiry !== undefined) update.pushEnabledInquiry = dto.inquiry;
+    if (dto.comment !== undefined) update.pushEnabledComment = dto.comment;
+    if (dto.like !== undefined) update.pushEnabledLike = dto.like;
     if (Object.keys(update).length === 0) return;
     await this.userRepo.update({ userId }, update);
   }

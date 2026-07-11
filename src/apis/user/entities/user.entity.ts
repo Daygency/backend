@@ -120,6 +120,12 @@ export class User {
   @Column({ name: 'push_enabled_inquiry', default: true })
   pushEnabledInquiry: boolean;
 
+  @Column({ name: 'push_enabled_comment', default: true })
+  pushEnabledComment: boolean;
+
+  @Column({ name: 'push_enabled_like', default: true })
+  pushEnabledLike: boolean;
+
   @Column({ name: 'is_portfolio_private', default: false })
   isPortfolioPrivate: boolean;
 

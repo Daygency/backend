@@ -333,6 +333,8 @@ export class UserService {
       pushEnabledApplication: true,
       pushEnabledReview: true,
       pushEnabledInquiry: true,
+      pushEnabledComment: true,
+      pushEnabledLike: true,
       isPortfolioPrivate: false,
       artTempo: 0,
       profileImgUrl: profile.profileImgUrl || '',
