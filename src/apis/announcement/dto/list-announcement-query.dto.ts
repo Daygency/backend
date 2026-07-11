@@ -44,7 +44,7 @@ export class ListAnnouncementQueryDto {
   @IsNumber()
   @Min(1)
   @Max(50)
-  limit?: number = 20;
+  limit?: number = 8;
 
   /** 모집 상태: OPEN(모집중), CLOSED(모집마감) */
   @ApiPropertyOptional({

@@ -205,7 +205,7 @@ export class NoticeService {
   }
 
   async listInbox(userId: string, query: ListNotificationsQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.recipientRepo
       .createQueryBuilder('nr')
       .innerJoinAndSelect('nr.notice', 'n')

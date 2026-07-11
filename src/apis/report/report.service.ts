@@ -261,7 +261,7 @@ export class ReportService {
 
   async listForAdmin(query: ListAdminReportsQueryDto) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
+    const limit = query.limit ?? 8;
     const skip = (page - 1) * limit;
 
     const [rows, total] = await this.reportRepository.findAndCount({

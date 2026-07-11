@@ -154,7 +154,7 @@ export class FollowService {
     mode: 'following' | 'followers',
   ): Promise<FollowListResponse> {
     await this.ensureUserExists(ownerUserId);
-    const limit = Math.min(query.limit ?? 20, 50);
+    const limit = Math.min(query.limit ?? 8, 50);
     const qb = this.followRepo.createQueryBuilder('f').take(limit + 1);
 
     if (mode === 'following') {

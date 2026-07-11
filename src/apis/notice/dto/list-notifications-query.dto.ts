@@ -11,11 +11,11 @@ export class ListNotificationsQueryDto {
   @IsString()
   cursor?: string;
 
-  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
+  @ApiPropertyOptional({ default: 8, minimum: 1, maximum: 50 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(50)
-  limit?: number = 20;
+  limit?: number = 8;
 }

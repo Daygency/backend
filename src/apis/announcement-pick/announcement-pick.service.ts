@@ -90,7 +90,7 @@ export class AnnouncementPickService {
   }
 
   async findActivePublic(query: ListAnnouncementPickQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.pickRepository
       .createQueryBuilder('pick')
       .orderBy('pick.sortOrder', 'DESC')
@@ -133,7 +133,7 @@ export class AnnouncementPickService {
   }
 
   async findAllAdmin(query: ListAnnouncementPickQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.pickRepository
       .createQueryBuilder('pick')
       .orderBy('pick.sortOrder', 'DESC')

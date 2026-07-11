@@ -135,7 +135,7 @@ export class NewsService {
    * 공연소식 목록 조회 (무한스크롤)
    */
   async findList(query: ListNewsQueryDto): Promise<NewsListResponse> {
-    const { cursor, limit = 20, q, sort = 'created' } = query;
+    const { cursor, limit = 8, q, sort = 'created' } = query;
     const likeQ = q ? toLikePattern(q) : null;
     const now = new Date();
 

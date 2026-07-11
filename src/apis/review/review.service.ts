@@ -279,7 +279,7 @@ export class ReviewService {
     userId: string,
     query: ListReviewsQueryDto,
   ) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.reviewRepo
       .createQueryBuilder('r')
       .innerJoinAndSelect('r.announcement', 'a')

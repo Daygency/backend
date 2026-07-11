@@ -91,7 +91,7 @@ export class CommentService {
   async findAll(query: ListCommentQueryDto, userId?: string) {
     await this.validateTarget(query.targetType, query.targetId);
 
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.commentRepository
       .createQueryBuilder('comment')
       .leftJoinAndSelect('comment.user', 'user')

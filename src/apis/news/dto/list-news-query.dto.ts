@@ -27,7 +27,7 @@ export class ListNewsQueryDto {
   @IsNumber()
   @Min(1)
   @Max(50)
-  limit?: number = 20;
+  limit?: number = 8;
 
   @ApiPropertyOptional({
     description: '제목·장소 키워드 검색 (부분 일치)',

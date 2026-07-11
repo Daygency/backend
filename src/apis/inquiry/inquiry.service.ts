@@ -109,7 +109,7 @@ export class InquiryService {
     userId: string,
     query: ListInquiriesQueryDto,
   ): Promise<InquiryListResponse> {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.inquiryRepository
       .createQueryBuilder('inquiry')
       .leftJoinAndSelect('inquiry.user', 'user')
@@ -154,7 +154,7 @@ export class InquiryService {
   async listForAdmin(
     query: ListAdminInquiriesQueryDto,
   ): Promise<InquiryListResponse> {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.inquiryRepository
       .createQueryBuilder('inquiry')
       .leftJoinAndSelect('inquiry.user', 'user')

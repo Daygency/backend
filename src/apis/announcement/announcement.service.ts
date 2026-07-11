@@ -509,7 +509,7 @@ export class AnnouncementService {
     this.applyAnnouncementListFilters(qb, query);
 
     const rows = await qb.getMany();
-    return this.buildAnnouncementListResponse(rows, query.limit ?? 20, query.sort);
+    return this.buildAnnouncementListResponse(rows, query.limit ?? 8, query.sort);
   }
 
   /**
@@ -529,7 +529,7 @@ export class AnnouncementService {
     this.applyAnnouncementListFilters(qb, query);
 
     const rows = await qb.getMany();
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const hasMore = rows.length > limit;
     const slice = hasMore ? rows.slice(0, limit) : rows;
     const postIds = slice.map((row) => row.postId);
@@ -572,7 +572,7 @@ export class AnnouncementService {
     const rows = await qb.getMany();
     return this.buildAnnouncementListResponse(
       rows,
-      query.limit ?? 20,
+      query.limit ?? 8,
       query.sort,
     );
   }
@@ -583,7 +583,7 @@ export class AnnouncementService {
   ): void {
     const {
       cursor,
-      limit = 20,
+      limit = 8,
       status,
       categoryId,
       majorIds: majorIdsStr,

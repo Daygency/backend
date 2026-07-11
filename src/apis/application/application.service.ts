@@ -454,7 +454,7 @@ export class ApplicationService {
       throw new ForbiddenException('공고 작성자만 지원 목록을 볼 수 있습니다.');
     }
 
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.applicationRepo
       .createQueryBuilder('application')
       .leftJoinAndSelect('application.user', 'user')

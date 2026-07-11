@@ -413,7 +413,7 @@ export class UserService {
   }
 
   async listBannedForAdmin(query: ListBannedUsersQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.userRepository
       .createQueryBuilder('user')
       .select([
@@ -1056,7 +1056,7 @@ export class UserService {
   }
 
   async getMyWrittenPosts(userId: string, query: ListMyWrittenPostsQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
 
     const communityQb = this.communityRepository
       .createQueryBuilder('community')
@@ -1213,7 +1213,7 @@ export class UserService {
   }
 
   async getMyNewsPosts(userId: string, query: ListMyScrapQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.newsRepository
       .createQueryBuilder('news')
       .leftJoinAndSelect('news.file', 'file')
@@ -1266,7 +1266,7 @@ export class UserService {
   }
 
   async getMyCommentPosts(userId: string, query: ListMyScrapQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.commentRepository
       .createQueryBuilder('comment')
       .where('comment.user_id = :userId', { userId })
@@ -1341,7 +1341,7 @@ export class UserService {
   }
 
   async getMyAnnouncementPosts(userId: string, query: ListMyScrapQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.announcementRepository
       .createQueryBuilder('announcement')
       .leftJoinAndSelect('announcement.category', 'category')
@@ -1388,7 +1388,7 @@ export class UserService {
     userId: string,
     query: ListMyScrapQueryDto,
   ) {
-    const { cursor, limit = 20 } = query;
+    const { cursor, limit = 8 } = query;
 
     const qb = this.scrapRepository
       .createQueryBuilder('scrap')
@@ -1466,7 +1466,7 @@ export class UserService {
     userId: string,
     query: ListMyScrapQueryDto,
   ) {
-    const { cursor, limit = 20 } = query;
+    const { cursor, limit = 8 } = query;
 
     const qb = this.scrapRepository
       .createQueryBuilder('scrap')
@@ -1543,7 +1543,7 @@ export class UserService {
   }
 
   async getMyScrappedNewsPosts(userId: string, query: ListMyScrapQueryDto) {
-    const { cursor, limit = 20 } = query;
+    const { cursor, limit = 8 } = query;
 
     const qb = this.scrapRepository
       .createQueryBuilder('scrap')
@@ -1725,7 +1725,7 @@ export class UserService {
   }
 
   async getMyLikedCommunityPosts(userId: string, query: ListMyScrapQueryDto) {
-    const { cursor, limit = 20 } = query;
+    const { cursor, limit = 8 } = query;
 
     const qb = this.likeRepository
       .createQueryBuilder('like')
@@ -1798,7 +1798,7 @@ export class UserService {
   }
 
   async getMyLikedNewsPosts(userId: string, query: ListMyScrapQueryDto) {
-    const { cursor, limit = 20 } = query;
+    const { cursor, limit = 8 } = query;
 
     const qb = this.likeRepository
       .createQueryBuilder('like')
@@ -1864,7 +1864,7 @@ export class UserService {
   }
 
   async getMyLikedCommentPosts(userId: string, query: ListMyScrapQueryDto) {
-    const { cursor, limit = 20 } = query;
+    const { cursor, limit = 8 } = query;
 
     const qb = this.likeRepository
       .createQueryBuilder('like')
@@ -2268,7 +2268,7 @@ export class UserService {
     nextCursor: string | null;
     hasMore: boolean;
   }> {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const likeQ = query.q ? toLikePattern(query.q) : null;
     const qb = this.userRepository
       .createQueryBuilder('user')

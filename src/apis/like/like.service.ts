@@ -169,7 +169,7 @@ export class LikeService {
   async findAll(query: ListLikeQueryDto) {
     await this.validateTarget(query.likeType, query.targetId);
 
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.likeRepository
       .createQueryBuilder('like')
       .leftJoinAndSelect('like.user', 'user')

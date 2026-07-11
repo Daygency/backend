@@ -72,7 +72,7 @@ export class ScrapService {
   async findAll(query: ListScrapQueryDto) {
     await this.validateTarget(query.targetType, query.targetId);
 
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.scrapRepository
       .createQueryBuilder('scrap')
       .leftJoinAndSelect('scrap.user', 'user')

@@ -112,7 +112,7 @@ export class CommunityService {
   }
 
   async findAll(query: ListCommunityQueryDto) {
-    const { categoryId, q, cursor, limit = 20 } = query;
+    const { categoryId, q, cursor, limit = 8 } = query;
     const likeQ = q ? toLikePattern(q) : null;
     const qb = this.communityRepository
       .createQueryBuilder('community')

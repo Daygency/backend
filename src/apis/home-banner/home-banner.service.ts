@@ -113,7 +113,7 @@ export class HomeBannerService {
   }
 
   async findActivePublic(query: ListHomeBannerQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const rows = await this.buildBannerCursorQuery(query.cursor)
       .take(limit + 1)
       .getMany();
@@ -142,7 +142,7 @@ export class HomeBannerService {
   }
 
   async findAllPublic(query: ListHomeBannerQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const rows = await this.buildBannerCursorQuery(query.cursor)
       .take(limit + 1)
       .getMany();
@@ -171,7 +171,7 @@ export class HomeBannerService {
   }
 
   async findFeedPublic(query: ListHomeBannersQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.bannerRepository
       .createQueryBuilder('banner')
       .orderBy('banner.sortOrder', 'DESC')
@@ -233,7 +233,7 @@ export class HomeBannerService {
   }
 
   async findAllAdmin(query: ListHomeBannerQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const rows = await this.buildBannerCursorQuery(query.cursor)
       .take(limit + 1)
       .getMany();

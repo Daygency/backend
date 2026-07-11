@@ -22,5 +22,5 @@ export class ListMyScrapQueryDto {
   @IsNumber()
   @Min(1)
   @Max(50)
-  limit?: number = 20;
+  limit?: number = 8;
 }

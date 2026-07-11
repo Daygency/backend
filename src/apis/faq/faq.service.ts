@@ -39,7 +39,7 @@ export class FaqService {
   ) {}
 
   async findActivePublic(query: ListFaqQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.faqRepository
       .createQueryBuilder('faq')
       .where('faq.isActive = :isActive', { isActive: true })
@@ -79,7 +79,7 @@ export class FaqService {
   }
 
   async findAllAdmin(query: ListFaqQueryDto) {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.faqRepository
       .createQueryBuilder('faq')
       .orderBy('faq.sortOrder', 'DESC')

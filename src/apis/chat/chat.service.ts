@@ -611,7 +611,7 @@ export class ChatService {
   }> {
     await this.findRoomForUserOrThrow(chatRoomId, userId);
     const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
+    const limit = query.limit ?? 8;
     const skip = (page - 1) * limit;
 
     const [rows, total] = await this.messageRepo.findAndCount({
@@ -891,7 +891,7 @@ export class ChatService {
     userId: string,
     query: ListChatRoomsQueryDto,
   ): Promise<ChatRoomListResponse> {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.chatRoomRepo
       .createQueryBuilder('room')
       .innerJoin('room.members', 'mb')
@@ -914,7 +914,7 @@ export class ChatService {
     userId: string,
     query: ListChatRoomsQueryDto,
   ): Promise<ChatRoomListResponse> {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.chatRoomRepo
       .createQueryBuilder('room')
       .leftJoinAndSelect('room.announcement', 'announcement')
@@ -936,7 +936,7 @@ export class ChatService {
     userId: string,
     query: ListChatRoomsQueryDto,
   ): Promise<ChatRoomListResponse> {
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.chatRoomRepo
       .createQueryBuilder('room')
       .leftJoinAndSelect('room.announcement', 'announcement')
@@ -969,7 +969,7 @@ export class ChatService {
     if (post.userId !== recruiterUserId) {
       throw new ForbiddenException('본인이 작성한 공고만 조회할 수 있습니다.');
     }
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const qb = this.chatRoomRepo
       .createQueryBuilder('room')
       .leftJoinAndSelect('room.announcement', 'announcement')
