@@ -114,7 +114,7 @@ export class ReviewService {
     }
     if (role === 'none') {
       throw new ForbiddenException(
-        '이 공고의 모집자 또는 합격한 지원자만 후기를 작성할 수 있습니다.',
+        '이 공고의 모집자 또는 수락된 지원자만 후기를 작성할 수 있습니다.',
       );
     }
 

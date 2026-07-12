@@ -18,12 +18,12 @@ export class ListNewsQueryDto {
 
   @ApiPropertyOptional({
     description: '한 번에 가져올 개수',
-    default: 20,
+    default: 8,
     minimum: 1,
     maximum: 50,
   })
   @IsOptional()
-  @Transform(({ value }) => (value ? parseInt(value, 10) : 20))
+  @Transform(({ value }) => (value ? parseInt(value, 10) : 8))
   @IsNumber()
   @Min(1)
   @Max(50)

@@ -298,12 +298,9 @@ export class UserService {
   async createBySocial(
     provider: SocialProvider,
     profile: SocialProfile,
-    options: { name?: string; activityName: string; role?: UserRole },
+    options: { name: string; activityName: string; role?: UserRole },
   ): Promise<User> {
-    const trimmedName = options.name?.trim();
-    const name = trimmedName
-      ? await this.resolveName(trimmedName, provider, profile.socialId)
-      : null;
+    const name = this.resolveName(options.name);
     const activityName = options.activityName.trim();
     const email =
       profile.email || `${provider}_${profile.socialId}@social.placeholder`;
@@ -359,42 +356,13 @@ export class UserService {
     return UserRole.USER;
   }
 
-  private async resolveName(
-    base: string,
-    provider: string,
-    socialId: string,
-  ): Promise<string> {
-    const sanitized = base.replace(/[^a-zA-Z0-9가-힣_]/g, '_').slice(0, 20);
-    if (!sanitized) {
-      throw new BadRequestException('유효한 이름을 입력해 주세요.');
+  /** 표시용 이름 — 다른 사용자와 중복 허용, 특수문자만 금지 */
+  private resolveName(base: string): string {
+    const trimmed = base.trim();
+    if (!/^[a-zA-Z0-9가-힣]+$/.test(trimmed)) {
+      throw new BadRequestException('이름에는 특수문자를 사용할 수 없습니다.');
     }
-    const fallback = `u_${provider}_${socialId}`.slice(0, 20);
-    return this.pickAvailableName(sanitized, fallback);
-  }
-
-  /** 표시용 이름 — 다른 활성 계정과 겹치면 숫자 접미사로 자동 조정 */
-  private async pickAvailableName(
-    preferred: string,
-    fallback: string,
-  ): Promise<string> {
-    const maxLen = 20;
-
-    const isTaken = async (nick: string) =>
-      Boolean(await this.userRepository.findOne({ where: { name: nick } }));
-
-    if (!(await isTaken(preferred))) {
-      return preferred;
-    }
-
-    for (let i = 2; i <= 99; i++) {
-      const suffix = `_${i}`;
-      const candidate = `${preferred.slice(0, maxLen - suffix.length)}${suffix}`;
-      if (!(await isTaken(candidate))) {
-        return candidate;
-      }
-    }
-
-    return fallback;
+    return trimmed.slice(0, 20);
   }
 
   create(createUserDto: CreateUserDto) {

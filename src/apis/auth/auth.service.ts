@@ -671,6 +671,10 @@ export class AuthService {
       }
     }
 
+    if (!options?.name?.trim()) {
+      throw new BadRequestException('이름을 입력해주세요.');
+    }
+
     if (!options?.activityName?.trim()) {
       throw new BadRequestException('활동아이디(activityName)를 입력해주세요.');
     }

@@ -392,7 +392,7 @@ export class ApplicationService {
         application.announcement.title.length > 80
           ? `${application.announcement.title.slice(0, 80)}…`
           : application.announcement.title;
-      const result = status === ApplicationStatus.ACCEPTED ? '합격' : '불합격';
+      const result = status === ApplicationStatus.ACCEPTED ? '수락' : '거절';
       const content =
         `"${titleCut}" 공고 지원 결과가 발표되었습니다: ${result}`.slice(
           0,

@@ -14,6 +14,7 @@ import { Community } from './entities/community.entity';
 import { CommunityCategory } from './entities/community-category.entity';
 import { Like, LikeType } from '../like/entities/like.entity';
 import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
+import { Scrap, ScrapTargetType } from '../scrap/entities/scrap.entity';
 import { File, FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
 import { CommunityFileService } from './community-file.service';
@@ -49,6 +50,8 @@ export class CommunityService {
     private readonly likeRepository: Repository<Like>,
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
+    @InjectRepository(Scrap)
+    private readonly scrapRepository: Repository<Scrap>,
     private readonly fileService: FileService,
     private readonly communityFileService: CommunityFileService,
   ) {}
@@ -145,7 +148,7 @@ export class CommunityService {
     const communities = hasMore ? rows.slice(0, limit) : rows;
 
     const communityIds = communities.map((community) => community.communityId);
-    const [likeCounts, commentCounts] = await Promise.all([
+    const [likeCounts, commentCounts, scrapCounts] = await Promise.all([
       communityIds.length
         ? this.likeRepository
             .createQueryBuilder('l')
@@ -168,6 +171,18 @@ export class CommunityService {
             .groupBy('c.targetId')
             .getRawMany<{ targetId: string; count: string }>()
         : Promise.resolve([]),
+      communityIds.length
+        ? this.scrapRepository
+            .createQueryBuilder('s')
+            .select('s.targetId', 'targetId')
+            .addSelect('COUNT(*)', 'count')
+            .where('s.targetType = :targetType', {
+              targetType: ScrapTargetType.COMMUNITY,
+            })
+            .andWhere('s.targetId IN (:...communityIds)', { communityIds })
+            .groupBy('s.targetId')
+            .getRawMany<{ targetId: string; count: string }>()
+        : Promise.resolve([]),
     ]);
 
     const likeCountMap = new Map(
@@ -175,6 +190,9 @@ export class CommunityService {
     );
     const commentCountMap = new Map(
       commentCounts.map((row) => [row.targetId, Number(row.count)]),
+    );
+    const scrapCountMap = new Map(
+      scrapCounts.map((row) => [row.targetId, Number(row.count)]),
     );
 
     const thumbMap =
@@ -187,6 +205,7 @@ export class CommunityService {
       ...community,
       likeCount: likeCountMap.get(community.communityId) ?? 0,
       commentCount: commentCountMap.get(community.communityId) ?? 0,
+      scrapCount: scrapCountMap.get(community.communityId) ?? 0,
       /** `file.type`+`target_id` 첨부 중 `order` 최소 1장, 없으면 기존 `file_id` 대표 이미지 */
       thumbnailUrl:
         thumbMap.get(community.communityId)?.imgUrl ??
