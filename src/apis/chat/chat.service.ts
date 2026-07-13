@@ -357,8 +357,8 @@ export class ChatService {
   }
 
   /**
-   * 지원서 제출 직후: 공고–지원자 1:1 채팅방을 만들고 첫 메시지를 남깁니다.
-   * 방이 이미 있으면(동시 요청 등) 메시지는 보내지 않습니다.
+   * 지원서 제출 직후: 공고–지원자 1:1 채팅방을 만듭니다.
+   * 자동 메시지는 보내지 않으며, 방이 이미 있으면(동시 요청 등) 아무 일도 하지 않습니다.
    */
   async ensureAnnouncementRoomAfterApply(
     applicantUserId: string,
@@ -419,13 +419,7 @@ export class ChatService {
 
     if (isNewRoom) {
       await this.addMembers(null, room.id, [post.userId, applicantUserId]);
-    } else {
-      return;
     }
-
-    const title = post.title?.trim() ? post.title.trim() : '공고';
-    const msg = `[${title}] 공고에 신청하였습니다.`;
-    await this.createMessage(room.id, applicantUserId, msg);
   }
 
   async findRoomForUserOrThrow(
