@@ -30,6 +30,7 @@ import { InquiryModule } from './apis/inquiry/inquiry.module';
 import { KakaoModule } from './apis/kakao/kakao.module';
 import { AnnouncementPickModule } from './apis/announcement-pick/announcement-pick.module';
 import { FaqModule } from './apis/faq/faq.module';
+import { NaverMapModule } from './apis/naver-map/naver-map.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { FaqModule } from './apis/faq/faq.module';
     KakaoModule,
     AnnouncementPickModule,
     FaqModule,
+    NaverMapModule,
   ],
   providers: [DatabaseSeedService],
 })
