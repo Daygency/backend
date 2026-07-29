@@ -174,6 +174,33 @@ export class FileService {
     return out;
   }
 
+  /**
+   * 목록용: 여러 `target_id`의 첨부 파일 전체(`order` 오름차순)를 `target_id`별로 그룹핑.
+   * 목록 카드에서 대표 이미지 1장뿐 아니라 여러 장 첨부를 그리드로 보여줄 때 사용.
+   */
+  async getFilesGroupedByTargetIds(
+    targetType: FileTargetType,
+    targetIds: string[],
+  ): Promise<Map<string, File[]>> {
+    if (targetIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.fileRepository.find({
+      where: { targetType, targetId: In(targetIds) },
+      order: { sortOrder: 'ASC', createdAt: 'ASC' },
+    });
+    const out = new Map<string, File[]>();
+    for (const row of rows) {
+      if (!row.targetId) {
+        continue;
+      }
+      const list = out.get(row.targetId) ?? [];
+      list.push(row);
+      out.set(row.targetId, list);
+    }
+    return out;
+  }
+
   /** 모집공고 게시 시각 — 첨부 파일(`target_id`·`file_id`) 업로드 시각만 사용 */
   async getAnnouncementPostedAtMap(
     items: Array<{ postId: string; fileId?: string | null }>,

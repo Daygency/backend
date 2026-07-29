@@ -195,23 +195,29 @@ export class CommunityService {
       scrapCounts.map((row) => [row.targetId, Number(row.count)]),
     );
 
-    const thumbMap =
-      await this.fileService.getSmallestOrderThumbnailByTargetIds(
-        FileTargetType.COMMUNITY,
-        communityIds,
-      );
+    const filesByCommunity = await this.fileService.getFilesGroupedByTargetIds(
+      FileTargetType.COMMUNITY,
+      communityIds,
+    );
 
-    const items = communities.map((community) => ({
-      ...community,
-      likeCount: likeCountMap.get(community.communityId) ?? 0,
-      commentCount: commentCountMap.get(community.communityId) ?? 0,
-      scrapCount: scrapCountMap.get(community.communityId) ?? 0,
-      /** `file.type`+`target_id` 첨부 중 `order` 최소 1장, 없으면 기존 `file_id` 대표 이미지 */
-      thumbnailUrl:
-        thumbMap.get(community.communityId)?.imgUrl ??
-        community.file?.imgUrl ??
-        null,
-    }));
+    const items = communities.map((community) => {
+      const files = filesByCommunity.get(community.communityId) ?? [];
+      const attachments = files.map((f) => ({
+        fileId: f.fileId,
+        imgUrl: f.imgUrl,
+        sortOrder: f.sortOrder,
+      }));
+      return {
+        ...community,
+        likeCount: likeCountMap.get(community.communityId) ?? 0,
+        commentCount: commentCountMap.get(community.communityId) ?? 0,
+        scrapCount: scrapCountMap.get(community.communityId) ?? 0,
+        /** `file.type`+`target_id` 첨부 중 `order` 최소 1장, 없으면 기존 `file_id` 대표 이미지 */
+        thumbnailUrl: files[0]?.imgUrl ?? community.file?.imgUrl ?? null,
+        /** 목록 카드에서 여러 장 첨부를 상세페이지와 동일한 그리드로 표시하기 위한 전체 이미지 */
+        attachments,
+      };
+    });
 
     const last = communities[communities.length - 1];
     const nextCursor =
