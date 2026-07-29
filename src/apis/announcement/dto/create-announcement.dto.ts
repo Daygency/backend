@@ -22,9 +22,8 @@ import {
   ANNOUNCEMENT_SELECTABLE_PRICE_TYPES,
 } from '../entities/announcement.entity';
 import { ApplicationConfigDto } from './application-config.dto';
-import { OptionalLocationFieldsDto } from '../../../common/dto/optional-location-fields.dto';
 
-export class CreateAnnouncementDto extends OptionalLocationFieldsDto {
+export class CreateAnnouncementDto {
   @ApiProperty({ description: '제목' })
   @IsString()
   title: string;

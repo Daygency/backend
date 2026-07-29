@@ -72,12 +72,6 @@ export class Announcement {
   @Column()
   address: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
-  latitude: number | null;
-
-  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
-  longitude: number | null;
-
   /** 기본값: 협의(`PENDING`) */
   @Column({
     name: 'price_type',

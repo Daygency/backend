@@ -85,8 +85,6 @@ export class NewsService {
       title: dto.title,
       content: dto.content,
       place: dto.place,
-      latitude: dto.latitude ?? null,
-      longitude: dto.longitude ?? null,
       ticketPrice: dto.ticketPrice ?? null,
       startedAt: new Date(dto.startedAt),
       endedAt: dto.endedAt ? new Date(dto.endedAt) : null,
@@ -337,8 +335,6 @@ export class NewsService {
     if (dto.title !== undefined) news.title = dto.title;
     if (dto.content !== undefined) news.content = dto.content;
     if (dto.place !== undefined) news.place = dto.place;
-    if (dto.latitude !== undefined) news.latitude = dto.latitude ?? null;
-    if (dto.longitude !== undefined) news.longitude = dto.longitude ?? null;
     if (dto.ticketPrice !== undefined) news.ticketPrice = dto.ticketPrice ?? null;
     if (dto.startedAt !== undefined)
       news.startedAt = new Date(dto.startedAt);

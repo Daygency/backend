@@ -408,8 +408,6 @@ export class AnnouncementService {
       scheduledAt: new Date(dto.scheduledAt),
       status: dto.status ?? AnnouncementStatus.OPEN,
       address: dto.address,
-      latitude: dto.latitude ?? null,
-      longitude: dto.longitude ?? null,
       priceType: dto.priceType ?? AnnouncementPriceType.PENDING,
       price: dto.price ?? 0,
       fileId: dto.fileId ?? null,
@@ -840,9 +838,6 @@ export class AnnouncementService {
       announcement.scheduledAt = new Date(dto.scheduledAt);
     if (dto.status !== undefined) announcement.status = dto.status;
     if (dto.address !== undefined) announcement.address = dto.address;
-    if (dto.latitude !== undefined) announcement.latitude = dto.latitude ?? null;
-    if (dto.longitude !== undefined)
-      announcement.longitude = dto.longitude ?? null;
     if (dto.priceType !== undefined) announcement.priceType = dto.priceType;
     if (dto.price !== undefined) announcement.price = dto.price;
     if (dto.fileId !== undefined) announcement.fileId = dto.fileId ?? null;

@@ -23,12 +23,6 @@ export class News {
   @Column({ length: 100 })
   place: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
-  latitude: number | null;
-
-  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
-  longitude: number | null;
-
   @Column({ name: 'ticket_price', type: 'int', nullable: true })
   ticketPrice: number | null;
 
