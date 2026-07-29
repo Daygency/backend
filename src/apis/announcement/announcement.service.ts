@@ -11,7 +11,6 @@ import { In, Repository } from 'typeorm';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import type { ApplicationConfigDto } from './dto/application-config.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
-import { resolveAnnouncementPostedAt } from './announcement-created-at.util';
 import {
   AnnouncementListSort,
   ListAnnouncementQueryDto,
@@ -156,6 +155,7 @@ function toListItem(a: Announcement) {
     isRecruiting: recruitingOpen,
     dDay: recruitingOpen ? calcDDay(a.deadlineAt) : '마감',
     deadlineAt: a.deadlineAt,
+    createdAt: a.createdAt,
     completed: effectiveCompleted(a),
     priceType: a.priceType,
     price: a.price,
@@ -413,17 +413,6 @@ export class AnnouncementService {
     }));
   }
 
-  private async attachCreatedAtToListItems<
-    T extends { postId: string; fileId?: string | null },
-  >(items: T[]): Promise<Array<T & { createdAt?: Date }>> {
-    const postedAtMap =
-      await this.fileService.getAnnouncementPostedAtMap(items);
-    return items.map((item) => ({
-      ...item,
-      createdAt: resolveAnnouncementPostedAt(postedAtMap.get(item.postId)),
-    }));
-  }
-
   /**
    * 공고 목록 조회 (무한스크롤 + 필터)
    * - cursor: 마지막 postId (없으면 첫 페이지)
@@ -466,9 +455,7 @@ export class AnnouncementService {
     const limit = query.limit ?? 8;
     const hasMore = rows.length > limit;
     const slice = hasMore ? rows.slice(0, limit) : rows;
-    const items = await this.attachCreatedAtToListItems(
-      slice.map((row) => toListItem(row)),
-    );
+    const items = slice.map((row) => toListItem(row));
 
     const nextCursor = hasMore
       ? this.buildAnnouncementListCursor(query.sort, slice[limit - 1])
@@ -609,9 +596,7 @@ export class AnnouncementService {
   ): Promise<AnnouncementListResponse> {
     const hasMore = rows.length > limit;
     const slice = hasMore ? rows.slice(0, limit) : rows;
-    const items = await this.attachCreatedAtToListItems(
-      slice.map(toListItem),
-    );
+    const items = slice.map(toListItem);
 
     const nextCursor = hasMore
       ? this.buildAnnouncementListCursor(sort, slice[limit - 1])
@@ -663,12 +648,7 @@ export class AnnouncementService {
     await this.announcementRepository.increment({ postId: id }, 'viewCount', 1);
     announcement.viewCount = Number(announcement.viewCount ?? 0) + 1;
 
-    const [postedAtMap, files] = await Promise.all([
-      this.fileService.getAnnouncementPostedAtMap([
-        { postId: id, fileId: announcement.fileId },
-      ]),
-      this.announcementFileService.listFilesForPost(id),
-    ]);
+    const files = await this.announcementFileService.listFilesForPost(id);
     const attachments = mapAnnouncementAttachments(files);
     const authorUser = announcement.user;
 
@@ -690,7 +670,6 @@ export class AnnouncementService {
       isRecruiting: recruitingOpen,
       dDay: recruitingOpen ? calcDDay(announcement.deadlineAt) : '마감',
       attachments,
-      createdAt: resolveAnnouncementPostedAt(postedAtMap.get(id)),
       completed: effectiveCompleted(announcement),
       isMine,
     };

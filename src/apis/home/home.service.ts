@@ -13,7 +13,6 @@ import { Comment, CommentTargetType } from '../comment/entities/comment.entity';
 import { FileTargetType } from '../file/entities/file.entity';
 import { FileService } from '../file/file.service';
 import { HomeBannerService } from '../home-banner/home-banner.service';
-import { resolveAnnouncementPostedAt } from '../announcement/announcement-created-at.util';
 
 function calcDDay(deadlineAt: Date | null | undefined): string {
   if (!deadlineAt) return '상시';
@@ -127,18 +126,10 @@ export class HomeService {
       commentCounts.map((row) => [row.targetId, Number(row.count)]),
     );
     const newsIds = recentNews.map((item) => item.newsId);
-    const [newsThumbMap, announcementPostedAtMap] = await Promise.all([
-      this.fileService.getSmallestOrderThumbnailByTargetIds(
-        FileTargetType.NEWS,
-        newsIds,
-      ),
-      this.fileService.getAnnouncementPostedAtMap(
-        latestAnnouncements.map((item) => ({
-          postId: item.postId,
-          fileId: item.fileId,
-        })),
-      ),
-    ]);
+    const newsThumbMap = await this.fileService.getSmallestOrderThumbnailByTargetIds(
+      FileTargetType.NEWS,
+      newsIds,
+    );
 
     const latestCommunityByCategory = latestCommunityByCategoryRows.map(
       (row) => ({
@@ -168,9 +159,7 @@ export class HomeService {
         viewCount: Number(item.viewCount ?? 0),
         address: item.address,
         deadlineAt: item.deadlineAt,
-        createdAt: resolveAnnouncementPostedAt(
-          announcementPostedAtMap.get(item.postId),
-        ),
+        createdAt: item.createdAt,
         user: item.user
           ? {
               activityName: item.user.activityName ?? null,
