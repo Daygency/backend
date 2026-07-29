@@ -247,7 +247,6 @@ export class ChatService {
         roomRepo.create({
           kind: ChatRoomKind.COFFEE,
           announcement: null,
-          application: null,
         }),
       );
       await this.addMembers(em, room.id, [userId, peerUserId]);
@@ -325,7 +324,6 @@ export class ChatService {
         roomRepo.create({
           kind: ChatRoomKind.GROUP,
           announcement: { postId } as Announcement,
-          application: null,
         }),
       );
       await this.addMembers(em, created.id, [post.userId]);
@@ -384,7 +382,7 @@ export class ChatService {
   ): Promise<ChatRoom> {
     const room = await this.chatRoomRepo.findOne({
       where: { id: roomId },
-      relations: { announcement: true, application: true },
+      relations: { announcement: true },
     });
     if (!room) {
       throw new NotFoundException('채팅방을 찾을 수 없습니다.');
@@ -1087,9 +1085,7 @@ export class ChatService {
       const otherIds = this.resolveOtherMemberIds(members, currentUserId);
       const isGroup = room.kind === ChatRoomKind.GROUP;
       const post =
-        (room.kind === ChatRoomKind.ANNOUNCEMENT ||
-          room.kind === ChatRoomKind.GROUP) &&
-        room.announcement
+        isGroup && room.announcement
           ? {
               postId: room.announcement.postId,
               title: room.announcement.title,
