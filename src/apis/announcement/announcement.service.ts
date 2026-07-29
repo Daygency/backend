@@ -47,10 +47,6 @@ function sanitizeApplicationConfig(
   };
 }
 import { NoticeService } from '../notice/notice.service';
-import {
-  ChatRoom,
-  ChatRoomKind,
-} from '../chat/entities/chat-room.entity';
 
 const MAX_ANNOUNCEMENT_IMAGES = 5;
 
@@ -258,70 +254,10 @@ export class AnnouncementService {
     private readonly categoryRepository: Repository<AnnouncementCategory>,
     @InjectRepository(Application)
     private readonly applicationRepository: Repository<Application>,
-    @InjectRepository(ChatRoom)
-    private readonly chatRoomRepository: Repository<ChatRoom>,
     private readonly announcementFileService: AnnouncementFileService,
     private readonly fileService: FileService,
     private readonly noticeService: NoticeService,
   ) {}
-
-  private async loadChatRoomCountsByPostIds(
-    postIds: string[],
-  ): Promise<Map<string, number>> {
-    if (postIds.length === 0) {
-      return new Map();
-    }
-    const rows = await this.chatRoomRepository
-      .createQueryBuilder('room')
-      .innerJoin('room.announcement', 'announcement')
-      .select('announcement.postId', 'postId')
-      .addSelect('COUNT(room.id)', 'count')
-      .where('announcement.postId IN (:...postIds)', { postIds })
-      .andWhere('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
-      .andWhere('room.deletedAt IS NULL')
-      .groupBy('announcement.postId')
-      .getRawMany<{ postId: string; count: string }>();
-    const map = new Map<string, number>();
-    for (const row of rows) {
-      map.set(row.postId, Number(row.count) || 0);
-    }
-    return map;
-  }
-
-  /** 내 공고 목록 카드용 — 공고별(지원자별 방 합산) 안 읽은 메시지 수 */
-  private async loadUnreadCountsByPostIds(
-    postIds: string[],
-    userId: string,
-  ): Promise<Map<string, number>> {
-    if (postIds.length === 0) {
-      return new Map();
-    }
-    const placeholders = postIds.map(() => '?').join(',');
-    const rows: Array<{ postId: string; cnt: number | string }> =
-      await this.chatRoomRepository.manager.query(
-        `SELECT r.post_id AS postId, COUNT(*) AS cnt
-         FROM message m
-         INNER JOIN chat_room_member mb
-           ON mb.chat_room_id = m.chat_room_id
-           AND mb.user_id = ?
-           AND mb.deleted_at IS NULL
-         INNER JOIN chat_room r
-           ON r.id = m.chat_room_id
-           AND r.deleted_at IS NULL
-           AND r.kind = 'ANNOUNCEMENT'
-         WHERE m.deleted_at IS NULL
-           AND m.user_id != ?
-           AND r.post_id IN (${placeholders})
-           AND (mb.last_read_at IS NULL OR m.created_at > mb.last_read_at)
-         GROUP BY r.post_id`,
-        [userId, userId, ...postIds],
-      );
-    const map = new Map<string, number>();
-    for (const row of rows) {
-      map.set(row.postId, Number(row.cnt) || 0);
-    }
-    return map;
-  }
 
   private async notifyAcceptedPerformersCompleted(
     actorUserId: string,
@@ -530,15 +466,8 @@ export class AnnouncementService {
     const limit = query.limit ?? 8;
     const hasMore = rows.length > limit;
     const slice = hasMore ? rows.slice(0, limit) : rows;
-    const postIds = slice.map((row) => row.postId);
-    const roomCounts = await this.loadChatRoomCountsByPostIds(postIds);
-    const unreadCounts = await this.loadUnreadCountsByPostIds(postIds, userId);
     const items = await this.attachCreatedAtToListItems(
-      slice.map((row) => ({
-        ...toListItem(row),
-        chatRoomCount: roomCounts.get(row.postId) ?? 0,
-        unreadCount: unreadCounts.get(row.postId) ?? 0,
-      })),
+      slice.map((row) => toListItem(row)),
     );
 
     const nextCursor = hasMore

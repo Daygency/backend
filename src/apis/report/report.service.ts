@@ -404,7 +404,11 @@ export class ReportService {
         relations: { announcement: true },
       });
       for (const row of rows) {
-        if (row.kind === ChatRoomKind.ANNOUNCEMENT && row.announcement?.title) {
+        if (
+          (row.kind === ChatRoomKind.ANNOUNCEMENT ||
+            row.kind === ChatRoomKind.GROUP) &&
+          row.announcement?.title
+        ) {
           result.set(
             `${ReportTargetType.CHAT}:${row.id}`,
             `모집공고 채팅 · ${this.truncateText(row.announcement.title, 60)}`,

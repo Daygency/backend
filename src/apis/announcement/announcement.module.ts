@@ -11,7 +11,6 @@ import { MajorModule } from '../major/major.module';
 import { AnnouncementFileService } from './announcement-file.service';
 import { Application } from '../application/entities/application.entity';
 import { NoticeModule } from '../notice/notice.module';
-import { ChatRoom } from '../chat/entities/chat-room.entity';
 
 @Module({
   imports: [
@@ -20,7 +19,6 @@ import { ChatRoom } from '../chat/entities/chat-room.entity';
       AnnouncementCategory,
       ApplicationConfig,
       Application,
-      ChatRoom,
     ]),
     FileModule,
     AuthModule,

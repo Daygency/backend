@@ -7,10 +7,9 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { ChatGateway } from './chat.gateway';
 import { Announcement } from '../announcement/entities/announcement.entity';
-import { Application } from '../application/entities/application.entity';
 import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
 import { CreateAnnouncementChatRoomDto } from './dto/create-announcement-chat-room.dto';
@@ -36,16 +35,21 @@ export type MessagePayload = {
   readByPeer?: boolean;
 };
 
+export type ChatRoomMemberSummary = {
+  userId: string;
+  name: string | null;
+  activityName: string;
+  profileImgUrl: string;
+};
+
 export type ChatRoomListItemDto = {
   id: string;
   kind: ChatRoomKind;
   post: { postId: string; title: string } | null;
-  peer: {
-    userId: string;
-    name: string | null;
-    activityName: string;
-    profileImgUrl: string;
-  };
+  /** COFFEE(1:1)에서만 채워짐 */
+  peer: ChatRoomMemberSummary | null;
+  /** GROUP(다대다)에서만 채워짐 — 나를 제외한 멤버 전원 */
+  members: ChatRoomMemberSummary[] | null;
   lastMessage: {
     content: string | null;
     fileUrl?: string | null;
@@ -54,7 +58,7 @@ export type ChatRoomListItemDto = {
     fileItems?: MessageFileItem[] | null;
     createdAt: Date;
   } | null;
-  /** 이 방에서 내가 아직 안 읽은 메시지 수 (그룹 확장 시에도 멤버별 커서 기반이라 동일하게 동작) */
+  /** 이 방에서 내가 아직 안 읽은 메시지 수 (멤버별 읽음 커서 기반 — 그룹도 동일하게 동작) */
   unreadCount: number;
   createdAt: Date;
 };
@@ -78,8 +82,6 @@ export class ChatService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(Announcement)
     private readonly announcementRepo: Repository<Announcement>,
-    @InjectRepository(Application)
-    private readonly applicationRepo: Repository<Application>,
     @Inject(forwardRef(() => ChatGateway))
     private readonly chatGateway: ChatGateway,
     private readonly fileService: FileService,
@@ -256,6 +258,85 @@ export class ChatService {
     });
   }
 
+  /** 방 멤버가 아니면 추가, soft-delete된 멤버면 복구 */
+  private async ensureActiveMember(
+    roomId: string,
+    userId: string,
+    em?: EntityManager,
+  ): Promise<void> {
+    const repo = em
+      ? em.getRepository(ChatRoomMember)
+      : this.chatRoomMemberRepo;
+    const existing = await repo.findOne({
+      where: { chatRoom: { id: roomId }, user: { userId } },
+      withDeleted: true,
+    });
+    if (!existing) {
+      await this.addMembers(em ?? null, roomId, [userId]);
+      return;
+    }
+    if (existing.deletedAt) {
+      await repo.recover(existing);
+    }
+  }
+
+  /**
+   * 공고의 그룹채팅방(작성자 + 수락된 지원자 전원)을 가져오거나, 없으면 만듭니다.
+   * 공고당 방은 최대 1개 — DB 유니크 제약 대신 트랜잭션 내 재조회로 동시 생성을 막습니다.
+   */
+  async getOrCreateGroupRoomForAnnouncement(postId: string): Promise<ChatRoom> {
+    const post = await this.announcementRepo.findOne({ where: { postId } });
+    if (!post) {
+      throw new NotFoundException('공고를 찾을 수 없습니다.');
+    }
+
+    const existing = await this.chatRoomRepo.findOne({
+      where: { kind: ChatRoomKind.GROUP, announcement: { postId } },
+      withDeleted: true,
+    });
+    if (existing) {
+      if (existing.deletedAt) {
+        await this.recoverChatRoomAndMembers(existing.id);
+      }
+      await this.ensureActiveMember(existing.id, post.userId);
+      return this.chatRoomRepo.findOneOrFail({
+        where: { id: existing.id },
+        relations: { members: { user: true } },
+      });
+    }
+
+    return this.chatRoomRepo.manager.transaction(async (em) => {
+      const roomRepo = em.getRepository(ChatRoom);
+      const found = await roomRepo.findOne({
+        where: { kind: ChatRoomKind.GROUP, announcement: { postId } },
+        withDeleted: true,
+      });
+      if (found) {
+        if (found.deletedAt) {
+          await this.recoverChatRoomAndMembers(found.id);
+        }
+        await this.ensureActiveMember(found.id, post.userId, em);
+        return roomRepo.findOneOrFail({
+          where: { id: found.id },
+          relations: { members: { user: true } },
+        });
+      }
+      const created = await roomRepo.save(
+        roomRepo.create({
+          kind: ChatRoomKind.GROUP,
+          announcement: { postId } as Announcement,
+          application: null,
+        }),
+      );
+      await this.addMembers(em, created.id, [post.userId]);
+      return roomRepo.findOneOrFail({
+        where: { id: created.id },
+        relations: { members: { user: true } },
+      });
+    });
+  }
+
+  /** 공고 작성자가 특정 그룹채팅방을 열거나(없으면 생성), 특정 지원자를 멤버로 보강할 때 */
   async createAnnouncementChatRoom(
     currentUserId: string,
     dto: CreateAnnouncementChatRoomDto,
@@ -266,160 +347,35 @@ export class ChatService {
     if (!post) {
       throw new NotFoundException('공고를 찾을 수 없습니다.');
     }
-
-    let applicantUserId: string;
-    if (dto.applicantUserId === undefined) {
-      applicantUserId = currentUserId;
-    } else {
-      if (post.userId !== currentUserId) {
-        throw new ForbiddenException(
-          '공고 작성자만 지원자를 지정할 수 있습니다.',
-        );
-      }
-      applicantUserId = dto.applicantUserId;
+    if (post.userId !== currentUserId) {
+      throw new ForbiddenException('공고 작성자만 그룹채팅방을 열 수 있습니다.');
     }
 
-    if (post.userId === applicantUserId) {
-      throw new BadRequestException(
-        '공고 작성자 본인은 지원자 채팅방 대상이 될 수 없습니다.',
-      );
-    }
+    const room = await this.getOrCreateGroupRoomForAnnouncement(dto.postId);
 
-    const applicant = await this.userRepo.findOne({
-      where: { userId: applicantUserId },
-    });
-    if (!applicant) {
-      throw new NotFoundException('지원자 사용자를 찾을 수 없습니다.');
-    }
-
-    const submitted = await this.applicationRepo.findOne({
-      where: { postId: dto.postId, userId: applicantUserId },
-    });
-    if (!submitted) {
-      throw new BadRequestException(
-        '해당 공고에 지원을 완료한 뒤에만 채팅방을 열 수 있습니다.',
-      );
-    }
-
-    let room = await this.chatRoomRepo.findOne({
-      where: {
-        kind: ChatRoomKind.ANNOUNCEMENT,
-        application: { id: submitted.id },
-      },
-      withDeleted: true,
-      relations: { members: true },
-    });
-    if (room) {
-      if (room.deletedAt) {
-        await this.recoverChatRoomAndMembers(room.id);
-        room = await this.chatRoomRepo.findOneOrFail({
-          where: { id: room.id },
-          relations: { members: true },
-        });
-      }
-      return room;
-    }
-    try {
-      room = this.chatRoomRepo.create({
-        kind: ChatRoomKind.ANNOUNCEMENT,
-        announcement: { postId: dto.postId } as Announcement,
-        application: { id: submitted.id } as Application,
+    if (dto.applicantUserId !== undefined && dto.applicantUserId !== post.userId) {
+      const applicant = await this.userRepo.findOne({
+        where: { userId: dto.applicantUserId },
       });
-      room = await this.chatRoomRepo.save(room);
-      await this.addMembers(null, room.id, [post.userId, applicantUserId]);
-    } catch (err) {
-      const dup =
-        err instanceof QueryFailedError &&
-        (err as QueryFailedError).driverError &&
-        (err as QueryFailedError).driverError['errno'] === 1062;
-      if (!dup) {
-        throw err;
+      if (!applicant) {
+        throw new NotFoundException('지원자 사용자를 찾을 수 없습니다.');
       }
-      room = await this.chatRoomRepo.findOne({
-        where: {
-          kind: ChatRoomKind.ANNOUNCEMENT,
-          application: { id: submitted.id },
-        },
-        withDeleted: true,
-        relations: { members: true },
-      });
-      if (!room) {
-        throw err;
-      }
-      if (room.deletedAt) {
-        await this.recoverChatRoomAndMembers(room.id);
-      }
+      await this.ensureActiveMember(room.id, dto.applicantUserId);
     }
+
     return this.chatRoomRepo.findOneOrFail({
       where: { id: room.id },
       relations: { members: true },
     });
   }
 
-  /**
-   * 지원서 제출 직후: 공고–지원자 1:1 채팅방을 만듭니다.
-   * 자동 메시지는 보내지 않으며, 방이 이미 있으면(동시 요청 등) 아무 일도 하지 않습니다.
-   */
-  async ensureAnnouncementRoomAfterApply(
-    applicantUserId: string,
+  /** 지원 수락 시: 공고 그룹채팅방을 만들고(없으면) 수락된 지원자를 멤버로 추가합니다. */
+  async addAcceptedApplicantToGroupRoom(
     postId: string,
-    applicationId: string,
+    applicantUserId: string,
   ): Promise<void> {
-    const existing = await this.chatRoomRepo.findOne({
-      where: {
-        kind: ChatRoomKind.ANNOUNCEMENT,
-        application: { id: applicationId },
-      },
-      withDeleted: true,
-    });
-    if (existing) {
-      if (existing.deletedAt) {
-        await this.recoverChatRoomAndMembers(existing.id);
-      }
-      return;
-    }
-
-    const post = await this.announcementRepo.findOne({ where: { postId } });
-    if (!post) {
-      return;
-    }
-
-    let room = this.chatRoomRepo.create({
-      kind: ChatRoomKind.ANNOUNCEMENT,
-      announcement: { postId } as Announcement,
-      application: { id: applicationId } as Application,
-    });
-    let isNewRoom = false;
-    try {
-      room = await this.chatRoomRepo.save(room);
-      isNewRoom = true;
-    } catch (err) {
-      const dup =
-        err instanceof QueryFailedError &&
-        (err as QueryFailedError).driverError &&
-        (err as QueryFailedError).driverError['errno'] === 1062;
-      if (!dup) {
-        throw err;
-      }
-      room = (await this.chatRoomRepo.findOne({
-        where: {
-          kind: ChatRoomKind.ANNOUNCEMENT,
-          application: { id: applicationId },
-        },
-        withDeleted: true,
-      }))!;
-      if (!room) {
-        throw err;
-      }
-      if (room.deletedAt) {
-        await this.recoverChatRoomAndMembers(room.id);
-      }
-      return;
-    }
-
-    if (isNewRoom) {
-      await this.addMembers(null, room.id, [post.userId, applicantUserId]);
-    }
+    const room = await this.getOrCreateGroupRoomForAnnouncement(postId);
+    await this.ensureActiveMember(room.id, applicantUserId);
   }
 
   async findRoomForUserOrThrow(
@@ -602,8 +558,11 @@ export class ChatService {
     page: number;
     limit: number;
     peerUserId: string | null;
+    /** GROUP 방에서만 채워짐 — 발신자 이름/아바타 표시용 (나 제외) */
+    members: ChatRoomMemberSummary[] | null;
   }> {
-    await this.findRoomForUserOrThrow(chatRoomId, userId);
+    const room = await this.findRoomForUserOrThrow(chatRoomId, userId);
+    const isGroup = room.kind === ChatRoomKind.GROUP;
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
     const skip = (page - 1) * limit;
@@ -616,16 +575,45 @@ export class ChatService {
       skip,
     });
 
-    const peerLastReadAt = await this.getPeerLastReadAt(chatRoomId, userId);
-    const peerUserId = await this.getPeerUserId(chatRoomId, userId);
+    const peerLastReadAt = isGroup
+      ? null
+      : await this.getPeerLastReadAt(chatRoomId, userId);
+    const peerUserId = isGroup
+      ? null
+      : await this.getPeerUserId(chatRoomId, userId);
+    const members = isGroup
+      ? await this.loadOtherMemberSummaries(chatRoomId, userId)
+      : null;
 
     return {
-      items: rows.map((m) => this.toMessagePayload(m, peerLastReadAt)),
+      items: rows.map((m) =>
+        this.toMessagePayload(m, peerLastReadAt, !isGroup),
+      ),
       total,
       page,
       limit,
       peerUserId,
+      members,
     };
+  }
+
+  /** 방의 멤버 중 나를 제외한 전원의 프로필 요약 (그룹채팅 발신자 표시용) */
+  private async loadOtherMemberSummaries(
+    roomId: string,
+    currentUserId: string,
+  ): Promise<ChatRoomMemberSummary[]> {
+    const members = await this.chatRoomMemberRepo.find({
+      where: { chatRoom: { id: roomId } },
+      relations: { user: true },
+    });
+    return members
+      .filter((m) => m.user.userId !== currentUserId)
+      .map((m) => ({
+        userId: m.user.userId,
+        name: m.user.name,
+        activityName: m.user.activityName,
+        profileImgUrl: m.user.profileImgUrl,
+      }));
   }
 
   /** 방의 다른 멤버들(1:1 기준 상대방)이 공통으로 읽은 지점 — 여러 명이면 가장 늦게 읽은 사람 기준 */
@@ -774,11 +762,11 @@ export class ChatService {
   }> {
     const rows: Array<{
       kind: string;
-      isApplicant: number | string;
+      isOwner: number | string;
       cnt: number | string;
     }> = await this.messageRepo.manager.query(
       `SELECT r.kind AS kind,
-              CASE WHEN app.user_id = ? THEN 1 ELSE 0 END AS isApplicant,
+              CASE WHEN ann.user_id = ? THEN 1 ELSE 0 END AS isOwner,
               COUNT(*) AS cnt
        FROM message m
        INNER JOIN chat_room_member mb
@@ -788,12 +776,12 @@ export class ChatService {
        INNER JOIN chat_room r
          ON r.id = m.chat_room_id
          AND r.deleted_at IS NULL
-       LEFT JOIN application app
-         ON app.id = r.form_id
+       LEFT JOIN announcement ann
+         ON ann.post_id = r.post_id
        WHERE m.deleted_at IS NULL
          AND m.user_id != ?
          AND (mb.last_read_at IS NULL OR m.created_at > mb.last_read_at)
-       GROUP BY r.kind, isApplicant`,
+       GROUP BY r.kind, isOwner`,
       [userId, userId, userId],
     );
 
@@ -804,10 +792,10 @@ export class ChatService {
       const cnt = Number(row.cnt);
       if (row.kind === ChatRoomKind.COFFEE) {
         dm += cnt;
-      } else if (Number(row.isApplicant) === 1) {
-        appliedAnnouncement += cnt;
-      } else {
+      } else if (Number(row.isOwner) === 1) {
         myAnnouncement += cnt;
+      } else {
+        appliedAnnouncement += cnt;
       }
     }
     return { dm, appliedAnnouncement, myAnnouncement };
@@ -925,7 +913,7 @@ export class ChatService {
     return this.toRoomListPage(rows, limit, userId);
   }
 
-  /** 내가 지원자인 공고 1:1 채팅방 (공고당·지원자당 1방) */
+  /** 내가 지원자(작성자 아님)로 속한 공고 그룹채팅방 — "지원 공고" 탭 */
   async listAppliedAnnouncementRooms(
     userId: string,
     query: ListChatRoomsQueryDto,
@@ -935,12 +923,11 @@ export class ChatService {
       .createQueryBuilder('room')
       .leftJoinAndSelect('room.announcement', 'announcement')
       .innerJoin('room.members', 'mb')
-      .innerJoin('room.application', 'app')
-      .where('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
+      .where('room.kind = :kind', { kind: ChatRoomKind.GROUP })
       .andWhere('room.deletedAt IS NULL')
       .andWhere('mb.deletedAt IS NULL')
       .andWhere('mb.user_id = :uid', { uid: userId })
-      .andWhere('app.userId = :uid', { uid: userId })
+      .andWhere('announcement.userId != :uid', { uid: userId })
       .orderBy('room.id', 'DESC')
       .take(limit + 1);
     if (query.cursor) {
@@ -950,11 +937,34 @@ export class ChatService {
     return this.toRoomListPage(rows, limit, userId);
   }
 
-  /** 내가 작성한 공고 하나에 대해, 지원자별 1:1 채팅방 목록 (작성자 전용) */
+  /** 내가 작성한 공고들의 그룹채팅방 목록 — "내 공고" 탭 */
+  async listMyAnnouncementGroupRooms(
+    userId: string,
+    query: ListChatRoomsQueryDto,
+  ): Promise<ChatRoomListResponse> {
+    const limit = query.limit ?? 8;
+    const qb = this.chatRoomRepo
+      .createQueryBuilder('room')
+      .leftJoinAndSelect('room.announcement', 'announcement')
+      .innerJoin('room.members', 'mb')
+      .where('room.kind = :kind', { kind: ChatRoomKind.GROUP })
+      .andWhere('room.deletedAt IS NULL')
+      .andWhere('mb.deletedAt IS NULL')
+      .andWhere('mb.user_id = :uid', { uid: userId })
+      .andWhere('announcement.userId = :uid', { uid: userId })
+      .orderBy('room.id', 'DESC')
+      .take(limit + 1);
+    if (query.cursor) {
+      qb.andWhere('room.id < :cursor', { cursor: query.cursor });
+    }
+    const rows = await qb.getMany();
+    return this.toRoomListPage(rows, limit, userId);
+  }
+
+  /** 내가 작성한 공고 하나의 그룹채팅방(0 또는 1건) — 지원자 관리 화면 전용 */
   async listRoomsForMyAnnouncement(
     postId: string,
     recruiterUserId: string,
-    query: ListChatRoomsQueryDto,
   ): Promise<ChatRoomListResponse> {
     const post = await this.announcementRepo.findOne({ where: { postId } });
     if (!post) {
@@ -963,23 +973,15 @@ export class ChatService {
     if (post.userId !== recruiterUserId) {
       throw new ForbiddenException('본인이 작성한 공고만 조회할 수 있습니다.');
     }
-    const limit = query.limit ?? 8;
-    const qb = this.chatRoomRepo
-      .createQueryBuilder('room')
-      .leftJoinAndSelect('room.announcement', 'announcement')
-      .innerJoin('room.members', 'mb')
-      .where('room.kind = :kind', { kind: ChatRoomKind.ANNOUNCEMENT })
-      .andWhere('room.deletedAt IS NULL')
-      .andWhere('mb.deletedAt IS NULL')
-      .andWhere('mb.user_id = :uid', { uid: recruiterUserId })
-      .andWhere('announcement.postId = :postId', { postId })
-      .orderBy('room.id', 'DESC')
-      .take(limit + 1);
-    if (query.cursor) {
-      qb.andWhere('room.id < :cursor', { cursor: query.cursor });
+    const room = await this.chatRoomRepo.findOne({
+      where: { kind: ChatRoomKind.GROUP, announcement: { postId } },
+      relations: { announcement: true },
+    });
+    if (!room) {
+      return { items: [], nextCursor: null, hasMore: false };
     }
-    const rows = await qb.getMany();
-    return this.toRoomListPage(rows, limit, recruiterUserId);
+    const items = await this.mapRoomsToListItems([room], recruiterUserId);
+    return { items, nextCursor: null, hasMore: false };
   }
 
   private async toRoomListPage(
@@ -1057,23 +1059,37 @@ export class ChatService {
       currentUserId,
     );
 
-    const peerIds = new Set<string>();
+    const otherUserIds = new Set<string>();
     for (const room of rooms) {
       const members = membersByRoom.get(room.id) ?? [];
-      const pid = this.resolvePeerUserId(members, currentUserId);
-      if (pid) peerIds.add(pid);
+      for (const uid of this.resolveOtherMemberIds(members, currentUserId)) {
+        otherUserIds.add(uid);
+      }
     }
-    const peers = await this.userRepo.find({
-      where: { userId: In([...peerIds]) },
+    const otherUsers = await this.userRepo.find({
+      where: { userId: In([...otherUserIds]) },
     });
-    const peerMap = new Map(peers.map((u) => [u.userId, u]));
+    const userMap = new Map(otherUsers.map((u) => [u.userId, u]));
+    const toSummary = (userId: string): ChatRoomMemberSummary => {
+      const u = userMap.get(userId);
+      return u
+        ? {
+            userId: u.userId,
+            name: u.name,
+            activityName: u.activityName,
+            profileImgUrl: u.profileImgUrl,
+          }
+        : { userId, name: '알 수 없음', activityName: '', profileImgUrl: '' };
+    };
 
     return rooms.map((room) => {
       const members = membersByRoom.get(room.id) ?? [];
-      const peerId = this.resolvePeerUserId(members, currentUserId);
-      const peerUser = peerId ? peerMap.get(peerId) : undefined;
+      const otherIds = this.resolveOtherMemberIds(members, currentUserId);
+      const isGroup = room.kind === ChatRoomKind.GROUP;
       const post =
-        room.kind === ChatRoomKind.ANNOUNCEMENT && room.announcement
+        (room.kind === ChatRoomKind.ANNOUNCEMENT ||
+          room.kind === ChatRoomKind.GROUP) &&
+        room.announcement
           ? {
               postId: room.announcement.postId,
               title: room.announcement.title,
@@ -1084,19 +1100,8 @@ export class ChatService {
         id: room.id,
         kind: room.kind,
         post,
-        peer: peerUser
-          ? {
-              userId: peerUser.userId,
-              name: peerUser.name,
-              activityName: peerUser.activityName,
-              profileImgUrl: peerUser.profileImgUrl,
-            }
-          : {
-              userId: peerId ?? '',
-              name: '알 수 없음',
-              activityName: '',
-              profileImgUrl: '',
-            },
+        peer: isGroup ? null : otherIds[0] ? toSummary(otherIds[0]) : null,
+        members: isGroup ? otherIds.map(toSummary) : null,
         lastMessage: lastByRoom.get(room.id) ?? null,
         unreadCount: unreadByRoom.get(room.id) ?? 0,
         createdAt: room.createdAt,
@@ -1104,13 +1109,14 @@ export class ChatService {
     });
   }
 
-  /** 1:1 UI: 나를 제외한 첫 멤버 (그룹 확장 시 목록/이름 정책 변경) */
-  private resolvePeerUserId(
+  /** 나를 제외한 방 멤버 전원의 userId (1:1이면 최대 1개, GROUP이면 여러 개) */
+  private resolveOtherMemberIds(
     members: ChatRoomMember[],
     currentUserId: string,
-  ): string | null {
-    const others = members.filter((m) => m.user.userId !== currentUserId);
-    return others[0]?.user.userId ?? null;
+  ): string[] {
+    return members
+      .filter((m) => m.user.userId !== currentUserId)
+      .map((m) => m.user.userId);
   }
 
   private async loadLastMessageByRoomIds(roomIds: string[]): Promise<
@@ -1193,6 +1199,7 @@ export class ChatService {
   private toMessagePayload(
     message: Message,
     peerLastReadAt?: Date | null,
+    includeReadByPeer = true,
   ): MessagePayload {
     const fileName = this.pickDisplayFileName({
       fileName: message.fileName,
@@ -1211,9 +1218,9 @@ export class ChatService {
       fileMime: message.fileMime,
       fileItems: message.fileItems,
       createdAt: message.createdAt,
-      readByPeer: Boolean(
-        peerLastReadAt && message.createdAt <= peerLastReadAt,
-      ),
+      readByPeer: includeReadByPeer
+        ? Boolean(peerLastReadAt && message.createdAt <= peerLastReadAt)
+        : undefined,
     };
   }
 }

@@ -8,7 +8,7 @@ export class CreateAnnouncementChatRoomDto {
 
   @ApiPropertyOptional({
     description:
-      '지원자 user_id. 생략 시 본인이 지원자로 간주. 공고 작성자만 특정 지원자를 지정할 수 있음.',
+      '멤버로 보강할 지원자 user_id(선택). 이 엔드포인트는 공고 작성자만 호출할 수 있음.',
   })
   @IsOptional()
   @IsUUID()

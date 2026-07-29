@@ -4,7 +4,6 @@ import { AuthModule } from '../auth/auth.module';
 import { FileModule } from '../file/file.module';
 import { NoticeModule } from '../notice/notice.module';
 import { Announcement } from '../announcement/entities/announcement.entity';
-import { Application } from '../application/entities/application.entity';
 import { User } from '../user/entities/user.entity';
 import { ChatRoomMember } from './entities/chat-room-member.entity';
 import { ChatRoom } from './entities/chat-room.entity';
@@ -21,7 +20,6 @@ import { ChatGateway } from './chat.gateway';
       Message,
       User,
       Announcement,
-      Application,
     ]),
     AuthModule,
     FileModule,

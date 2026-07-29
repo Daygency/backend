@@ -78,7 +78,7 @@ export class ChatController {
   @Get('rooms/applied')
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
-  @ApiOperation({ summary: '내가 지원한 공고 기준 1:1 채팅방 목록' })
+  @ApiOperation({ summary: '내가 지원자로 속한 공고 그룹채팅방 목록' })
   listAppliedRooms(
     @Request() req: { user: { id: string } },
     @Query() query: ListChatRoomsQueryDto,
@@ -86,23 +86,28 @@ export class ChatController {
     return this.chatService.listAppliedAnnouncementRooms(req.user.id, query);
   }
 
+  @Get('rooms/my-announcements')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내가 작성한 공고들의 그룹채팅방 목록' })
+  listMyAnnouncementRooms(
+    @Request() req: { user: { id: string } },
+    @Query() query: ListChatRoomsQueryDto,
+  ) {
+    return this.chatService.listMyAnnouncementGroupRooms(req.user.id, query);
+  }
+
   @Get('rooms/by-post/:postId')
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
   @ApiOperation({
-    summary:
-      '특정 공고(내가 작성한)에 대한 지원자별 1:1 채팅방 목록 — 공고 작성자만',
+    summary: '특정 공고(내가 작성한)의 그룹채팅방 — 공고 작성자만',
   })
   listRoomsByMyPost(
     @Request() req: { user: { id: string } },
     @Param('postId', ParseUUIDPipe) postId: string,
-    @Query() query: ListChatRoomsQueryDto,
   ) {
-    return this.chatService.listRoomsForMyAnnouncement(
-      postId,
-      req.user.id,
-      query,
-    );
+    return this.chatService.listRoomsForMyAnnouncement(postId, req.user.id);
   }
 
   @Post('rooms/coffee')
@@ -121,7 +126,7 @@ export class ChatController {
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      '공고 1:1 방 생성/조회 — 지원자는 postId만, 작성자는 applicantUserId 지정 가능',
+      '공고 그룹채팅방 생성/조회 — 공고 작성자 전용, applicantUserId로 지원자 멤버 보강 가능',
   })
   createAnnouncementRoom(
     @Request() req: { user: { id: string } },

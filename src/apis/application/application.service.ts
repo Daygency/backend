@@ -120,16 +120,6 @@ export class ApplicationService {
     if (isRestore && existing) {
       this.patchApplicationFromSubmitDto(existing, dto, applicantUserId);
       const saved = await this.applicationRepo.save(existing);
-      try {
-        await this.chatService.ensureAnnouncementRoomAfterApply(
-          applicantUserId,
-          postId,
-          saved.id,
-        );
-      } catch (err) {
-        await this.applicationRepo.softDelete({ id: saved.id });
-        throw err;
-      }
       return saved;
     }
 
@@ -140,16 +130,6 @@ export class ApplicationService {
     this.patchApplicationFromSubmitDto(entity, dto, applicantUserId);
 
     const saved = await this.applicationRepo.save(entity);
-    try {
-      await this.chatService.ensureAnnouncementRoomAfterApply(
-        applicantUserId,
-        postId,
-        saved.id,
-      );
-    } catch (err) {
-      await this.applicationRepo.delete({ id: saved.id });
-      throw err;
-    }
     void this.notifyAnnouncementApplication(applicantUserId, announcement);
     return saved;
   }
@@ -372,6 +352,19 @@ export class ApplicationService {
         existing,
         dto.status,
       );
+    }
+    if (
+      previousStatus !== ApplicationStatus.ACCEPTED &&
+      dto.status === ApplicationStatus.ACCEPTED
+    ) {
+      try {
+        await this.chatService.addAcceptedApplicantToGroupRoom(
+          existing.postId,
+          existing.userId,
+        );
+      } catch (err) {
+        this.logger.error('addAcceptedApplicantToGroupRoom failed', err);
+      }
     }
     return this.findOneById(applicationId, recruiterUserId);
   }
