@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Application, ApplicationStatus } from '../application/entities/application.entity';
 import { Announcement } from '../announcement/entities/announcement.entity';
 import { NoticeTargetType } from '../notice/entities/notice.entity';
@@ -87,9 +87,7 @@ export class ReviewService {
     const payload = {
       rating: dto.rating,
       disappointmentReasonCodes: dto.disappointmentReasonCodes,
-      privateNoteToOps: dto.privateNoteToOps,
       positiveReasonCodes: dto.positiveReasonCodes,
-      publicNote: dto.publicNote,
     };
     this.assertRatingSideFields(payload);
 
@@ -132,14 +130,7 @@ export class ReviewService {
       rating: dto.rating,
       disappointmentReasonCodes: reasons,
       positiveReasonCodes: positiveReasons,
-      publicNote:
-        dto.rating !== ReviewRating.DISAPPOINTING && dto.publicNote?.trim()
-          ? dto.publicNote.trim()
-          : null,
-      privateNoteToOps:
-        dto.rating === ReviewRating.DISAPPOINTING && dto.privateNoteToOps?.trim()
-          ? dto.privateNoteToOps.trim()
-          : null,
+      comment: dto.comment?.trim() ? dto.comment.trim() : null,
     });
     const saved = await this.reviewRepo.save(row);
 
@@ -168,6 +159,25 @@ export class ReviewService {
 
   async listReceivedByUser(userId: string, query: ListReviewsQueryDto) {
     return this.listByRole('receiver', userId, query);
+  }
+
+  /** 숨김 처리되지 않은 받은 후기의 긍정 사유 코드를 집계 (개수 내림차순) */
+  async getReceivedPositiveTagSummary(
+    userId: string,
+  ): Promise<{ code: string; count: number }[]> {
+    const rows = await this.reviewRepo.find({
+      where: { revieweeUserId: userId, hiddenFromProfileAt: IsNull() },
+      select: ['positiveReasonCodes'],
+    });
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      for (const code of row.positiveReasonCodes ?? []) {
+        counts.set(code, (counts.get(code) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .map(([code, count]) => ({ code, count }))
+      .sort((a, b) => b.count - a.count);
   }
 
   async hideFromProfile(
@@ -228,17 +238,12 @@ export class ReviewService {
       dto.disappointmentReasonCodes ?? row.disappointmentReasonCodes ?? undefined;
     const nextPositiveReasons =
       dto.positiveReasonCodes ?? row.positiveReasonCodes ?? undefined;
-    const nextOpsNote =
-      dto.privateNoteToOps !== undefined ? dto.privateNoteToOps : row.privateNoteToOps;
-    const nextPublicNote =
-      dto.publicNote !== undefined ? dto.publicNote : row.publicNote;
+    const nextComment = dto.comment !== undefined ? dto.comment : row.comment;
 
     this.assertRatingSideFields({
       rating: nextRating,
       disappointmentReasonCodes: nextReasons,
-      privateNoteToOps: nextOpsNote,
       positiveReasonCodes: nextPositiveReasons,
-      publicNote: nextPublicNote,
     });
 
     row.rating = nextRating;
@@ -250,14 +255,7 @@ export class ReviewService {
       nextRating,
       nextPositiveReasons ?? undefined,
     );
-    row.privateNoteToOps =
-      nextRating === ReviewRating.DISAPPOINTING && nextOpsNote?.trim()
-        ? nextOpsNote.trim()
-        : null;
-    row.publicNote =
-      nextRating !== ReviewRating.DISAPPOINTING && nextPublicNote?.trim()
-        ? nextPublicNote.trim()
-        : null;
+    row.comment = nextComment?.trim() ? nextComment.trim() : null;
 
     return this.reviewRepo.save(row);
   }
@@ -325,8 +323,7 @@ export class ReviewService {
         rating: r.rating,
         disappointmentReasonCodes: r.disappointmentReasonCodes,
         positiveReasonCodes: r.positiveReasonCodes,
-        publicNote: r.publicNote,
-        privateNoteToOps: r.privateNoteToOps,
+        comment: r.comment,
         createdAt: r.createdAt,
         hiddenFromProfileAt: r.hiddenFromProfileAt,
         announcement: r.announcement
@@ -361,9 +358,7 @@ export class ReviewService {
   private assertRatingSideFields(dto: {
     rating: ReviewRating;
     disappointmentReasonCodes?: string[] | null;
-    privateNoteToOps?: string | null;
     positiveReasonCodes?: string[] | null;
-    publicNote?: string | null;
   }): void {
     if (dto.rating !== ReviewRating.DISAPPOINTING) {
       if (dto.disappointmentReasonCodes?.length) {
@@ -371,21 +366,11 @@ export class ReviewService {
           '아쉬움 평가일 때만 사유를 선택할 수 있습니다.',
         );
       }
-      if (dto.privateNoteToOps?.trim()) {
-        throw new BadRequestException(
-          '운영팀 메모는 아쉬움 평가일 때만 입력할 수 있습니다.',
-        );
-      }
       return;
     }
     if (dto.positiveReasonCodes?.length) {
       throw new BadRequestException(
         '좋았어요/감동했어요 평가일 때만 긍정 항목을 선택할 수 있습니다.',
-      );
-    }
-    if (dto.publicNote?.trim()) {
-      throw new BadRequestException(
-        '공개 후기 본문은 좋았어요/감동했어요 평가일 때만 입력할 수 있습니다.',
       );
     }
   }

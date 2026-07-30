@@ -345,6 +345,17 @@ export class UserController {
       .then(() => this.reviewService.listReceivedByUser(id, query));
   }
 
+  @Get(':id/reviews/received/tag-summary')
+  @ApiOperation({
+    summary: '특정 유저가 받은 후기의 긍정 사유 태그 집계 (공개, 개수 내림차순)',
+  })
+  @ApiResponse({ status: 404, description: '유저 없음' })
+  getUserReceivedReviewsTagSummary(@Param('id', ParseUUIDPipe) id: string) {
+    return this.userService
+      .ensurePortfolioPublic(id)
+      .then(() => this.reviewService.getReceivedPositiveTagSummary(id));
+  }
+
   @Delete('me')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(AuthGuard('access'))

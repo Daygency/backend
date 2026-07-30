@@ -44,18 +44,6 @@ export class CreateReviewDto {
 
   @ApiPropertyOptional({
     description:
-      '운영팀 전용 메모(상대방 알림·푸시에 포함되지 않음). null 또는 미전송 가능.',
-    maxLength: 2000,
-    nullable: true,
-    example: '다음에는 일정 변경 시 더 빠른 안내가 필요했어요.',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(2000)
-  privateNoteToOps?: string | null;
-
-  @ApiPropertyOptional({
-    description:
       '`GOOD`/`IMPRESSED`일 때만: 좋았던 점 체크 항목 코드 배열. 그 외 평점이면 null/미전송.',
     type: [String],
     enum: REVIEW_POSITIVE_REASON_VALUES,
@@ -70,7 +58,7 @@ export class CreateReviewDto {
 
   @ApiPropertyOptional({
     description:
-      '`GOOD`/`IMPRESSED`일 때 공개되는 후기 본문 텍스트. null 또는 미전송 가능.',
+      '상대방에게 공개되는 후기 코멘트. 평점 상관없이 선택 입력, null 또는 미전송 가능.',
     nullable: true,
     maxLength: 2000,
     example: '덕분에 연주가 정말 편안하고 즐거웠습니다.',
@@ -78,5 +66,5 @@ export class CreateReviewDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  publicNote?: string | null;
+  comment?: string | null;
 }

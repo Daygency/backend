@@ -52,6 +52,16 @@ export class ReviewUserController {
     return this.reviewService.listReceivedByUser(req.user.id, query);
   }
 
+  @Get('received/tag-summary')
+  @UseGuards(AuthGuard('access'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '내가 받은 후기의 긍정 사유 태그 집계 (개수 내림차순, 숨긴 후기 제외)',
+  })
+  getReceivedTagSummary(@Request() req: { user: { id: string } }) {
+    return this.reviewService.getReceivedPositiveTagSummary(req.user.id);
+  }
+
   @Patch(':reviewId/hide-from-profile')
   @UseGuards(AuthGuard('access'))
   @ApiBearerAuth()
@@ -82,7 +92,7 @@ export class ReviewUserController {
   @ApiOperation({ summary: '내가 작성한 후기 수정' })
   @ApiBody({
     description:
-      '수정할 필드만 보내면 됩니다. disappointmentReasonCodes/privateNoteToOps는 nullable.',
+      '수정할 필드만 보내면 됩니다. disappointmentReasonCodes/comment는 nullable.',
     schema: {
       type: 'object',
       properties: {
@@ -106,11 +116,6 @@ export class ReviewUserController {
             ],
           },
         },
-        privateNoteToOps: {
-          type: 'string',
-          nullable: true,
-          maxLength: 2000,
-        },
         positiveReasonCodes: {
           type: 'array',
           nullable: true,
@@ -128,7 +133,7 @@ export class ReviewUserController {
             ],
           },
         },
-        publicNote: {
+        comment: {
           type: 'string',
           nullable: true,
           maxLength: 2000,
@@ -136,7 +141,7 @@ export class ReviewUserController {
       },
       example: {
         positiveReasonCodes: ['POLITE_AND_CONSIDERATE'],
-        publicNote: '매너가 좋고 진행이 안정적이었어요.',
+        comment: '매너가 좋고 진행이 안정적이었어요.',
       },
     },
   })

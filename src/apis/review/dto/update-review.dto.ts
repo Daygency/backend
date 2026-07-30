@@ -39,18 +39,6 @@ export class UpdateReviewDto {
 
   @ApiPropertyOptional({
     description:
-      '운영팀 전용 메모(상대방 알림·푸시에 포함되지 않음). 지정 시 기존값 덮어씀, null 허용.',
-    maxLength: 2000,
-    nullable: true,
-    example: '요청 전달이 늦어서 준비 일정이 촉박했어요.',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(2000)
-  privateNoteToOps?: string | null;
-
-  @ApiPropertyOptional({
-    description:
       '`GOOD`/`IMPRESSED`일 때만: 좋았던 점 코드 배열(지정 시 기존값 덮어씀). null 허용.',
     type: [String],
     enum: REVIEW_POSITIVE_REASON_VALUES,
@@ -65,7 +53,7 @@ export class UpdateReviewDto {
 
   @ApiPropertyOptional({
     description:
-      '`GOOD`/`IMPRESSED`일 때 공개되는 후기 본문. 지정 시 기존값 덮어씀, null 허용.',
+      '상대방에게 공개되는 후기 코멘트. 평점 상관없이 선택 입력, 지정 시 기존값 덮어씀, null 허용.',
     maxLength: 2000,
     nullable: true,
     example: '전체 진행이 매끄럽고 배려가 느껴졌습니다.',
@@ -73,5 +61,5 @@ export class UpdateReviewDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  publicNote?: string | null;
+  comment?: string | null;
 }

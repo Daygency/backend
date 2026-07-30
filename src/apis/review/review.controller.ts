@@ -36,7 +36,7 @@ export class ReviewController {
   })
   @ApiBody({
     description:
-      '아쉬웠어요(DISAPPOINTING) 선택 시 disappointmentReasonCodes/privateNoteToOps 사용 가능(둘 다 nullable).',
+      '아쉬웠어요(DISAPPOINTING) 선택 시 disappointmentReasonCodes 사용 가능. comment는 평점 상관없이 선택 입력, 상대방에게 공개됨.',
     schema: {
       type: 'object',
       required: ['revieweeUserId', 'rating'],
@@ -62,11 +62,6 @@ export class ReviewController {
             ],
           },
         },
-        privateNoteToOps: {
-          type: 'string',
-          nullable: true,
-          maxLength: 2000,
-        },
         positiveReasonCodes: {
           type: 'array',
           nullable: true,
@@ -84,7 +79,7 @@ export class ReviewController {
             ],
           },
         },
-        publicNote: {
+        comment: {
           type: 'string',
           nullable: true,
           maxLength: 2000,
@@ -94,7 +89,7 @@ export class ReviewController {
         revieweeUserId: '550e8400-e29b-41d4-a716-446655440111',
         rating: 'GOOD',
         positiveReasonCodes: ['SMOOTH_COMMUNICATION', 'WELL_PREPARED'],
-        publicNote: '덕분에 연주가 매우 편안했고 소통이 좋았습니다.',
+        comment: '덕분에 연주가 매우 편안했고 소통이 좋았습니다.',
       },
     },
   })

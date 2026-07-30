@@ -58,22 +58,16 @@ export class Review {
   disappointmentReasonCodes: string[] | null;
 
   /**
-   * 운영팀 전용 메모(플랫폼 개선용). 푸시·인박스 알림 본문에 포함하지 않음.
-   */
-  @Column({ name: 'private_note_to_ops', type: 'text', nullable: true })
-  privateNoteToOps: string | null;
-
-  /**
    * `GOOD`/`IMPRESSED`일 때 선택한 긍정 사유 코드 배열.
    */
   @Column({ name: 'positive_reason_codes', type: 'json', nullable: true })
   positiveReasonCodes: string[] | null;
 
   /**
-   * 후기 공개 텍스트(익명 공개 가능). 목록 조회에서 내려주는 본문.
+   * 상대방에게 공개되는 후기 코멘트. 평점 상관없이 선택 입력.
    */
-  @Column({ name: 'public_note', type: 'text', nullable: true })
-  publicNote: string | null;
+  @Column({ name: 'comment', type: 'text', nullable: true })
+  comment: string | null;
 
   /** 수신자가 프로필에서 숨긴 시각 (null이면 노출) */
   @Column({
