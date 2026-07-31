@@ -429,7 +429,7 @@ export class AnnouncementService {
       .leftJoinAndSelect('announcement.user', 'user')
       .leftJoinAndSelect('announcement.majors', 'majors');
 
-    this.applyAnnouncementListFilters(qb, query);
+    this.applyAnnouncementListFilters(qb, query, true);
 
     const rows = await qb.getMany();
     return this.buildAnnouncementListResponse(rows, query.limit ?? 8, query.sort);
@@ -494,6 +494,7 @@ export class AnnouncementService {
   private applyAnnouncementListFilters(
     qb: ReturnType<Repository<Announcement>['createQueryBuilder']>,
     query: ListAnnouncementQueryDto,
+    excludeClosedByDefault = false,
   ): void {
     const {
       cursor,
@@ -560,6 +561,10 @@ export class AnnouncementService {
 
     if (status) {
       qb.andWhere('announcement.status = :status', { status });
+    } else if (excludeClosedByDefault) {
+      qb.andWhere('announcement.status != :excludedStatus', {
+        excludedStatus: AnnouncementStatus.CLOSED,
+      });
     }
     if (categoryId) {
       qb.andWhere('category.categoryId = :categoryId', {
