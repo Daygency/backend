@@ -429,7 +429,7 @@ export class AnnouncementService {
       .leftJoinAndSelect('announcement.user', 'user')
       .leftJoinAndSelect('announcement.majors', 'majors');
 
-    this.applyAnnouncementListFilters(qb, query, true);
+    this.applyAnnouncementListFilters(qb, query, true, true);
 
     const rows = await qb.getMany();
     return this.buildAnnouncementListResponse(rows, query.limit ?? 8, query.sort);
@@ -481,6 +481,23 @@ export class AnnouncementService {
       )
       .andWhere('app.deletedAt IS NULL');
 
+    if (query.applicationStatus === 'UNDER_REVIEW') {
+      qb.andWhere('app.status IN (:...reviewStatuses)', {
+        reviewStatuses: [
+          ApplicationStatus.SUBMITTED,
+          ApplicationStatus.DOCUMENT_REVIEW,
+        ],
+      });
+    } else if (query.applicationStatus === 'ACCEPTED') {
+      qb.andWhere('app.status = :appStatus', {
+        appStatus: ApplicationStatus.ACCEPTED,
+      });
+    } else if (query.applicationStatus === 'REJECTED') {
+      qb.andWhere('app.status = :appStatus', {
+        appStatus: ApplicationStatus.REJECTED,
+      });
+    }
+
     this.applyAnnouncementListFilters(qb, query);
 
     const rows = await qb.getMany();
@@ -495,6 +512,7 @@ export class AnnouncementService {
     qb: ReturnType<Repository<Announcement>['createQueryBuilder']>,
     query: ListAnnouncementQueryDto,
     excludeClosedByDefault = false,
+    excludeCompletedByDefault = false,
   ): void {
     const {
       cursor,
@@ -505,6 +523,7 @@ export class AnnouncementService {
       priceType,
       q,
       sort = 'created',
+      completed,
     } = query;
     const likeQ = q ? toLikePattern(q) : null;
     const now = new Date();
@@ -565,6 +584,24 @@ export class AnnouncementService {
       qb.andWhere('announcement.status != :excludedStatus', {
         excludedStatus: AnnouncementStatus.CLOSED,
       });
+    }
+    if (completed !== undefined) {
+      if (completed) {
+        qb.andWhere(
+          '(announcement.completedManually = true OR announcement.scheduledAt < :now)',
+          { now },
+        );
+      } else {
+        qb.andWhere(
+          'announcement.completedManually = false AND announcement.scheduledAt >= :now',
+          { now },
+        );
+      }
+    } else if (excludeCompletedByDefault) {
+      qb.andWhere(
+        'announcement.completedManually = false AND announcement.scheduledAt >= :now',
+        { now },
+      );
     }
     if (categoryId) {
       qb.andWhere('category.categoryId = :categoryId', {

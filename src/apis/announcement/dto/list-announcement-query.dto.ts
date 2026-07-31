@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsEnum,
   IsIn,
   IsNumber,
@@ -17,6 +18,14 @@ import {
 export const ANNOUNCEMENT_LIST_SORT_VALUES = ['created', 'imminent'] as const;
 export type AnnouncementListSort =
   (typeof ANNOUNCEMENT_LIST_SORT_VALUES)[number];
+
+export const APPLICATION_REVIEW_FILTER_VALUES = [
+  'UNDER_REVIEW',
+  'ACCEPTED',
+  'REJECTED',
+] as const;
+export type ApplicationReviewFilter =
+  (typeof APPLICATION_REVIEW_FILTER_VALUES)[number];
 
 /**
  * 공고 목록 조회 Query DTO (무한스크롤 + 필터)
@@ -99,4 +108,28 @@ export class ListAnnouncementQueryDto {
   @IsOptional()
   @IsIn(ANNOUNCEMENT_LIST_SORT_VALUES)
   sort?: AnnouncementListSort = 'created';
+
+  /** 완료(활동종료) 여부 필터 — `/announcement/my`, `/announcement/applied` 전용 */
+  @ApiPropertyOptional({
+    description:
+      '완료(활동종료) 여부 필터. true: 활동 종료된 공고만, false: 진행 중인 공고만',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  completed?: boolean;
+
+  /** 지원 심사 상태 필터 — `/announcement/applied` 전용 */
+  @ApiPropertyOptional({
+    enum: APPLICATION_REVIEW_FILTER_VALUES,
+    description:
+      '지원 심사 상태 필터. UNDER_REVIEW: 검토중(SUBMITTED+DOCUMENT_REVIEW), ACCEPTED: 수락됨, REJECTED: 거절됨',
+  })
+  @IsOptional()
+  @IsIn(APPLICATION_REVIEW_FILTER_VALUES)
+  applicationStatus?: ApplicationReviewFilter;
 }
