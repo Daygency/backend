@@ -8,7 +8,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { Application, ApplicationStatus } from '../application/entities/application.entity';
-import { Announcement } from '../announcement/entities/announcement.entity';
+import {
+  Announcement,
+  AnnouncementStatus,
+} from '../announcement/entities/announcement.entity';
 import { NoticeTargetType } from '../notice/entities/notice.entity';
 import { NoticeService } from '../notice/notice.service';
 import { User } from '../user/entities/user.entity';
@@ -28,6 +31,11 @@ function isScheduledPast(scheduledAt: Date): boolean {
 
 function isAnnouncementCompleted(a: Announcement): boolean {
   return Boolean(a.completedManually) || isScheduledPast(a.scheduledAt);
+}
+
+/** 모집 마감 또는 완료 상태면 활동 후기 작성 가능 */
+function isAnnouncementReviewable(a: Announcement): boolean {
+  return isAnnouncementCompleted(a) || a.status === AnnouncementStatus.CLOSED;
 }
 
 function encodeReviewCursor(createdAt: Date, reviewId: string): string {
@@ -74,9 +82,9 @@ export class ReviewService {
     if (!announcement) {
       throw new NotFoundException('공고를 찾을 수 없습니다.');
     }
-    if (!isAnnouncementCompleted(announcement)) {
+    if (!isAnnouncementReviewable(announcement)) {
       throw new BadRequestException(
-        '공연이 완료된 공고에만 활동 후기를 작성할 수 있습니다.',
+        '모집 마감 또는 공연이 완료된 공고에만 활동 후기를 작성할 수 있습니다.',
       );
     }
 
