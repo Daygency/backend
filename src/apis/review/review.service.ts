@@ -328,6 +328,8 @@ export class ReviewService {
         postId: r.postId,
         reviewerUserId: r.reviewerUserId,
         revieweeUserId: r.revieweeUserId,
+        reviewerRole:
+          r.reviewerUserId === r.announcement.userId ? 'owner' : 'accepted',
         rating: r.rating,
         disappointmentReasonCodes: r.disappointmentReasonCodes,
         positiveReasonCodes: r.positiveReasonCodes,
