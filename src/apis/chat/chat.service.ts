@@ -33,6 +33,8 @@ export type MessagePayload = {
   createdAt: Date;
   /** 방의 다른 멤버(1:1 기준 상대방)가 이 메시지를 읽었는지 — 목록 조회 시에만 채워짐 */
   readByPeer?: boolean;
+  /** GROUP 방에서만 채워짐 — 이 메시지를 아직 안 읽은 멤버(발신자 제외) userId 목록 */
+  unreadMemberIds?: string[];
 };
 
 export type ChatRoomMemberSummary = {
@@ -412,7 +414,7 @@ export class ChatService {
     userId: string,
     content: string | undefined,
   ): Promise<MessagePayload> {
-    await this.findRoomForUserOrThrow(chatRoomId, userId);
+    const room = await this.findRoomForUserOrThrow(chatRoomId, userId);
     const message = await this.messageRepo.save(
       this.messageRepo.create({
         content: content?.trim() ? content.trim() : null,
@@ -426,10 +428,34 @@ export class ChatService {
       userId,
       content: message.content,
       createdAt: message.createdAt,
+      ...(await this.buildUnreadMemberIdsForNewMessage(
+        room,
+        chatRoomId,
+        userId,
+        message.createdAt,
+      )),
     };
     this.chatGateway.emitMessageToRoom(chatRoomId, payload);
     void this.notifyUnreadChanged(chatRoomId, userId, payload);
     return payload;
+  }
+
+  /** GROUP 방에 새 메시지를 만들 때, 발신자를 제외한 전 멤버를 안읽음으로 초기화 */
+  private async buildUnreadMemberIdsForNewMessage(
+    room: ChatRoom,
+    roomId: string,
+    senderUserId: string,
+    createdAt: Date,
+  ): Promise<{ unreadMemberIds?: string[] }> {
+    if (room.kind !== ChatRoomKind.GROUP) return {};
+    const cursors = await this.getRoomMemberReadCursors(roomId);
+    return {
+      unreadMemberIds: this.computeUnreadMemberIds(
+        cursors,
+        senderUserId,
+        createdAt,
+      ),
+    };
   }
 
   async createFileMessage(
@@ -437,7 +463,7 @@ export class ChatService {
     userId: string,
     file: { buffer: Buffer; originalName: string; contentType: string },
   ): Promise<MessagePayload> {
-    await this.findRoomForUserOrThrow(chatRoomId, userId);
+    const room = await this.findRoomForUserOrThrow(chatRoomId, userId);
     if (!file.buffer?.length) {
       throw new BadRequestException('업로드할 파일이 필요합니다.');
     }
@@ -476,6 +502,12 @@ export class ChatService {
       fileName: message.fileName,
       fileMime: message.fileMime,
       createdAt: message.createdAt,
+      ...(await this.buildUnreadMemberIdsForNewMessage(
+        room,
+        chatRoomId,
+        userId,
+        message.createdAt,
+      )),
     };
     this.chatGateway.emitMessageToRoom(chatRoomId, payload);
     void this.notifyUnreadChanged(chatRoomId, userId, payload);
@@ -487,7 +519,7 @@ export class ChatService {
     userId: string,
     files: Array<{ buffer: Buffer; originalName: string; contentType: string }>,
   ): Promise<MessagePayload> {
-    await this.findRoomForUserOrThrow(chatRoomId, userId);
+    const room = await this.findRoomForUserOrThrow(chatRoomId, userId);
     const validFiles = files.filter((file) => file.buffer?.length);
     if (validFiles.length === 0) {
       throw new BadRequestException('업로드할 파일이 필요합니다.');
@@ -540,6 +572,12 @@ export class ChatService {
       fileMime: message.fileMime,
       fileItems: message.fileItems,
       createdAt: message.createdAt,
+      ...(await this.buildUnreadMemberIdsForNewMessage(
+        room,
+        chatRoomId,
+        userId,
+        message.createdAt,
+      )),
     };
     this.chatGateway.emitMessageToRoom(chatRoomId, payload);
     void this.notifyUnreadChanged(chatRoomId, userId, payload);
@@ -582,10 +620,24 @@ export class ChatService {
     const members = isGroup
       ? await this.loadOtherMemberSummaries(chatRoomId, userId)
       : null;
+    const groupMemberCursors = isGroup
+      ? await this.getRoomMemberReadCursors(chatRoomId)
+      : null;
 
     return {
       items: rows.map((m) =>
-        this.toMessagePayload(m, peerLastReadAt, !isGroup),
+        this.toMessagePayload(
+          m,
+          peerLastReadAt,
+          !isGroup,
+          groupMemberCursors
+            ? this.computeUnreadMemberIds(
+                groupMemberCursors,
+                m.user.userId,
+                m.createdAt,
+              )
+            : undefined,
+        ),
       ),
       total,
       page,
@@ -1196,6 +1248,7 @@ export class ChatService {
     message: Message,
     peerLastReadAt?: Date | null,
     includeReadByPeer = true,
+    unreadMemberIds?: string[],
   ): MessagePayload {
     const fileName = this.pickDisplayFileName({
       fileName: message.fileName,
@@ -1217,6 +1270,43 @@ export class ChatService {
       readByPeer: includeReadByPeer
         ? Boolean(peerLastReadAt && message.createdAt <= peerLastReadAt)
         : undefined,
+      ...(unreadMemberIds ? { unreadMemberIds } : {}),
     };
+  }
+
+  /** 방 멤버 전원(나 포함)의 읽음 커서 — GROUP 메시지별 안읽음 인원 계산용 */
+  private async getRoomMemberReadCursors(
+    roomId: string,
+  ): Promise<Array<{ userId: string; lastReadAt: Date | null }>> {
+    const rows: Array<{ userId: string; lastReadAt: Date | string | null }> =
+      await this.chatRoomMemberRepo.manager.query(
+        `SELECT user_id AS userId, last_read_at AS lastReadAt
+         FROM chat_room_member
+         WHERE chat_room_id = ? AND deleted_at IS NULL`,
+        [roomId],
+      );
+    return rows.map((r) => ({
+      userId: r.userId,
+      lastReadAt: r.lastReadAt
+        ? r.lastReadAt instanceof Date
+          ? r.lastReadAt
+          : new Date(r.lastReadAt)
+        : null,
+    }));
+  }
+
+  /** 발신자를 제외한 멤버 중, 메시지 시각 이후로 아직 읽지 않은 멤버의 userId */
+  private computeUnreadMemberIds(
+    memberCursors: Array<{ userId: string; lastReadAt: Date | null }>,
+    senderUserId: string,
+    messageCreatedAt: Date,
+  ): string[] {
+    return memberCursors
+      .filter(
+        (m) =>
+          m.userId !== senderUserId &&
+          (!m.lastReadAt || m.lastReadAt < messageCreatedAt),
+      )
+      .map((m) => m.userId);
   }
 }
